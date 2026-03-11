@@ -1,0 +1,29 @@
+appId: com.kodaksmile
+name: ED_14 - Erase Doodle
+---
+# Ensure doodle exists
+
+# Re-open doodle tool to erase
+- tapOn: "Doodle"
+- waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible: "Erase"
+    commands:
+      - tapOn: "Erase"
+      - waitForAnimationToEnd
+
+# Erase stroke (best-effort)
+- swipe:
+    start: "45%,55%"
+    end: "60%,55%"
+- waitForAnimationToEnd
+
+# Save/apply
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd

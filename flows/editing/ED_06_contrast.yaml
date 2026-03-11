@@ -1,0 +1,8 @@
+appId: com.kodaksmile
+name: ED_06 - Contrast
+---
+- tapOn: "Contrast"
+- swipe:
+    start: "30%,90%"
+    end: "80%,90%"
+- tapOn: "Done"

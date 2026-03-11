@@ -1,0 +1,27 @@
+appId: com.kodaksmile
+name: EDITING SUITE - Kodak Smile
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- runFlow: ../elements/loadElements.yaml
+
+- runFlow: editing/ED_01_enter_edit_mode.yaml
+- runFlow: editing/ED_02_filters.yaml
+- runFlow: editing/ED_03_fit_crop.yaml
+- runFlow: editing/ED_04_rotate.yaml
+- runFlow: editing/ED_05_brightness.yaml
+- runFlow: editing/ED_06_contrast.yaml
+- runFlow: editing/ED_07_warmth.yaml
+- runFlow: editing/ED_08_saturation.yaml
+- runFlow: editing/ED_09_highlights.yaml
+- runFlow: editing/ED_10_shadows.yaml
+- runFlow: editing/ED_11_stickers.yaml
+- runFlow: editing/ED_12_text.yaml
+- runFlow: editing/ED_13_doodle.yaml
+- runFlow: editing/ED_14_erase_doodle.yaml
+- runFlow: editing/ED_15_frames.yaml
+- runFlow: editing/ED_16_ar_video.yaml
+- runFlow: editing/ED_17_scan_ar_video.yaml
+- runFlow: editing/ED_E01_cancel_without_saving.yaml
+- runFlow: editing/ED_E02_multiple_edits.yaml

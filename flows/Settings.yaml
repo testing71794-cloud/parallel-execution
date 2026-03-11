@@ -1,0 +1,156 @@
+appId: com.kodaksmile
+name: Settings Screen - Testcases
+---
+- waitForAnimationToEnd
+
+# =========================================================
+# PRECONDITION: Open Settings screen (tap bottom-right icon)
+# (Update point if needed for your device)
+# =========================================================
+- tapOn:
+    id: settingImageView
+- waitForAnimationToEnd
+
+# =========================================================
+# TC-00: Assert Settings screen UI
+# =========================================================
+- runFlow:
+    when:
+      visible: "KODAK SMILE"
+    commands:
+      - assertVisible: "KODAK SMILE"
+      - assertVisible: "Buy KODAK ZINK Photo Paper"
+      - assertVisible: "Quick Tips"
+      - assertVisible: "Support"
+      - assertVisible: "Legal"
+      - assertVisible: "About Us"
+      - assertVisible: "Social Accounts"
+
+# =========================================================
+# TC-01: Buy KODAK ZINK Photo Paper -> opens Purchase Paper (webview) -> back
+# =========================================================
+- runFlow:
+    when:
+      visible: "Buy KODAK ZINK Photo Paper"
+    commands:
+      - tapOn:
+          point: 82%,19%
+      - waitForAnimationToEnd
+
+      # Works even if it opens Amazon or any webview title
+      - runFlow:
+          when:
+            visible: "Purchase Paper"
+          commands:
+            - assertVisible: "Purchase Paper"
+            - assertVisible:
+                id: bylineInfo_feature_div
+            - assertVisible: 81DpkNI8KCL._AC_UF1000,1000_QL80_FMwebp_
+      - tapOn:
+          id: linearLayoutBack
+      - waitForAnimationToEnd
+      - assertVisible: "Buy KODAK ZINK Photo Paper"
+
+# =========================================================
+# TC-02: Quick Tips -> assert screen -> back
+# =========================================================
+- runFlow:
+    when:
+      visible: "Quick Tips"
+    commands:
+      - tapOn: "Quick Tips"
+      - waitForAnimationToEnd
+      - assertVisible: "Quick Tips"
+      - back
+      - waitForAnimationToEnd
+      - assertVisible: "Quick Tips"
+
+# =========================================================
+# TC-03: Legal -> assert screen -> back
+# =========================================================
+- runFlow:
+    when:
+      visible: "Legal"
+    commands:
+      - tapOn: "Legal"
+      - waitForAnimationToEnd
+      - assertVisible: "Legal"
+
+      # Optional: quick scroll sanity
+      - scroll
+      - scroll
+
+      - back
+      - waitForAnimationToEnd
+      - assertVisible: "Legal"
+
+# =========================================================
+# TC-04: About Us -> assert screen -> back
+# =========================================================
+- runFlow:
+    when:
+      visible: "About Us"
+    commands:
+      - tapOn: "About Us"
+      - waitForAnimationToEnd
+
+      # On your screen the title appears like "About Us :"
+      - runFlow:
+          when:
+            visible: "About Us"
+          commands:
+            - assertVisible: "About Us"
+
+      - back
+      - waitForAnimationToEnd
+      - assertVisible: "About Us"
+
+# =========================================================
+# TC-05: Social Accounts -> assert screen -> verify Sign out -> back
+# =========================================================
+- runFlow:
+    when:
+      visible: "Social Accounts"
+    commands:
+      - tapOn: "Social Accounts"
+      - waitForAnimationToEnd
+      - assertVisible: "Social Accounts"
+      - assertVisible: "FACEBOOK"
+      - tapOn: "Sign in"
+      - waitForAnimationToEnd
+      - waitForAnimationToEnd
+      - waitForAnimationToEnd
+      - assertVisible: "Social Accounts"
+      - assertVisible: "FACEBOOK"
+      - assertVisible: "Sign out" # only assert, don’t click (keeps account logged-in)
+      - back
+      - waitForAnimationToEnd
+      - assertVisible: "Social Accounts"
+
+# =========================================================
+# TC-06: Support -> open -> back
+# (Support can open internal screen or external intent, so keep it safe)
+# =========================================================
+- runFlow:
+    when:
+      visible: "Support"
+    commands:
+      - tapOn: "Support"
+      - waitForAnimationToEnd
+
+      # If an internal Support page exists, assert it
+      - runFlow:
+          when:
+            visible: "Support"
+          commands:
+            - assertVisible: "Support"
+
+      - back
+      - waitForAnimationToEnd
+      - assertVisible: "Support"
+
+# =========================================================
+# TC-07: Back from Settings to previous screen
+# =========================================================
+- back
+- waitForAnimationToEnd

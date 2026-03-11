@@ -1,0 +1,118 @@
+appId: com.kodaksmile
+name: Flow4 - Wrong then Correct Login + MultiPrinting
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load elements (POM)
+- runFlow: ../elements/loadElements.yaml
+
+# ----------- LOGIN -----------
+# If Login button exists on landing, open login screen
+- runFlow:
+    when:
+      visible: "Log In"
+    commands:
+      - tapOn: "Log In"
+      - waitForAnimationToEnd
+
+# Enter email
+- tapOn: "Email"
+- inputText: "Automation49@yopmail.com"
+
+# Enter wrong password + verify error
+- tapOn: "Password"
+- inputText: "WrongPass123"
+- hideKeyboard:
+    optional: true
+- tapOn: "Login"
+
+- runFlow:
+    when:
+      visible: "You have entered an invalid email id or password"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+
+# Enter correct password + login
+- tapOn: "Password"
+- eraseText
+- inputText: "Test12345"
+- hideKeyboard:
+    optional: true
+- tapOn: "Login"
+- waitForAnimationToEnd
+
+# ----------- PERMISSIONS + ONBOARDING -----------
+- runFlow: ../flows/permissionsFlow.yaml
+- runFlow: ../flows/onboardingSkip.yaml
+- runFlow: ../flows/handleRateApp.yaml
+
+# ----------- HOME -----------
+- assertVisible: ${output.home.titleText}
+- runFlow: ../flows/findAndConnectPrinter.yaml
+
+# Tap first photo on home (id: imageRelativelayout not found in app)
+- runFlow:
+    when:
+      visible: "KODAK SMILE"
+    commands:
+      - tapOn:
+          point: "20%,30%"
+      - waitForAnimationToEnd
+- tapOn:
+    point: "20%,30%"
+# Handle Time to Fine-Tune popup
+- runFlow:
+    when:
+      visible: "Time to Fine-Tune"
+    commands:
+      - assertVisible: "Time to Fine-Tune"
+      - assertVisible: "Ok"
+
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+- tapOn:
+    id: layoutPrinter
+# Handle print ready popup
+- runFlow:
+    when:
+      visible: "Your print is ready!"
+    commands:
+      - assertVisible: "Your print is ready!"
+
+      # Scroll until "3 Copies" appears
+      - scrollUntilVisible:
+          element: "3 Copies"
+          direction: DOWN
+
+      # Click Print
+      - tapOn: "3 Copies"
+      - tapOn: "Print"
+      - waitForAnimationToEnd
+# Poll printer state
+- repeat:
+    times: 25
+    commands:
+      - runFlow:
+          when:
+            notVisible: "Print Successful"
+          commands:
+            - runFlow: ../flows/waitForPrinting.yaml
+            - waitForAnimationToEnd
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Ok"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+# redirect back to album (best effort)
+- runFlow:
+    when:
+      visible: "All Photos"
+    commands:
+      - assertVisible: "All Photos"
+      - tapOn:
+          point: "1%,9%"

@@ -1,0 +1,42 @@
+appId: com.kodaksmile
+name: ED_04 - Rotate
+---
+# ----- ROTATION FLOW (Maestro supported) -----
+
+# Open Rotate tool (from editor toolbar)
+- tapOn: "Rotate"
+- waitForAnimationToEnd
+
+# Rotate screen assertions
+- assertVisible: "Slide to rotate picture"
+- assertVisible: "Cancel"
+- assertVisible: "Done"
+
+# Move slider to rotate (drag right)
+- swipe:
+    start: "20%,74%"
+    end: "80%,74%"
+- waitForAnimationToEnd
+
+# Move slider back (drag left)
+- swipe:
+    from:
+      id: rotateSeekBar
+    direction: left
+- waitForAnimationToEnd
+
+# Tap 90° rotate RIGHT button (right side)
+- swipe:
+    from:
+      id: rotateSeekBar
+    direction: right
+- waitForAnimationToEnd
+
+# Tap 90° rotate LEFT button (left side)
+- tapOn:
+    id: rotateLeftImageView
+- waitForAnimationToEnd
+
+# Apply rotation
+- tapOn: "Done"
+- waitForAnimationToEnd

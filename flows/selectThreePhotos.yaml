@@ -1,0 +1,41 @@
+appId: com.kodaksmile
+---
+- runFlow:
+    when:
+      visible: "All Photos"
+    commands:
+      # 1) Assert gallery screen
+      - assertVisible: "All Photos"
+
+      # 2) Tap Select
+      - tapOn:
+          id: textViewSelect
+      - waitForAnimationToEnd
+
+      # 3) Select thumbnail index 2
+      - tapOn:
+         id: imageViewPhoto
+         index: 1
+      - waitForAnimationToEnd
+
+      # 4) Select thumbnail index 2
+      - tapOn:
+         id: imageViewPhoto
+         index: 2
+      - waitForAnimationToEnd
+
+      # 5) Assert we are still on All Photos screen (screen attached)
+      - assertVisible: "Select Items"
+
+      # 6) Select thumbnail index 5
+      - tapOn:
+          id: imageViewPhoto
+          index: 6
+      - waitForAnimationToEnd
+
+      # 7) Assert Print button visible then tap Print
+      - assertVisible:
+          id: textViewPrint
+      - tapOn:
+          id: textViewPrint
+      - waitForAnimationToEnd

@@ -1,0 +1,8 @@
+appId: com.kodaksmile
+---
+- runFlow:
+    when:
+      visible: ${output.common.rateAppText}
+    commands:
+      - tapOn: ${output.common.noThanksText}
+      - waitForAnimationToEnd

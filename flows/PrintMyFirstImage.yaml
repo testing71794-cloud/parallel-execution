@@ -1,0 +1,50 @@
+appId: com.kodaksmile
+---
+# ------------------------------
+# 6) First print onboarding (optional)
+# ------------------------------
+- runFlow:
+    when:
+      visible: "Print My First Picture"
+    commands:
+      - tapOn: "Print My First Picture"
+      - waitForAnimationToEnd
+
+# ------------------------------
+# 7) Fine-tune popup (optional)
+# ------------------------------
+- runFlow:
+    when:
+      visible: "Time to Fine-Tune"
+    commands:
+      - runFlow:
+          when:
+            visible: "Ok"
+          commands:
+            - tapOn: "Ok"
+      - runFlow:
+          when:
+            visible: "OK"
+          commands:
+            - tapOn: "OK"
+      - waitForAnimationToEnd
+
+# ------------------------------
+# 8) Print (only when button visible)
+# ------------------------------
+- runFlow:
+    when:
+      visible: "Print"
+    commands:
+      - tapOn: "Print"
+      - waitForAnimationToEnd
+
+# ------------------------------
+# 9) "Your print is ready!" popup (optional) -> tap Print
+# ------------------------------
+- runFlow:
+    when:
+      visible: "Your print is ready!"
+    commands:
+      - tapOn: "Print"
+      - waitForAnimationToEnd

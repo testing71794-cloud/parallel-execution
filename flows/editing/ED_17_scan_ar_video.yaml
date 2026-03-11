@@ -1,0 +1,7 @@
+appId: com.kodaksmile
+name: ED_17 - Scan AR Video
+---
+- runFlow: ED_16_ar_video.yaml
+- tapOn: "Print"
+- tapOn: "Print"
+- tapOn: "Scan image now"

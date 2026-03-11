@@ -1,0 +1,9 @@
+appId: com.kodaksmile
+name: ED_E01 - Cancel Without Saving
+---
+- runFlow: ED_01_enter_edit_mode.yaml
+- tapOn: "Brightness"
+- swipe:
+    start: "30%,90%"
+    end: "80%,90%"
+- back

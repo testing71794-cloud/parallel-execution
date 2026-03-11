@@ -1,0 +1,31 @@
+appId: com.kodaksmile
+---
+
+# ✅ MUST load outputs before using ${output.*}
+- runFlow: ../elements/loadElements.yaml
+
+# Cooldown
+- runFlow:
+    when:
+      visible: ${output.printer.cooldownText}
+    commands:
+      - tapOn: ${output.common.okText}
+      - waitForAnimationToEnd
+
+# Out of paper
+- runFlow:
+    when:
+      visible: ${output.printer.outOfPaperText}
+    commands:
+      - tapOn: ${output.common.okText}
+      - waitForAnimationToEnd
+
+# Print Successful
+- runFlow:
+    when:
+      visible: ${output.printer.printSuccessfulText}
+    commands:
+      - takeScreenshot: "print_success"
+      - tapOn:
+          point: 2%,5%
+      - waitForAnimationToEnd

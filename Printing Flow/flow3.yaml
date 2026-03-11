@@ -1,0 +1,139 @@
+appId: com.kodaksmile
+name: Flow3 - Login + Onboarding + Camera (AR) + Home
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load elements (POM)
+- runFlow: ../elements/loadElements.yaml
+
+# ----------- LOGIN -----------
+# If Login button exists on landing, open login screen
+- runFlow:
+    when:
+      visible: "Log In"
+    commands:
+      - tapOn: "Log In"
+      - waitForAnimationToEnd
+
+# Enter email
+- tapOn: "Email"
+- inputText: "Atomation46@yopmail.com"
+
+# Enter wrong password + verify error
+- tapOn: "Password"
+- inputText: "WrongPass123"
+- hideKeyboard:
+    optional: true
+- tapOn: "Login"
+
+- runFlow:
+    when:
+      visible: "You have entered an invalid email id or password"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+
+# Enter correct password + login
+- tapOn: "Password"
+- eraseText
+- inputText: "Test12345"
+- hideKeyboard:
+    optional: true
+- tapOn: "Login"
+- waitForAnimationToEnd
+
+# ----------- PERMISSIONS + ONBOARDING -----------
+- runFlow: ../flows/permissionsFlow.yaml
+- runFlow: ../flows/onboardingSkip.yaml
+- runFlow: ../flows/handleRateApp.yaml
+
+# ----------- HOME -----------
+- assertVisible: ${output.home.titleText}
+
+# Handle Android camera permission safely
+- runFlow:
+    when:
+      visible: "Enable camera access"
+    commands:
+      - tapOn: "Enable camera access"
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible: "While using the app"
+    commands:
+      - tapOn: "While using the app"
+
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+
+# ----------- CAMERA (AR) -----------
+# Open camera (best effort by tapping bottom center)
+- tapOn:
+    point: "50%,92%"
+- waitForAnimationToEnd
+# Close live filter tutorial by clicking OK
+- runFlow:
+    when:
+      visible: "Swipe left to apply live filters"
+    commands:
+      - assertVisible: "Ok"
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+# -------- Assert camera screen elements --------
+- assertVisible: "Close"
+- assertVisible: "Scan"
+
+# (optional additional check)
+- assertVisible:
+    text: "Scan"
+
+# -------- Click AR Scan --------
+- tapOn: "Scan"
+- waitForAnimationToEnd
+# Handle AR Scan Tip popup
+- runFlow:
+    when:
+      visible: "AR Scan Tip:"
+    commands:
+      # Assert popup elements
+      - assertVisible: "AR Scan Tip:"
+      - assertVisible: "Ok"
+
+      # Click OK
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+# (optional additional check)
+- assertVisible:
+    text: "Scan"
+
+# -------- Click AR Scan --------
+- tapOn: "Scan"
+- waitForAnimationToEnd
+# Assert AR scan screen then click Camera after wait
+- runFlow:
+    when:
+      visible: "Camera"
+    commands:
+      - assertVisible: "Close"
+      - assertVisible: "Camera"
+      - waitForAnimationToEnd
+      - tapOn: "Camera"
+      - waitForAnimationToEnd
+# Assert camera screen elements then click Close
+- runFlow:
+    when:
+      visible: "Close"
+    commands:
+      - assertVisible: "Close"
+      - assertVisible: "Scan"
+
+      - tapOn: "Close"
+      - waitForAnimationToEnd
+# Back on home aasertion
+- assertVisible: ${output.home.titleText}    

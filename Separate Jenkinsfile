@@ -1,0 +1,32 @@
+pipeline {
+    agent any
+
+    environment {
+        PROJECT_DIR = 'D:\\Projects-Meastro\\kodak-Smile-with-OpenAI'
+    }
+
+    stages {
+        stage('Check Connected Devices') {
+            steps {
+                dir("${PROJECT_DIR}") {
+                    bat 'adb devices'
+                    bat 'maestro --version'
+                }
+            }
+        }
+
+        stage('Run Printing Flows') {
+            steps {
+                dir("${PROJECT_DIR}") {
+                    bat 'maestro test "Printing Flow"'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: '.maestro/screenshots/**/*, reports/**/*', allowEmptyArchive: true
+        }
+    }
+}

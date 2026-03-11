@@ -1,0 +1,25 @@
+appId: com.kodaksmile
+name: Signup Flow
+---
+- waitForAnimationToEnd
+
+# ------------------------------
+# Terms & Conditions Screen
+# Assert elements + Tap Agree
+# ------------------------------
+
+- waitForAnimationToEnd
+
+# Title
+- assertVisible: "Terms and Conditions"
+
+# Section Header
+- assertVisible: "TERMS OF USE"
+
+# Agree Button
+- assertVisible: "Agree Terms and Conditions"
+
+# Tap Agree
+- tapOn: "Agree Terms and Conditions"
+
+- waitForAnimationToEnd

@@ -1,0 +1,17 @@
+appId: com.kodaksmile
+---
+# Tap first photo in album grid (id: imageRelativelayout not found in app)
+- tapOn:
+    point: "20%,30%"
+- runFlow:
+    when:
+      visible: "Ok"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Time to Fine-Tune"
+    commands:
+      - tapOn: "Ok"
+- waitForAnimationToEnd

@@ -1,0 +1,50 @@
+appId: com.kodaksmile
+name: Flow1 Find Printer and Connect
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load elements
+- runFlow: ../elements/loadElements.yaml
+- runFlow: ../flows/I will do it later.yaml
+- runFlow: ../flows/Agree Term and Condition.yaml
+- runFlow: ../flows/Onboarding Welcome Screen.yaml
+- runFlow: ../flows/Swipe to continue.yaml
+
+- runFlow: ../flows/handleBluetoothPairing.yaml
+# Swipe right → left
+- swipe:
+          start: "80%,55%"
+          end: "20%,55%"
+- runFlow:
+    when:
+      visible: "Print My First Picture"
+    commands:
+      - tapOn: "Print My First Picture"
+      - waitForAnimationToEnd
+# Fine-tune popup
+- runFlow:
+    when:
+      visible: "Time to Fine-Tune"
+    commands:
+      - runFlow:
+          when:
+            visible: "Ok"
+          commands:
+            - tapOn: "Ok"
+      - runFlow:
+          when:
+            visible: "OK"
+          commands:
+            - tapOn: "OK"
+      - waitForAnimationToEnd
+- waitForAnimationToEnd
+
+- assertVisible: "Close"
+- assertVisible: "Share"
+- assertVisible: "Print"
+- assertVisible: "Filter"
+- assertVisible: "Edit"
+- assertVisible: "Pre-Cuts"
+- assertVisible: "AR"

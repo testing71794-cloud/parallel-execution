@@ -1,0 +1,16 @@
+appId: com.kodaksmile
+name: ED_01 - Enter edit photo mode
+---
+- tapOn: All Photos
+- waitForAnimationToEnd
+- tapOn:
+    point: "15%,30%"
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Ok"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+- tapOn: "Edit"
+- waitForAnimationToEnd

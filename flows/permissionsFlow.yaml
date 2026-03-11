@@ -1,0 +1,23 @@
+appId: com.kodaksmile
+---
+# Android runtime permission dialogs (best-effort)
+- runFlow:
+    when:
+      visible: "Photos Access Required"
+    commands:
+      - tapOn: ${output.common.okText}
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible: "Enable photos access"
+    commands:
+      - tapOn: "Enable photos access"
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible: "Allow KODAK SMILE to find"
+    commands:
+      - tapOn: ${output.common.allowText}
+      - waitForAnimationToEnd

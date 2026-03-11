@@ -1,0 +1,40 @@
+appId: com.kodaksmile
+---
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
+# If printer intro screen appears → assert + swipe
+- runFlow:
+    when:
+      visible: "Find My Printer"
+    commands:
+      - assertVisible: "Find My Printer"
+      - waitForAnimationToEnd
+
+      # Swipe right → left
+      - swipe:
+          start: "80%,55%"
+          end: "20%,55%"
+
+      - waitForAnimationToEnd
+# If "Device found" screen appears → assert + swipe right to left
+- runFlow:
+    when:
+      visible: "Device found"
+    commands:
+      - assertVisible: "Device found"
+      - waitForAnimationToEnd
+
+      - swipe:
+          start: "80%,55%"
+          end: "20%,55%"
+
+      - waitForAnimationToEnd

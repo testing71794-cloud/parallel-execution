@@ -1,0 +1,51 @@
+appId: com.kodaksmile
+---
+# Handle printer connection screens:
+# Searching -> Couldn't find -> Search Again -> Device found list -> Connect -> Pair
+
+# If searching appears, just wait a bit
+- runFlow:
+    when:
+      visible: "Searching for your device..."
+    commands:
+      - waitForAnimationToEnd
+      - waitForAnimationToEnd
+      - waitForAnimationToEnd
+      - waitForAnimationToEnd
+
+# If couldn't find appears, tap Search Again
+- runFlow:
+    when:
+      visible: "We couldn't find"
+    commands:
+      - assertVisible: "Search Again"
+      - tapOn: "Search Again"
+      - waitForAnimationToEnd
+
+# When device list appears, tap Connect
+- runFlow:
+    when:
+      visible: "Device found"
+    commands:
+      - assertVisible: "Connect"
+      - tapOn: "Connect"
+      - waitForAnimationToEnd
+      - runFlow: ../flows/handleBluetoothPairing.yaml
+
+- runFlow:
+    when:
+      visible: "Let's hook it up!"
+    commands:
+      - assertVisible: "Connect"
+      - tapOn: "Connect"
+      - waitForAnimationToEnd
+      - runFlow: ../flows/handleBluetoothPairing.yaml
+
+# Fallback: if Connect is visible anywhere, tap it + handle pairing
+- runFlow:
+    when:
+      visible: "Connect"
+    commands:
+      - tapOn: "Connect"
+      - waitForAnimationToEnd
+      - runFlow: ../flows/handleBluetoothPairing.yaml

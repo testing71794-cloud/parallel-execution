@@ -1,0 +1,6 @@
+flows:
+  - "Non printing flows/**"
+  - "Printing Flow/**"
+
+executionOrder:
+  continueOnFailure: true

@@ -1,0 +1,9 @@
+# Handles Terms & Conditions popup if it appears
+appId: com.kodaksmile
+---
+- runFlow:
+    when:
+      visible: "Terms and Conditions"
+    commands:
+      - tapOn: "Agree Terms and Conditions"
+      - waitForAnimationToEnd

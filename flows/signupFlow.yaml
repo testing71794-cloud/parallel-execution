@@ -1,0 +1,35 @@
+appId: com.kodaksmile
+name: Signup Flow
+---
+- waitForAnimationToEnd
+
+# ------------------------------
+# Signup Screen: Assert all elements + tap "I'll do it later"
+# ------------------------------
+- waitForAnimationToEnd
+
+# Screen title
+- assertVisible: "Sign Up"
+
+# Input fields
+- assertVisible: "Full Name"
+- assertVisible: "Email"
+- assertVisible: "Password"
+- assertVisible: "Date of birth"
+
+# Terms text + links
+- assertVisible: "By signing up you agree to our"
+- assertVisible: "Terms & Conditions and  "
+- assertVisible: "Privacy Policy."
+
+# Primary CTA
+- assertVisible: "Create Account"
+
+# Footer actions
+- assertVisible: "I'll do it later"
+- assertVisible: "Already have an account?"
+- assertVisible: "Log In"
+
+# Tap skip
+- tapOn: "I'll do it later"
+- waitForAnimationToEnd

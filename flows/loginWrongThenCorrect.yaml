@@ -1,0 +1,19 @@
+appId: com.kodaksmile
+---
+- tapOn: ${output.login.emailText}
+- inputText: Atomation47@yopmail.com
+
+- tapOn: ${output.login.passwordText}
+- inputText: Test123
+- tapOn: ${output.login.loginBtnText}
+
+- runFlow:
+    when:
+      visible: ${output.login.invalidErrorText}
+    commands:
+      - tapOn: ${output.login.okBtnText}
+
+- tapOn: ${output.login.passwordText}
+- eraseText
+- inputText: Test12345
+- tapOn: ${output.login.loginBtnText}
