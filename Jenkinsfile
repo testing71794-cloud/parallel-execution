@@ -6,8 +6,11 @@ pipeline {
     }
 
     environment {
+        environment {
         TEST_EXIT_CODE = '0'
         TEST_SUITE = 'tests'
+        ADB = 'C:\\Users\\HP\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'
+}
     }
 
     stages {
