@@ -62,6 +62,8 @@ export async function callCursorAI({ prompt, images = [], timeoutMs = MAX_POLL_T
 
   const promptText = `${prompt}
 
+CONTEXT: Use your trained knowledge base, .cursor/rules/, AGENTS.md, and docs/ATP_KNOWLEDGE_BASE.md from this repo. Apply your domain expertise for Kodak Smile automation.
+
 IMPORTANT: Do NOT modify any files or create branches. Only respond in this conversation with your analysis as valid JSON.
 Return ONLY a JSON object: {"rootCause":"string","failureType":"string","suggestedFix":"string","retryRecommended":boolean,"confidence":number}`;
 
@@ -79,6 +81,9 @@ Return ONLY a JSON object: {"rootCause":"string","failureType":"string","suggest
     },
     target: { autoCreatePr: false },
   };
+
+  const model = process.env.CURSOR_MODEL;
+  if (model) body.model = model;
 
   if (images.length === 0) delete body.prompt.images;
 
