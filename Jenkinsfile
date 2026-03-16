@@ -14,7 +14,7 @@ pipeline {
 
         stage('Checkout From Git') {
             steps {
-                checkout scm
+                git url: 'https://github.com/testing71794-cloud/kodak-Smile-with-OpenAI.git', branch: 'main'
             }
         }
 
