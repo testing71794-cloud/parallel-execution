@@ -5,15 +5,13 @@ pipeline {
         cron('H 9 * * *')
     }
 
-    environment {
-        environment {
-        TEST_EXIT_CODE = '0'
-        TEST_SUITE = 'tests'
-        ADB = 'C:\\Users\\HP\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'
-}
-    }
-
     stages {
+        stage('Init') {
+            steps {
+                script { env.TEST_EXIT_CODE = '0' }
+            }
+        }
+
         stage('Checkout From Git') {
             steps {
                 checkout scm
@@ -22,35 +20,51 @@ pipeline {
 
         stage('Check Workspace') {
             steps {
-                bat 'echo Current workspace: %CD%'
-                bat 'dir'
+                script {
+                    if (isUnix()) {
+                        sh 'echo "Workspace: $PWD" && ls -la'
+                    } else {
+                        bat 'echo Current workspace: %CD% && dir'
+                    }
+                }
             }
         }
 
         stage('Check Connected Devices') {
             steps {
-                bat 'adb devices'
-                bat 'maestro --version'
-                bat 'node --version'
-                bat 'npm --version'
+                script {
+                    if (isUnix()) {
+                        sh 'adb devices && maestro --version && node --version && npm --version'
+                    } else {
+                        bat 'adb devices && maestro --version && node --version && npm --version'
+                    }
+                }
             }
         }
 
         stage('Install AI Doctor Dependencies') {
             steps {
                 dir('ai-doctor') {
-                    bat 'if exist package-lock.json (npm ci) else (npm install)'
+                    script {
+                        if (isUnix()) {
+                            sh 'npm ci 2>/dev/null || npm install'
+                        } else {
+                            bat 'if exist package-lock.json (npm ci) else (npm install)'
+                        }
+                    }
                 }
             }
         }
 
-        stage('Run Non Printing Flows in Parallel') {
+        stage('Run All Flows in Parallel') {
             steps {
                 script {
-                    def code = bat(
-                        script: 'maestro test "%TEST_SUITE%" --shard-all',
-                        returnStatus: true
-                    )
+                    def code
+                    if (isUnix()) {
+                        code = sh(script: 'export PROJECT_ROOT="$PWD" && chmod +x scripts/run_all_parallel.sh && ./scripts/run_all_parallel.sh', returnStatus: true)
+                    } else {
+                        code = bat(script: 'set PROJECT_ROOT=%CD% && call scripts\\run_all_parallel.bat', returnStatus: true)
+                    }
                     env.TEST_EXIT_CODE = "${code}"
                     echo "Maestro exit code: ${code}"
                 }
@@ -63,14 +77,20 @@ pipeline {
             }
             steps {
                 dir('ai-doctor') {
-                    bat 'node index.mjs'
+                    script {
+                        if (isUnix()) {
+                            sh 'node index.mjs'
+                        } else {
+                            bat 'node index.mjs'
+                        }
+                    }
                 }
             }
         }
 
         stage('Archive Artifacts') {
             steps {
-                archiveArtifacts artifacts: '.maestro/**/*, reports/**/*, ai-doctor/artifacts/**/*', allowEmptyArchive: true
+                archiveArtifacts artifacts: '.maestro/**/*, reports/**/*, report.xml, report_retry.xml, ai-doctor/artifacts/**/*', allowEmptyArchive: true
             }
         }
     }
@@ -83,7 +103,7 @@ pipeline {
         success {
             script {
                 if (env.TEST_EXIT_CODE == '0') {
-                    echo 'Non-printing scheduled automation completed successfully.'
+                    echo 'All flows (Non-printing + Printing) completed successfully.'
                 }
             }
         }
