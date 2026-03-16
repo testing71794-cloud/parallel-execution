@@ -1,119 +1,96 @@
 pipeline {
     agent any
 
+    environment {
+        MAESTRO_PATH = "/var/lib/jenkins/.maestro/bin"
+        ADB_PATH = "/usr/bin/adb"
+    }
+
     triggers {
-        cron('H 9 * * *')
+        githubPush()
     }
 
     stages {
-        stage('Init') {
-            steps {
-                script { env.TEST_EXIT_CODE = '0' }
-            }
-        }
 
-        stage('Checkout From Git') {
+        stage('Checkout Code') {
             steps {
                 git url: 'https://github.com/testing71794-cloud/kodak-Smile-with-OpenAI.git', branch: 'main'
             }
         }
 
-        stage('Check Workspace') {
+        stage('Check Environment') {
             steps {
-                script {
-                    if (isUnix()) {
-                        sh 'echo "Workspace: $PWD" && ls -la'
-                    } else {
-                        bat 'echo Current workspace: %CD% && dir'
-                    }
-                }
+                sh '''
+                echo "Checking environment..."
+                $ADB_PATH devices
+                node -v
+                npm -v
+                $MAESTRO_PATH/maestro --version
+                '''
             }
         }
 
-        stage('Check Connected Devices') {
+        stage('Detect Devices') {
             steps {
-                script {
-                    if (isUnix()) {
-                        sh 'adb devices && maestro --version && node --version && npm --version'
-                    } else {
-                        bat 'adb devices && maestro --version && node --version && npm --version'
-                    }
-                }
+                sh '''
+                echo "Connected devices:"
+                $ADB_PATH devices
+                '''
             }
         }
 
-        stage('Install AI Doctor Dependencies') {
+        stage('Run Non Printing Tests') {
             steps {
-                dir('ai-doctor') {
-                    script {
-                        if (isUnix()) {
-                            sh 'npm ci 2>/dev/null || npm install'
-                        } else {
-                            bat 'if exist package-lock.json (npm ci) else (npm install)'
-                        }
-                    }
-                }
+                sh '''
+                export PATH=$PATH:$MAESTRO_PATH
+                maestro test "Non printing flows"
+                '''
             }
         }
 
-        stage('Run All Flows in Parallel') {
+        stage('Run Printing Tests') {
             steps {
-                script {
-                    def code
-                    if (isUnix()) {
-                        code = sh(script: 'export PROJECT_ROOT="$PWD" && chmod +x scripts/run_all_parallel.sh && ./scripts/run_all_parallel.sh', returnStatus: true)
-                    } else {
-                        code = bat(script: 'set PROJECT_ROOT=%CD% && call scripts\\run_all_parallel.bat', returnStatus: true)
-                    }
-                    env.TEST_EXIT_CODE = "${code}"
-                    echo "Maestro exit code: ${code}"
-                }
+                sh '''
+                export PATH=$PATH:$MAESTRO_PATH
+                maestro test "Printing Flow"
+                '''
             }
         }
 
-        stage('Run AI Doctor On Failure') {
-            when {
-                expression { env.TEST_EXIT_CODE != '0' }
-            }
+        stage('Generate Report') {
             steps {
-                dir('ai-doctor') {
-                    script {
-                        if (isUnix()) {
-                            sh 'node index.mjs'
-                        } else {
-                            bat 'node index.mjs'
-                        }
-                    }
-                }
+                sh '''
+                echo "Generating report..."
+                ls -la .maestro || true
+                '''
             }
         }
 
-        stage('Archive Artifacts') {
+        stage('Archive Results') {
             steps {
-                archiveArtifacts artifacts: '.maestro/**/*, reports/**/*, report.xml, report_retry.xml, ai-doctor/artifacts/**/*', allowEmptyArchive: true
+                archiveArtifacts artifacts: '.maestro/**/*', allowEmptyArchive: true
             }
         }
     }
 
     post {
-        always {
-            echo 'Pipeline finished.'
-        }
 
         success {
-            script {
-                if (env.TEST_EXIT_CODE == '0') {
-                    echo 'All flows (Non-printing + Printing) completed successfully.'
-                }
-            }
+            echo 'All tests passed successfully!'
         }
 
-        unsuccessful {
-            script {
-                if (env.TEST_EXIT_CODE != '0') {
-                    error('Tests failed. AI Doctor executed and artifacts were archived.')
-                }
-            }
+        failure {
+            mail to: 'kodaksmilechina@gmail.com',
+                 subject: "❌ Jenkins Build Failed - ${env.JOB_NAME}",
+                 body: """
+                 Maestro tests failed.
+
+                 Job: ${env.JOB_NAME}
+                 Build: ${env.BUILD_NUMBER}
+
+                 Check details:
+                 ${env.BUILD_URL}
+                 """
         }
     }
-}
+}         
