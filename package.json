@@ -1,0 +1,15 @@
+{
+  "name": "kodak-maestro-suite",
+  "version": "1.0.0",
+  "description": "Maestro AI Doctor with Cursor AI (ATP-based)",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs",
+    "doctor": "bash ./doctor.sh"
+  },
+  "dependencies": {
+    "fast-glob": "^3.3.3",
+    "xml2js": "^0.6.2"
+  }
+}
