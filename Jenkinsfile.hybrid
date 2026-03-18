@@ -32,9 +32,11 @@ pipeline {
             agent { label 'built-in' }
             steps {
                 unstash 'workspace'
-                dir('ai-doctor') {
-                    sh 'npm ci 2>/dev/null || npm install'
-                }
+                sh '''
+                    pwd
+                    ls -la
+                    npm ci 2>/dev/null || npm install
+                '''
                 stash name: 'workspace', includes: '**/*'
             }
         }
@@ -47,14 +49,27 @@ pipeline {
                 script {
                     def code
                     if (isUnix()) {
-                        code = sh(script: 'export PROJECT_ROOT="$PWD" && chmod +x scripts/run_all_parallel.sh && ./scripts/run_all_parallel.sh', returnStatus: true)
+                        code = sh(
+                            script: '''
+                                export PROJECT_ROOT="$PWD"
+                                chmod +x scripts/run_all_parallel.sh
+                                ./scripts/run_all_parallel.sh
+                            ''',
+                            returnStatus: true
+                        )
                     } else {
-                        code = bat(script: 'set PROJECT_ROOT=%CD% && call scripts\\run_all_parallel.bat', returnStatus: true)
+                        code = bat(
+                            script: '''
+                                set PROJECT_ROOT=%CD%
+                                call scripts\\run_all_parallel.bat
+                            ''',
+                            returnStatus: true
+                        )
                     }
                     env.TEST_EXIT_CODE = "${code}"
                     echo "Maestro exit code: ${code}"
                 }
-                stash name: 'maestro-results', includes: '.maestro/**/*,report*.xml,report_retry.xml,reports/**/*'
+                stash name: 'maestro-results', includes: '.maestro/**/*,report*.xml,report_retry.xml,reports/**/*', allowEmpty: true
             }
         }
 
@@ -63,6 +78,7 @@ pipeline {
             agent { label 'built-in' }
             when { expression { env.TEST_EXIT_CODE != '0' } }
             steps {
+                unstash 'workspace'
                 unstash 'maestro-results'
                 dir('ai-doctor') {
                     sh 'node index.mjs'
@@ -74,6 +90,7 @@ pipeline {
         stage('Archive') {
             agent { label 'built-in' }
             steps {
+                unstash 'workspace'
                 unstash 'maestro-results'
                 archiveArtifacts artifacts: '.maestro/**/*,report*.xml,reports/**/*,ai-doctor/artifacts/**/*', allowEmptyArchive: true
             }
@@ -81,7 +98,9 @@ pipeline {
     }
 
     post {
-        always { echo 'Pipeline finished.' }
+        always {
+            echo 'Pipeline finished.'
+        }
         failure {
             mail to: 'kodaksmilechina@gmail.com',
                  subject: "❌ Jenkins Build Failed - ${env.JOB_NAME}",
