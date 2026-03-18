@@ -70,7 +70,7 @@ console.log("🧾 Memory loaded:", memoryPath, `(keys=${Object.keys(memory).leng
 // ======================================================
 // RUN TESTS FROM /tests WITH LIVE FLOW UPDATES
 // ======================================================
-const testsDir = path.join(projectRoot, "tests");
+const testsDir = path.join(projectRoot, "flows");
 
 if (!fs.existsSync(testsDir)) {
   console.error(`❌ Tests folder not found: ${testsDir}`);
