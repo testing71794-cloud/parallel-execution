@@ -1,0 +1,91 @@
+// HYBRID: Server does most work; only Maestro runs on your PC (where devices are)
+// 1. Add your PC as Jenkins agent with label "devices"
+// 2. Use Script Path: Jenkinsfile.hybrid
+
+pipeline {
+    agent none  // No global agent - we switch per stage
+
+    parameters {
+        choice(
+            name: 'DEVICES_AGENT',
+            choices: ['devices', 'built-in'],
+            description: 'devices = your PC with USB phones. built-in = run on server (needs adb connect for network devices).'
+        )
+    }
+
+    triggers {
+        cron('H 9 * * *')
+        githubPush()
+    }
+
+    stages {
+        // === RUNS ON SERVER (GCP VM) ===
+        stage('Checkout') {
+            agent { label 'built-in' }
+            steps {
+                checkout scm
+                stash name: 'workspace', includes: '**/*'
+            }
+        }
+
+        stage('Install AI Doctor deps') {
+            agent { label 'built-in' }
+            steps {
+                unstash 'workspace'
+                dir('ai-doctor') {
+                    sh 'npm ci 2>/dev/null || npm install'
+                }
+                stash name: 'workspace', includes: '**/*'
+            }
+        }
+
+        // === RUNS ON YOUR PC (where devices are) - Windows or Linux ===
+        stage('Run Maestro on devices') {
+            agent { label "${params.DEVICES_AGENT}" }
+            steps {
+                unstash 'workspace'
+                script {
+                    def code
+                    if (isUnix()) {
+                        code = sh(script: 'export PROJECT_ROOT="$PWD" && chmod +x scripts/run_all_parallel.sh && ./scripts/run_all_parallel.sh', returnStatus: true)
+                    } else {
+                        code = bat(script: 'set PROJECT_ROOT=%CD% && call scripts\\run_all_parallel.bat', returnStatus: true)
+                    }
+                    env.TEST_EXIT_CODE = "${code}"
+                    echo "Maestro exit code: ${code}"
+                }
+                stash name: 'maestro-results', includes: '.maestro/**/*,report*.xml,report_retry.xml,reports/**/*'
+            }
+        }
+
+        // === RUNS ON SERVER (GCP VM) ===
+        stage('AI Doctor on failure') {
+            agent { label 'built-in' }
+            when { expression { env.TEST_EXIT_CODE != '0' } }
+            steps {
+                unstash 'maestro-results'
+                dir('ai-doctor') {
+                    sh 'node index.mjs'
+                }
+                stash name: 'workspace', includes: '**/*'
+            }
+        }
+
+        stage('Archive') {
+            agent { label 'built-in' }
+            steps {
+                unstash 'maestro-results'
+                archiveArtifacts artifacts: '.maestro/**/*,report*.xml,reports/**/*,ai-doctor/artifacts/**/*', allowEmptyArchive: true
+            }
+        }
+    }
+
+    post {
+        always { echo 'Pipeline finished.' }
+        failure {
+            mail to: 'kodaksmilechina@gmail.com',
+                 subject: "❌ Jenkins Build Failed - ${env.JOB_NAME}",
+                 body: "Check: ${env.BUILD_URL}"
+        }
+    }
+}
