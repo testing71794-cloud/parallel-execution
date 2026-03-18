@@ -1,7 +1,3 @@
-// HYBRID: Server does most work; only Maestro runs on your PC (where devices are)
-// 1. Add your PC as Jenkins agent with label "devices"
-// 2. Use Script Path: Jenkinsfile.hybrid
-
 pipeline {
     agent none
 
@@ -9,7 +5,7 @@ pipeline {
         choice(
             name: 'DEVICES_AGENT',
             choices: ['devices', 'built-in'],
-            description: 'devices = your PC with USB phones. built-in = run on server (needs adb connect for network devices).'
+            description: 'devices = your PC with USB phones. built-in = run on server'
         )
     }
 
@@ -19,6 +15,7 @@ pipeline {
     }
 
     stages {
+
         stage('Code Checkout from Git Server') {
             agent { label 'built-in' }
             steps {
@@ -49,7 +46,10 @@ pipeline {
                     if (isUnix()) {
                         code = sh(
                             script: '''
-                                export PROJECT_ROOT="$PWD"
+                                echo =====================================
+                                echo EXECUTING TESTS ON DEVICES
+                                echo =====================================
+                                adb devices
                                 chmod +x scripts/run_non_printing_parallel.sh || true
                                 ./scripts/run_non_printing_parallel.sh
                             ''',
@@ -58,7 +58,10 @@ pipeline {
                     } else {
                         code = bat(
                             script: '''
-                                set PROJECT_ROOT=%CD%
+                                echo =====================================
+                                echo EXECUTING TESTS ON DEVICES
+                                echo =====================================
+                                adb devices
                                 call scripts\\run_non_printing_parallel.bat
                             ''',
                             returnStatus: true
@@ -67,7 +70,10 @@ pipeline {
                     env.TEST_EXIT_CODE = "${code}"
                     echo "Maestro exit code: ${code}"
                 }
-                stash name: 'maestro-results', includes: '.maestro/**/*,report*.xml,report_retry.xml,reports/**/*', allowEmpty: true
+
+                stash name: 'maestro-results',
+                      includes: '.maestro/**/*,report*.xml,reports/**/*',
+                      allowEmpty: true
             }
         }
 
@@ -80,7 +86,16 @@ pipeline {
                 dir('ai-doctor') {
                     sh 'node index.mjs'
                 }
-                stash name: 'workspace', includes: '**/*'
+            }
+        }
+
+        stage('Send Failure Notification') {
+            agent { label 'built-in' }
+            when { expression { env.TEST_EXIT_CODE != '0' } }
+            steps {
+                mail to: 'kodaksmilechina@gmail.com',
+                     subject: "❌ Jenkins Build Failed - ${env.JOB_NAME}",
+                     body: "Check: ${env.BUILD_URL}"
             }
         }
 
@@ -89,7 +104,8 @@ pipeline {
             steps {
                 unstash 'workspace'
                 unstash 'maestro-results'
-                archiveArtifacts artifacts: '.maestro/**/*,report*.xml,reports/**/*,ai-doctor/artifacts/**/*', allowEmptyArchive: true
+                archiveArtifacts artifacts: '.maestro/**/*,report*.xml,reports/**/*,ai-doctor/artifacts/**/*',
+                                  allowEmptyArchive: true
             }
         }
     }
@@ -97,11 +113,6 @@ pipeline {
     post {
         always {
             echo 'Pipeline finished.'
-        }
-        failure {
-            mail to: 'kodaksmilechina@gmail.com',
-                 subject: "❌ Jenkins Build Failed - ${env.JOB_NAME}",
-                 body: "Check: ${env.BUILD_URL}"
         }
     }
 }
