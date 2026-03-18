@@ -1,10 +1,3 @@
-// index.mjs (FULL COPY-PASTE with MEMORY support)
-//
-// ✅ Adds persistent memory: ai-doctor/memory.json
-// ✅ Loads memory at startup
-// ✅ Writes/updates memory after runPipeline()
-// ✅ Keeps your existing logic intact (tests, ai-report, email, retry, webhook)
-
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -22,7 +15,7 @@ const __dirname = path.dirname(__filename);
 // Project root = parent folder of ai-doctor
 const projectRoot = path.join(__dirname, "..");
 
-// Report path
+// Existing report from Jenkins pipeline
 const reportPath = process.argv[2] || path.join(projectRoot, "report.xml");
 
 const artifactDir = path.join(__dirname, "artifacts");
@@ -39,7 +32,7 @@ function getMaestroCmd() {
 }
 
 // ======================================================
-// ✅ MEMORY (PERSIST ACROSS RUNS)
+// MEMORY (PERSIST ACROSS RUNS)
 // ======================================================
 const memoryPath = path.join(__dirname, "memory.json");
 
@@ -63,80 +56,122 @@ function safeWriteJson(filePath, obj) {
   }
 }
 
-// Load memory (creates file later if missing)
 let memory = safeReadJson(memoryPath, {});
 console.log("🧾 Memory loaded:", memoryPath, `(keys=${Object.keys(memory).length})`);
 
 // ======================================================
-// RUN TESTS FROM /tests WITH LIVE FLOW UPDATES
+// USE EXISTING REPORT FROM JENKINS PIPELINE
 // ======================================================
 const testsDir = path.join(projectRoot, "flows");
+const stdoutLog = path.join(artifactDir, "maestro_stdout.log");
+const stderrLog = path.join(artifactDir, "maestro_stderr.log");
+const testOutputDir = path.join(artifactDir, "test-output");
 
 if (!fs.existsSync(testsDir)) {
   console.error(`❌ Tests folder not found: ${testsDir}`);
   process.exit(2);
 }
 
-console.log("▶ Running fresh Maestro tests (ALL flows):", testsDir);
+if (!fs.existsSync(reportPath)) {
+  console.error(`❌ report.xml not found: ${reportPath}`);
+  process.exit(2);
+}
 
-const stdoutLog = path.join(artifactDir, "maestro_stdout.log");
-const stderrLog = path.join(artifactDir, "maestro_stderr.log");
-const testOutputDir = path.join(artifactDir, "test-output");
-
-// Always remove old report before running (prevents stale parsing)
-try {
-  if (fs.existsSync(reportPath)) fs.unlinkSync(reportPath);
-} catch {}
-
-// Ensure test output dir exists
 try {
   if (!fs.existsSync(testOutputDir)) fs.mkdirSync(testOutputDir, { recursive: true });
 } catch {}
 
-// Run ALL flows (yaml + yml)
-const maestroCmd = `${getMaestroCmd()} test "${testsDir}"/flow*.y*ml --format junit --output "${reportPath}" --test-output-dir "${testOutputDir}"`;
+console.log("📄 Using existing Maestro report from pipeline:", reportPath);
 
-// LIVE OUTPUT + SAVE LOGS
-const run = spawnSync(
-  "bash",
-  ["-lc", `${maestroCmd} 2> "${stderrLog}" | tee "${stdoutLog}"`],
-  { cwd: projectRoot, stdio: "inherit" }
-);
+// ======================================================
+// INITIAL AI ANALYSIS
+// ======================================================
+let initialResult = await runPipeline(reportPath);
+let finalResult = initialResult;
 
-if (run.status === 0) {
-  console.log("✅ Maestro command finished. report.xml generated (check results below).");
+console.log("🧠 Initial AI analysis complete.");
+
+// ======================================================
+// RETRY ONLY FAILED FLOWS
+// ======================================================
+if (initialResult.retryRecommended) {
+  console.log("🔁 Retry triggered by AI");
+
+  const flowNums = [
+    ...new Set(
+      (initialResult.failedTests || [])
+        .map((t) => (String(t.name || "").match(/\bFlow(\d+)\b/i) || [])[1])
+        .filter(Boolean)
+    ),
+  ].sort((a, b) => Number(a) - Number(b));
+
+  if (flowNums.length === 0) {
+    console.log("⚠️ Retry skipped: no Flow numbers found in failedTests.");
+  } else {
+    const retryFiles = [];
+
+    for (const n of flowNums) {
+      const f1 = path.join(testsDir, `flow${n}.yaml`);
+      const f2 = path.join(testsDir, `flow${n}.yml`);
+      if (fs.existsSync(f1)) retryFiles.push(f1);
+      else if (fs.existsSync(f2)) retryFiles.push(f2);
+      else console.log(`⚠️ Missing file for Flow${n}: expected flow${n}.yaml or flow${n}.yml`);
+    }
+
+    if (retryFiles.length === 0) {
+      console.log("❌ Retry skipped: no failed flow YAML files found.");
+    } else {
+      console.log("🔁 Retrying ONLY failed flows:");
+      for (const f of retryFiles) console.log(" -", f);
+
+      const retryReportPath = path.join(projectRoot, "report_retry.xml");
+
+      try {
+        if (fs.existsSync(retryReportPath)) fs.unlinkSync(retryReportPath);
+      } catch {}
+
+      const retryCmd =
+        `${getMaestroCmd()} test ${retryFiles.map((f) => `"${f}"`).join(" ")} ` +
+        `--format junit --output "${retryReportPath}" --test-output-dir "${testOutputDir}"`;
+
+      const retryRun = spawnSync(
+        "bash",
+        ["-lc", `${retryCmd} 2>> "${stderrLog}" | tee -a "${stdoutLog}"`],
+        {
+          cwd: projectRoot,
+          stdio: "inherit",
+        }
+      );
+
+      console.log("✅ Retry finished. Retry report:", retryReportPath);
+      console.log("🔁 Retry exit code:", retryRun.status);
+
+      if (fs.existsSync(retryReportPath)) {
+        finalResult = await runPipeline(retryReportPath);
+        console.log("🧠 Final AI analysis complete using retry report.");
+      } else {
+        console.log("⚠️ Retry report not generated. Using initial AI analysis result.");
+      }
+    }
+  }
 } else {
-  console.log("❌ Maestro command failed (non-zero exit). Still attempting to analyze report…");
-}
-
-// Ensure report exists
-if (!fs.existsSync(reportPath)) {
-  console.error("❌ report.xml was not generated.");
-  console.error("👉 Check logs:");
-  console.error(" -", stdoutLog);
-  console.error(" -", stderrLog);
-  process.exit(2);
+  console.log("✅ Retry not recommended by AI.");
 }
 
 // ======================================================
-// AI Analysis (per-flow + screenshot matching)
+// SAVE FINAL AI REPORT
 // ======================================================
-const result = await runPipeline(reportPath);
-
 const outFile = path.join(artifactDir, "ai-report.json");
-fs.writeFileSync(outFile, JSON.stringify(result, null, 2));
+fs.writeFileSync(outFile, JSON.stringify(finalResult, null, 2));
 console.log("📝 AI report saved:", outFile);
 
 // ======================================================
-// ✅ UPDATE MEMORY AFTER EACH RUN
-// Stores last failure + fix suggestion per flowKey
+// UPDATE MEMORY AFTER FINAL RESULT
 // ======================================================
 try {
   const now = new Date().toISOString();
 
-  for (const r of result.resultsByFlow || []) {
-    // Only store when we have a stable key
-    // (Your pipeline uses flowKey; can be "unknown" if test name has no FlowXX)
+  for (const r of finalResult.resultsByFlow || []) {
     if (!r.flowKey || r.flowKey === "unknown") continue;
 
     memory[r.flowKey] = {
@@ -157,25 +192,27 @@ try {
   console.log("⚠️ Memory update skipped:", e?.message || e);
 }
 
-// Print failed flows cleanly
-if (Array.isArray(result.failedTests) && result.failedTests.length > 0) {
+// ======================================================
+// PRINT FAILED FLOWS CLEANLY
+// ======================================================
+if (Array.isArray(finalResult.failedTests) && finalResult.failedTests.length > 0) {
   console.log("❌ Failed Flows:");
-  for (const t of result.failedTests) {
+  for (const t of finalResult.failedTests) {
     console.log(`- ${t.name}${t.time ? ` (${t.time}s)` : ""} (${t.message})`);
   }
 }
 
 // ======================================================
-// EMAIL (HTML + inline screenshots + attachments)
+// EMAIL (AFTER RETRY + FINAL ANALYSIS)
 // ======================================================
 try {
   const hasFailures =
-    (typeof result.failuresCount === "number" && result.failuresCount > 0) ||
-    (Array.isArray(result.failedTests) && result.failedTests.length > 0);
+    (typeof finalResult.failuresCount === "number" && finalResult.failuresCount > 0) ||
+    (Array.isArray(finalResult.failedTests) && finalResult.failedTests.length > 0);
 
   if (hasFailures) {
     if (isEmailConfigured()) {
-      const subject = `[Kodak Smile] Maestro Failed - ${result.failuresCount || 0} failure(s)`;
+      const subject = `[Kodak Smile] Maestro Failed - ${finalResult.failuresCount || 0} failure(s)`;
 
       const safe = (s) =>
         String(s || "")
@@ -183,7 +220,6 @@ try {
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;");
 
-      // Text fallback
       const text = [
         "Kodak Smile Maestro run failed.",
         "",
@@ -193,7 +229,7 @@ try {
         `Test Output Dir: ${testOutputDir}`,
         "",
         "Per-flow results:",
-        ...(result.resultsByFlow || []).flatMap((r) => [
+        ...(finalResult.resultsByFlow || []).flatMap((r) => [
           `- ${r.flowName} ${r.time ? `(${r.time}s)` : ""}`,
           `  Failure: ${r.failureMessage || ""}`,
           `  Root cause: ${r.rootCause || ""}`,
@@ -202,22 +238,21 @@ try {
         ]),
       ].join("\n");
 
-      // Build attachments (inline images via CID + also attached)
       const attachments = [];
-      for (const r of result.resultsByFlow || []) {
+      for (const r of finalResult.resultsByFlow || []) {
         const shots = Array.isArray(r.screenshots) ? r.screenshots : [];
         shots.forEach((p, idx) => {
           if (typeof p === "string" && fs.existsSync(p)) {
             attachments.push({
               filename: path.basename(p),
               path: p,
-              cid: `${r.flowKey}_${idx}`, // allows inline display in HTML
+              cid: `${r.flowKey}_${idx}`,
             });
           }
         });
       }
 
-      const perFlowHtml = (result.resultsByFlow || [])
+      const perFlowHtml = (finalResult.resultsByFlow || [])
         .map((r) => {
           const shots = Array.isArray(r.screenshots) ? r.screenshots : [];
           const imgs = shots
@@ -236,9 +271,7 @@ try {
                   r.time ? `<span style="color:#666;font-weight:500">(${r.time}s)</span>` : ""
                 }
               </div>
-              <div style="color:#444;margin:6px 0;"><b>Failure:</b> ${safe(
-                r.failureMessage
-              )}</div>
+              <div style="color:#444;margin:6px 0;"><b>Failure:</b> ${safe(r.failureMessage)}</div>
               <div style="color:#444;margin:6px 0;"><b>Root cause:</b> ${safe(r.rootCause)}</div>
               <div style="color:#444;margin:6px 0;white-space:pre-wrap;"><b>Suggested fix:</b><br/>${safe(
                 r.suggestedFix
@@ -268,8 +301,8 @@ try {
           </div>
 
           <div style="padding:12px;background:#f7f7f7;border:1px solid #eee;border-radius:12px;">
-            <div><b>Failures:</b> ${safe(result.failuresCount)}</div>
-            <div><b>Retry Recommended:</b> ${result.retryRecommended ? "Yes" : "No"}</div>
+            <div><b>Failures:</b> ${safe(finalResult.failuresCount)}</div>
+            <div><b>Retry Recommended:</b> ${finalResult.retryRecommended ? "Yes" : "No"}</div>
           </div>
 
           <h3 style="margin:18px 0 8px 0;">Per-flow AI suggestions</h3>
@@ -287,59 +320,14 @@ try {
       console.log("📧 Email not sent (SMTP env not configured).");
     }
   } else {
-    console.log("📧 No failures detected (no email).");
+    console.log("📧 No failures detected after retry (no email).");
   }
 } catch (e) {
   console.error("❌ Email send failed:", e?.message || e);
 }
 
 // ======================================================
-// Retry only failed flows
+// WEBHOOK
 // ======================================================
-if (result.retryRecommended) {
-  console.log("🔁 Retry triggered by AI");
-
-  const flowNums = [
-    ...new Set(
-      (result.failedTests || [])
-        .map((t) => (String(t.name || "").match(/\bFlow(\d+)\b/i) || [])[1])
-        .filter(Boolean)
-    ),
-  ].sort((a, b) => Number(a) - Number(b));
-
-  if (flowNums.length === 0) {
-    console.log("⚠️ Retry skipped: no Flow numbers found in failedTests.");
-  } else {
-    const retryFiles = [];
-    for (const n of flowNums) {
-      const f1 = path.join(testsDir, `flow${n}.yaml`);
-      const f2 = path.join(testsDir, `flow${n}.yml`);
-      if (fs.existsSync(f1)) retryFiles.push(f1);
-      else if (fs.existsSync(f2)) retryFiles.push(f2);
-      else console.log(`⚠️ Missing file for Flow${n}: expected flow${n}.yaml or flow${n}.yml`);
-    }
-
-    if (retryFiles.length === 0) {
-      console.log("❌ Retry skipped: no failed flow YAML files found.");
-    } else {
-      console.log("🔁 Retrying ONLY failed flows:");
-      for (const f of retryFiles) console.log(" -", f);
-
-      const retryReportPath = path.join(projectRoot, "report_retry.xml");
-
-      const retryCmd =
-        `${getMaestroCmd()} test ${retryFiles.map((f) => `"${f}"`).join(" ")} ` +
-        `--format junit --output "${retryReportPath}" --test-output-dir "${testOutputDir}"`;
-
-      spawnSync("bash", ["-lc", `${retryCmd} 2>> "${stderrLog}" | tee -a "${stdoutLog}"`], {
-        cwd: projectRoot,
-        stdio: "inherit",
-      });
-
-      console.log("✅ Retry finished. Retry report:", retryReportPath);
-    }
-  }
-}
-
-await triggerWebhook(result);
+await triggerWebhook(finalResult);
 console.log("✅ AI Debug Agent Completed");
