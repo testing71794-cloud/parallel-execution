@@ -36,7 +36,11 @@ pipeline {
             steps {
                 unstash 'workspace'
                 sh '''
-                    echo "Installing dependencies..."
+                    echo "Installing root dependencies..."
+                    npm ci || npm install
+
+                    echo "Installing AI Doctor dependencies..."
+                    cd ai-doctor
                     npm ci || npm install
                 '''
                 stash name: 'workspace', includes: '**/*'
@@ -57,7 +61,9 @@ pipeline {
                     if (isUnix()) {
                         code = sh(
                             script: '''
-                                echo "Running tests on devices..."
+                                echo "====================================="
+                                echo "RUNNING TESTS ON PHYSICAL DEVICES"
+                                echo "====================================="
                                 adb devices
                                 chmod +x scripts/run_non_printing_parallel.sh || true
                                 ./scripts/run_non_printing_parallel.sh
@@ -67,7 +73,9 @@ pipeline {
                     } else {
                         code = bat(
                             script: '''
-                                echo Running tests on devices...
+                                echo =====================================
+                                echo RUNNING TESTS ON PHYSICAL DEVICES
+                                echo =====================================
                                 adb devices
                                 call scripts\\run_non_printing_parallel.bat
                             ''',
@@ -96,9 +104,15 @@ pipeline {
 
                 script {
                     if (isUnix()) {
-                        sh 'python3 scripts/generate_excel_report.py'
+                        sh '''
+                            echo "Generating Excel report..."
+                            python3 scripts/generate_excel_report.py
+                        '''
                     } else {
-                        bat 'python scripts\\generate_excel_report.py'
+                        bat '''
+                            echo Generating Excel report...
+                            python scripts\\generate_excel_report.py
+                        '''
                     }
                 }
 
@@ -109,7 +123,7 @@ pipeline {
         }
 
         // =========================
-        // 5. AI ANALYSIS + RETRY
+        // 5. AI ANALYSIS + SMART RETRY
         // =========================
         stage('AI Failure Analysis + Smart Retry') {
             agent { label 'built-in' }
@@ -120,35 +134,40 @@ pipeline {
 
                 dir('ai-doctor') {
                     sh '''
-                        echo "Running AI analysis..."
+                        echo "Running AI analysis and retry flow..."
                         node index.mjs
                     '''
                 }
+
+                stash name: 'ai-results',
+                      includes: 'ai-doctor/artifacts/**/*,report_retry.xml',
+                      allowEmpty: true
             }
         }
 
         // =========================
-        // 6. SEND EMAIL (MANAGEMENT)
+        // 6. SEND EMAIL
         // =========================
-        stage('Send Failure Email (with Excel Report)') {
+        stage('Send Failure Email (Management View)') {
             agent { label 'built-in' }
             when { expression { env.TEST_EXIT_CODE != '0' } }
             steps {
                 unstash 'excel-report'
-
                 echo "Sending failure notification email..."
 
                 mail to: 'kodaksmilechina@gmail.com',
-                     subject: "❌ Kodak Automation Failed - ${env.JOB_NAME}",
-                     body: """
-Build: ${env.BUILD_NUMBER}
+                     subject: "❌ Kodak Automation Failed - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                     body: """Build: ${env.BUILD_NUMBER}
 
-Some test flows failed.
+Job: ${env.JOB_NAME}
 
-AI analysis has been completed.
+Some flows failed during execution on physical devices.
 
-Download Excel report from Jenkins:
-${env.BUILD_URL}
+AI analysis and retry have been completed.
+
+You can review:
+- Build details: ${env.BUILD_URL}
+- Archived Excel report: reports/maestro_summary.xlsx
 
 Regards,
 Automation System
@@ -164,21 +183,20 @@ Automation System
             steps {
                 unstash 'maestro-results'
                 unstash 'excel-report'
+                script {
+                    try {
+                        unstash 'ai-results'
+                    } catch (Exception e) {
+                        echo "No AI results stash found, continuing..."
+                    }
+                }
 
-                archiveArtifacts artifacts: '''
-                    .maestro/**/*,
-                    report*.xml,
-                    reports/**/*,
-                    ai-doctor/artifacts/**/*
-                ''',
-                allowEmptyArchive: true
+                archiveArtifacts artifacts: '.maestro/**/*,report*.xml,reports/**/*,ai-doctor/artifacts/**/*',
+                                 allowEmptyArchive: true
             }
         }
     }
 
-    // =========================
-    // POST ACTIONS
-    // =========================
     post {
         always {
             echo 'Pipeline completed.'
