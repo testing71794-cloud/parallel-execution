@@ -7,7 +7,10 @@ from openpyxl.utils import get_column_letter
 
 PROJECT_ROOT = os.getcwd()
 REPORTS_DIR = os.path.join(PROJECT_ROOT, "reports")
-OUTPUT_FILE = os.path.join(PROJECT_ROOT, "reports", "maestro_summary.xlsx")
+OUTPUT_FILE = os.path.join(REPORTS_DIR, "maestro_summary.xlsx")
+
+# ✅ FIX: Ensure reports folder exists
+os.makedirs(REPORTS_DIR, exist_ok=True)
 
 wb = Workbook()
 ws = wb.active
@@ -36,6 +39,7 @@ for col_idx, header in enumerate(headers, start=1):
 build_number = os.environ.get("BUILD_NUMBER", "")
 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+# Process device-wise reports
 if os.path.isdir(REPORTS_DIR):
     for device_id in os.listdir(REPORTS_DIR):
         device_path = os.path.join(REPORTS_DIR, device_id)
@@ -83,6 +87,7 @@ if os.path.isdir(REPORTS_DIR):
                 str(e)
             ])
 
+# Color formatting
 for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=5, max_col=5):
     for cell in row:
         if cell.value == "Passed":
@@ -90,6 +95,7 @@ for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=5, max_col=5):
         elif cell.value == "Failed":
             cell.font = Font(color="FF0000", bold=True)
 
+# Auto column width
 for col in range(1, ws.max_column + 1):
     max_length = 0
     col_letter = get_column_letter(col)
@@ -99,4 +105,5 @@ for col in range(1, ws.max_column + 1):
     ws.column_dimensions[col_letter].width = min(max_length + 2, 45)
 
 wb.save(OUTPUT_FILE)
-print(f"Excel report generated: {OUTPUT_FILE}")
+
+print(f"✅ Excel report generated: {OUTPUT_FILE}")
