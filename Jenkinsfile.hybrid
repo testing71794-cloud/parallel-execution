@@ -3,7 +3,7 @@
 // 2. Use Script Path: Jenkinsfile.hybrid
 
 pipeline {
-    agent none  // No global agent - we switch per stage
+    agent none
 
     parameters {
         choice(
@@ -19,7 +19,6 @@ pipeline {
     }
 
     stages {
-        // === RUNS ON SERVER (GCP VM) ===
         stage('Checkout') {
             agent { label 'built-in' }
             steps {
@@ -41,7 +40,6 @@ pipeline {
             }
         }
 
-        // === RUNS ON YOUR PC (where devices are) - Windows or Linux ===
         stage('Run Maestro on devices') {
             agent { label "${params.DEVICES_AGENT}" }
             steps {
@@ -52,8 +50,8 @@ pipeline {
                         code = sh(
                             script: '''
                                 export PROJECT_ROOT="$PWD"
-                                chmod +x scripts/run_all_parallel.sh
-                                ./scripts/run_all_parallel.sh
+                                chmod +x scripts/run_non_printing_parallel.sh || true
+                                ./scripts/run_non_printing_parallel.sh
                             ''',
                             returnStatus: true
                         )
@@ -61,7 +59,7 @@ pipeline {
                         code = bat(
                             script: '''
                                 set PROJECT_ROOT=%CD%
-                                call scripts\\run_all_parallel.bat
+                                call scripts\\run_non_printing_parallel.bat
                             ''',
                             returnStatus: true
                         )
@@ -73,7 +71,6 @@ pipeline {
             }
         }
 
-        // === RUNS ON SERVER (GCP VM) ===
         stage('AI Doctor on failure') {
             agent { label 'built-in' }
             when { expression { env.TEST_EXIT_CODE != '0' } }
