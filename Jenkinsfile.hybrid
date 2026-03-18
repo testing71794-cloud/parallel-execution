@@ -19,7 +19,7 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
+        stage('Code Checkout from Git Server') {
             agent { label 'built-in' }
             steps {
                 checkout scm
@@ -27,7 +27,7 @@ pipeline {
             }
         }
 
-        stage('Install AI Doctor deps') {
+        stage('Install Automation and AI Dependencies') {
             agent { label 'built-in' }
             steps {
                 unstash 'workspace'
@@ -40,7 +40,7 @@ pipeline {
             }
         }
 
-        stage('Run Maestro on devices') {
+        stage('Execute Tests on Physical Devices') {
             agent { label "${params.DEVICES_AGENT}" }
             steps {
                 unstash 'workspace'
@@ -71,7 +71,7 @@ pipeline {
             }
         }
 
-        stage('AI Doctor on failure') {
+        stage('AI-Based Failure Analysis') {
             agent { label 'built-in' }
             when { expression { env.TEST_EXIT_CODE != '0' } }
             steps {
@@ -84,7 +84,7 @@ pipeline {
             }
         }
 
-        stage('Archive') {
+        stage('Archive Reports and Results') {
             agent { label 'built-in' }
             steps {
                 unstash 'workspace'
