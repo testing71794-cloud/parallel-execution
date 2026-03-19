@@ -12,9 +12,6 @@ if (!(Test-Path $adb)) {
 Write-Host "===== ADB DEVICES ====="
 & $adb devices
 
-Write-Host "===== MAESTRO DEVICES ====="
-maestro devices
-
 $devices = & $adb devices | Select-Object -Skip 1 | ForEach-Object {
     $parts = ($_ -replace "`r","") -split "\s+"
     if ($parts.Length -ge 2 -and $parts[1] -eq "device") { $parts[0] }
@@ -57,8 +54,9 @@ foreach ($flow in $flows) {
         $xmlFile = "reports\nonprinting\${safeFlow}_$device.xml"
 
         Write-Host "Running on device: $device"
+        $env:ANDROID_SERIAL = $device
 
-        & maestro test -d $device $flow --format junit --output $xmlFile *>&1 | Tee-Object -FilePath $logFile
+        & maestro test $flow --format junit --output $xmlFile *>&1 | Tee-Object -FilePath $logFile
 
         if ($LASTEXITCODE -ne 0) {
             Write-Host "Failed on device $device for flow $flow"
