@@ -1,4 +1,3 @@
-\
 $ErrorActionPreference = "Stop"
 Set-Location "$PSScriptRoot\.."
 
@@ -45,6 +44,7 @@ $hadFailure = $false
 $failedItems = @()
 
 foreach ($flow in $flows) {
+
     if (!(Test-Path $flow)) {
         Write-Host "Flow not found: $flow"
         $hadFailure = $true
@@ -58,6 +58,7 @@ foreach ($flow in $flows) {
     Write-Host "======================================="
 
     foreach ($device in $devices) {
+
         $safeFlow = [System.IO.Path]::GetFileNameWithoutExtension($flow)
         $logFile = "reports\printing\${safeFlow}_$device.log"
         $xmlFile = "reports\printing\${safeFlow}_$device.xml"
@@ -79,6 +80,7 @@ foreach ($flow in $flows) {
 }
 
 $files = Get-ChildItem "reports\printing\*.xml" -ErrorAction SilentlyContinue
+
 if (-not $files) {
     Write-Host "No test reports generated!"
     $hadFailure = $true

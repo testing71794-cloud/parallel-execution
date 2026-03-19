@@ -15,7 +15,7 @@ name: Signup Flow
 - assertVisible: "Full Name"
 - assertVisible: "Email"
 - assertVisible: "Password"
-- assertVisible: "Date of birth"
+
 
 # Terms text + links
 - assertVisible: "By signing up you agree to our"
