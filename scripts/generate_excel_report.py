@@ -9,7 +9,7 @@ PROJECT_ROOT = os.getcwd()
 REPORTS_DIR = os.path.join(PROJECT_ROOT, "reports")
 OUTPUT_FILE = os.path.join(REPORTS_DIR, "maestro_summary.xlsx")
 
-# ✅ FIX: Ensure reports folder exists
+#  FIX: Ensure reports folder exists
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
 wb = Workbook()
@@ -106,4 +106,4 @@ for col in range(1, ws.max_column + 1):
 
 wb.save(OUTPUT_FILE)
 
-print(f"✅ Excel report generated: {OUTPUT_FILE}")
+print(fExcel report generated: {OUTPUT_FILE}")
