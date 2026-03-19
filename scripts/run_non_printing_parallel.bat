@@ -11,7 +11,7 @@ echo =====================================
 powershell -ExecutionPolicy Bypass -File "%~dp0run_flows_non_printing.ps1"
 
 if %ERRORLEVEL% NEQ 0 (
-    echo Non-printing flows failed!
+    echo Non-printing flows completed with failures.
     exit /b 1
 )
 

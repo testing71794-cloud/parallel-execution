@@ -37,10 +37,15 @@ $flows = @(
 
 New-Item -ItemType Directory -Force -Path "reports\nonprinting" | Out-Null
 
+$hadFailure = $false
+$failedItems = @()
+
 foreach ($flow in $flows) {
     if (!(Test-Path $flow)) {
         Write-Host "Flow not found: $flow"
-        exit 1
+        $hadFailure = $true
+        $failedItems += "$flow :: FILE_NOT_FOUND"
+        continue
     }
 
     Write-Host ""
@@ -60,7 +65,9 @@ foreach ($flow in $flows) {
 
         if ($LASTEXITCODE -ne 0) {
             Write-Host "Failed on device $device for flow $flow"
-            exit 1
+            $hadFailure = $true
+            $failedItems += "$flow :: $device"
+            continue
         }
     }
 
@@ -70,6 +77,14 @@ foreach ($flow in $flows) {
 $files = Get-ChildItem "reports\nonprinting\*.xml" -ErrorAction SilentlyContinue
 if (-not $files) {
     Write-Host "No test reports generated!"
+    $hadFailure = $true
+    $failedItems += "REPORTS :: NON_PRINTING :: NONE_GENERATED"
+}
+
+if ($hadFailure) {
+    Write-Host ""
+    Write-Host "================ FAILED FLOWS ================"
+    $failedItems | ForEach-Object { Write-Host $_ }
     exit 1
 }
 
