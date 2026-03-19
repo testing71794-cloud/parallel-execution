@@ -1,5 +1,5 @@
 appId: com.kodaksmile
-name: Flow7 - Filter/Edit + Print 3 + Back to Album
+name: Flow7 - Filter/Edit + save image + Back to Album
 ---
 - launchApp:
     clearState: true

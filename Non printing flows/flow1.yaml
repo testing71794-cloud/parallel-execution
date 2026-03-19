@@ -1,5 +1,5 @@
 appId: com.kodaksmile
-name: Flow1 Find Printer and Connect
+name: Flow1 Do Later + Onboarding + Print My First Picture + Preview
 ---
 - launchApp:
     clearState: true
@@ -15,8 +15,8 @@ name: Flow1 Find Printer and Connect
 - runFlow: ../flows/handleBluetoothPairing.yaml
 # Swipe right → left
 - swipe:
-          start: "80%,55%"
-          end: "20%,55%"
+    start: "80%,55%"
+    end: "20%,55%"
 - runFlow:
     when:
       visible: "Print My First Picture"

@@ -7,6 +7,9 @@ reports/
 *.png
 *.xml
 *.json
+# Allow package files
+!**/package.json
+!**/package-lock.json
 
 .android
 .aws

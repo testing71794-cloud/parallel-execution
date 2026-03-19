@@ -16,11 +16,19 @@ name: Flow3 - Login + Onboarding + Home
     commands:
       - tapOn: "Log In"
       - waitForAnimationToEnd
-
+- runFlow:
+    when:
+      visible: "No, thanks"
+    commands:
+      - tapOn: "No, thanks"
 # Enter email
 - tapOn: "Email"
 - inputText: "Atomation46@yopmail.com"
-
+- runFlow:
+    when:
+      visible: "No, thanks"
+    commands:
+      - tapOn: "No, thanks"
 # Enter wrong password + verify error
 - tapOn: "Password"
 - inputText: "WrongPass123"
