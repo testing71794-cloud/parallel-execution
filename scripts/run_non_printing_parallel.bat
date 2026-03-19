@@ -1,22 +1,24 @@
 @echo off
 setlocal enabledelayedexpansion
 
+cd /d %~dp0..
 echo =====================================
 echo DETECTING CONNECTED DEVICES
 echo =====================================
 
-set COUNT=0
+set DEVICE_COUNT=0
 
-for /f "skip=1 tokens=1" %%D in ('adb devices') do (
-    if not "%%D"=="" if not "%%D"=="List" (
-        set /a COUNT+=1
+for /f "skip=1 tokens=1,2" %%A in ('adb devices') do (
+    if "%%B"=="device" (
+        set /a DEVICE_COUNT+=1
+        set DEVICE!DEVICE_COUNT!=%%A
     )
 )
 
-echo Devices found: %COUNT%
+echo Devices found: %DEVICE_COUNT%
 
-if %COUNT% LEQ 0 (
-    echo ❌ No devices found. Exiting...
+if %DEVICE_COUNT% LEQ 0 (
+    echo No devices found. Exiting...
     exit /b 1
 )
 
@@ -24,29 +26,49 @@ echo =====================================
 echo RUNNING NON PRINTING FLOWS
 echo =====================================
 
-echo Running on %COUNT% device(s)...
+call :run_flow_on_all "Non printing flows\flow1.yaml"
+if errorlevel 1 exit /b 1
 
-REM Clean old report if exists
-if exist report.xml del report.xml
+call :run_flow_on_all "Non printing flows\flow2.yaml"
+if errorlevel 1 exit /b 1
 
-REM Run Maestro with report generation
-maestro test "Non printing flows" ^
-  --shard-all=%COUNT% ^
-  --format junit ^
-  --output report.xml
+call :run_flow_on_all "Non printing flows\flow3.yaml"
+if errorlevel 1 exit /b 1
 
-set EXIT_CODE=%ERRORLEVEL%
+call :run_flow_on_all "Non printing flows\flow4.yaml"
+if errorlevel 1 exit /b 1
 
+call :run_flow_on_all "Non printing flows\flow5.yaml"
+if errorlevel 1 exit /b 1
+
+call :run_flow_on_all "Non printing flows\flow6.yaml"
+if errorlevel 1 exit /b 1
+
+call :run_flow_on_all "Non printing flows\flow7.yaml"
+if errorlevel 1 exit /b 1
+
+echo All non-printing flows completed successfully.
+exit /b 0
+
+:run_flow_on_all
+set FLOW=%~1
+echo.
 echo =====================================
-echo MAESTRO EXECUTION COMPLETE
-echo Exit Code: %EXIT_CODE%
+echo Running %FLOW% on all devices
 echo =====================================
 
-REM Verify report.xml exists
-if exist report.xml (
-    echo ✅ report.xml generated successfully
-) else (
-    echo ❌ report.xml NOT generated
+if not exist reports mkdir reports
+
+set JOB_COUNT=0
+for /L %%I in (1,1,%DEVICE_COUNT%) do (
+    set /a JOB_COUNT+=1
+    start "maestro_%%I" cmd /c "maestro test -d !DEVICE%%I! "%FLOW%" --format junit > reports\flow_%%~n1_device_%%I.log 2>&1"
 )
 
-exit /b %EXIT_CODE%
+:wait_loop
+timeout /t 3 >nul
+tasklist | findstr /i "maestro.exe" >nul
+if %errorlevel%==0 goto wait_loop
+
+echo Finished %FLOW% on all devices.
+exit /b 0
