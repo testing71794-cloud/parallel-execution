@@ -103,7 +103,6 @@ for col in range(1, ws.max_column + 1):
         value = "" if cell.value is None else str(cell.value)
         max_length = max(max_length, len(value))
     ws.column_dimensions[col_letter].width = min(max_length + 2, 45)
-
 wb.save(OUTPUT_FILE)
 
-print(fExcel report generated: {OUTPUT_FILE}")
+print(f"Excel report generated: {OUTPUT_FILE}")
