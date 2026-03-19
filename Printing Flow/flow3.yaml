@@ -16,10 +16,21 @@ name: Flow3 - Login + Onboarding + Camera (AR) + Home
     commands:
       - tapOn: "Log In"
       - waitForAnimationToEnd
-
+- runFlow:
+    when:
+      visible: "No, thanks"
+    commands:
+      - tapOn: "No, thanks"
+      - waitForAnimationToEnd
 # Enter email
 - tapOn: "Email"
 - inputText: "Atomation46@yopmail.com"
+- runFlow:
+    when:
+      visible: "No, thanks"
+    commands:
+      - tapOn: "No, thanks"
+      - waitForAnimationToEnd
 
 # Enter wrong password + verify error
 - tapOn: "Password"

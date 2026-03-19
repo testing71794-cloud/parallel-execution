@@ -1,6 +1,5 @@
-
 appId: com.kodaksmile
-name: Flow9 - Collage -> Home 
+name: Flow9 - Collage -> Home
 ---
 - launchApp:
     clearState: true
@@ -117,8 +116,8 @@ name: Flow9 - Collage -> Home
     commands:
       # choose replacement image
       - tapOn:
-         id: imageViewPhoto
-         index: 1
+          id: imageViewPhoto
+          index: 1
       - waitForAnimationToEnd
 
       # confirm replacement (collage auto-updates)

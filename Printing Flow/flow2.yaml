@@ -1,5 +1,5 @@
 appId: com.kodaksmile
-name: Flow2 - Signup to Home - Go to Homepage
+name: Flow2 - do it later to Home - Go to Homepage
 ---
 - runFlow: ../elements/loadElements.yaml
 
@@ -13,8 +13,8 @@ name: Flow2 - Signup to Home - Go to Homepage
 - runFlow: ../flows/swipe screen.yaml
 - waitForAnimationToEnd
 - swipe:
-   start: "75%,55%"
-   end: "15%,45%"
+    start: "75%,55%"
+    end: "15%,45%"
 - waitForAnimationToEnd
 # Load camera paper screen
 - runFlow:

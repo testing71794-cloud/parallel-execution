@@ -23,8 +23,8 @@ if (!fs.existsSync(artifactDir)) {
   fs.mkdirSync(artifactDir, { recursive: true });
 }
 
-console.log("🧠 Kodak Maestro AI Debug Agent Started");
-console.log("📂 Using report:", reportPath);
+console.log("Kodak Maestro AI Debug Agent Started");
+console.log("Using report:", reportPath);
 
 function getMaestroCmd() {
   const p = path.join(os.homedir(), ".maestro", "bin", "maestro");
@@ -57,7 +57,7 @@ function safeWriteJson(filePath, obj) {
 }
 
 let memory = safeReadJson(memoryPath, {});
-console.log("🧾 Memory loaded:", memoryPath, `(keys=${Object.keys(memory).length})`);
+console.log("Memory loaded:", memoryPath, `(keys=${Object.keys(memory).length})`);
 
 // ======================================================
 // USE EXISTING REPORT FROM JENKINS PIPELINE
@@ -68,12 +68,12 @@ const stderrLog = path.join(artifactDir, "maestro_stderr.log");
 const testOutputDir = path.join(artifactDir, "test-output");
 
 if (!fs.existsSync(testsDir)) {
-  console.error(`❌ Tests folder not found: ${testsDir}`);
+  console.error(`Tests folder not found: ${testsDir}`);
   process.exit(2);
 }
 
 if (!fs.existsSync(reportPath)) {
-  console.error(`❌ report.xml not found: ${reportPath}`);
+  console.error(`report.xml not found: ${reportPath}`);
   process.exit(2);
 }
 
@@ -81,7 +81,7 @@ try {
   if (!fs.existsSync(testOutputDir)) fs.mkdirSync(testOutputDir, { recursive: true });
 } catch {}
 
-console.log("📄 Using existing Maestro report from pipeline:", reportPath);
+console.log("Using existing Maestro report from pipeline:", reportPath);
 
 // ======================================================
 // INITIAL AI ANALYSIS
@@ -89,13 +89,13 @@ console.log("📄 Using existing Maestro report from pipeline:", reportPath);
 let initialResult = await runPipeline(reportPath);
 let finalResult = initialResult;
 
-console.log("🧠 Initial AI analysis complete.");
+console.log("Initial AI analysis complete.");
 
 // ======================================================
 // RETRY ONLY FAILED FLOWS
 // ======================================================
 if (initialResult.retryRecommended) {
-  console.log("🔁 Retry triggered by AI");
+  console.log("Retry triggered by AI");
 
   const flowNums = [
     ...new Set(
@@ -106,7 +106,7 @@ if (initialResult.retryRecommended) {
   ].sort((a, b) => Number(a) - Number(b));
 
   if (flowNums.length === 0) {
-    console.log("⚠️ Retry skipped: no Flow numbers found in failedTests.");
+    console.log("Retry skipped: no Flow numbers found in failedTests.");
   } else {
     const retryFiles = [];
 
@@ -115,13 +115,13 @@ if (initialResult.retryRecommended) {
       const f2 = path.join(testsDir, `flow${n}.yml`);
       if (fs.existsSync(f1)) retryFiles.push(f1);
       else if (fs.existsSync(f2)) retryFiles.push(f2);
-      else console.log(`⚠️ Missing file for Flow${n}: expected flow${n}.yaml or flow${n}.yml`);
+      else console.log(`Missing file for Flow${n}: expected flow${n}.yaml or flow${n}.yml`);
     }
 
     if (retryFiles.length === 0) {
-      console.log("❌ Retry skipped: no failed flow YAML files found.");
+      console.log("Retry skipped: no failed flow YAML files found.");
     } else {
-      console.log("🔁 Retrying ONLY failed flows:");
+      console.log("Retrying ONLY failed flows:");
       for (const f of retryFiles) console.log(" -", f);
 
       const retryReportPath = path.join(projectRoot, "report_retry.xml");
@@ -143,19 +143,19 @@ if (initialResult.retryRecommended) {
         }
       );
 
-      console.log("✅ Retry finished. Retry report:", retryReportPath);
-      console.log("🔁 Retry exit code:", retryRun.status);
+      console.log("Retry finished. Retry report:", retryReportPath);
+      console.log("Retry exit code:", retryRun.status);
 
       if (fs.existsSync(retryReportPath)) {
         finalResult = await runPipeline(retryReportPath);
-        console.log("🧠 Final AI analysis complete using retry report.");
+        console.log("Final AI analysis complete using retry report.");
       } else {
-        console.log("⚠️ Retry report not generated. Using initial AI analysis result.");
+        console.log("Retry report not generated. Using initial AI analysis result.");
       }
     }
   }
 } else {
-  console.log("✅ Retry not recommended by AI.");
+  console.log("Retry not recommended by AI.");
 }
 
 // ======================================================
@@ -163,7 +163,7 @@ if (initialResult.retryRecommended) {
 // ======================================================
 const outFile = path.join(artifactDir, "ai-report.json");
 fs.writeFileSync(outFile, JSON.stringify(finalResult, null, 2));
-console.log("📝 AI report saved:", outFile);
+console.log("AI report saved:", outFile);
 
 // ======================================================
 // UPDATE MEMORY AFTER FINAL RESULT
@@ -187,16 +187,16 @@ try {
   }
 
   const wrote = safeWriteJson(memoryPath, memory);
-  console.log(wrote ? "💾 Memory updated:" : "⚠️ Memory write failed:", memoryPath);
+  console.log(wrote ? "Memory updated:" : "Memory write failed:", memoryPath);
 } catch (e) {
-  console.log("⚠️ Memory update skipped:", e?.message || e);
+  console.log("Memory update skipped:", e?.message || e);
 }
 
 // ======================================================
 // PRINT FAILED FLOWS CLEANLY
 // ======================================================
 if (Array.isArray(finalResult.failedTests) && finalResult.failedTests.length > 0) {
-  console.log("❌ Failed Flows:");
+  console.log("Failed Flows:");
   for (const t of finalResult.failedTests) {
     console.log(`- ${t.name}${t.time ? ` (${t.time}s)` : ""} (${t.message})`);
   }
@@ -239,6 +239,20 @@ try {
       ].join("\n");
 
       const attachments = [];
+
+      // Attach Excel report
+      const excelPath = path.join(projectRoot, "reports", "maestro_summary.xlsx");
+      if (fs.existsSync(excelPath)) {
+        attachments.push({
+          filename: "maestro_summary.xlsx",
+          path: excelPath,
+        });
+        console.log("Excel report attached:", excelPath);
+      } else {
+        console.log("Excel report not found:", excelPath);
+      }
+
+      // Attach screenshots for failed flows
       for (const r of finalResult.resultsByFlow || []) {
         const shots = Array.isArray(r.screenshots) ? r.screenshots : [];
         shots.forEach((p, idx) => {
@@ -312,22 +326,22 @@ try {
 
       const info = await sendFailureEmail({ subject, text, html, attachments });
 
-      console.log("📧 Email accepted by SMTP:", info.accepted);
-      console.log("📧 Email messageId:", info.messageId);
-      console.log("📧 Sent to:", process.env.FAIL_EMAIL_TO);
-      console.log("🖼 Attachments:", attachments.length);
+      console.log("Email accepted by SMTP:", info.accepted);
+      console.log("Email messageId:", info.messageId);
+      console.log("Sent to:", process.env.FAIL_EMAIL_TO);
+      console.log("Attachments:", attachments.length);
     } else {
-      console.log("📧 Email not sent (SMTP env not configured).");
+      console.log("Email not sent (SMTP env not configured).");
     }
   } else {
-    console.log("📧 No failures detected after retry (no email).");
+    console.log("No failures detected after retry (no email).");
   }
 } catch (e) {
-  console.error("❌ Email send failed:", e?.message || e);
+  console.error("Email send failed:", e?.message || e);
 }
 
 // ======================================================
 // WEBHOOK
 // ======================================================
 await triggerWebhook(finalResult);
-console.log("✅ AI Debug Agent Completed");
+console.log("AI Debug Agent Completed");

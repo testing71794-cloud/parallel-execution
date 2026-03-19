@@ -13,7 +13,7 @@ export function isEmailConfigured() {
 
 /**
  * Sends email and returns nodemailer "info".
- * Supports HTML + attachments (screenshots).
+ * Supports HTML + attachments (screenshots, Excel, etc.)
  */
 export async function sendFailureEmail({ subject, text, html, attachments = [] }) {
   if (!isEmailConfigured()) {
@@ -37,11 +37,10 @@ export async function sendFailureEmail({ subject, text, html, attachments = [] }
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-    // Gmail on 587 usually needs TLS
     requireTLS: !secure,
   });
 
-  // Prove SMTP is reachable + login works (throws if not)
+  // Prove SMTP is reachable + login works
   await transporter.verify();
 
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
@@ -56,7 +55,6 @@ export async function sendFailureEmail({ subject, text, html, attachments = [] }
     attachments,
   });
 
-  // If SMTP rejected, throw so caller logs REAL issue
   if (info.rejected && info.rejected.length > 0) {
     throw new Error(
       `SMTP rejected recipients: ${info.rejected.join(", ")} | response=${info.response || "N/A"}`

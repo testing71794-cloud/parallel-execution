@@ -16,10 +16,21 @@ name: Flow4 - Wrong then Correct Login + MultiPrinting
     commands:
       - tapOn: "Log In"
       - waitForAnimationToEnd
-
+- runFlow:
+    when:
+      visible: "No, thanks"
+    commands:
+      - tapOn: "No, thanks"
+      - waitForAnimationToEnd
 # Enter email
 - tapOn: "Email"
-- inputText: "Automation49@yopmail.com"
+- inputText: "Atomation46@yopmail.com"
+- runFlow:
+    when:
+      visible: "No, thanks"
+    commands:
+      - tapOn: "No, thanks"
+      - waitForAnimationToEnd
 
 # Enter wrong password + verify error
 - tapOn: "Password"
