@@ -3,7 +3,7 @@ setlocal
 cd /d %~dp0..
 
 echo =====================================
-echo RUNNING PRINTING FLOWS (SEQUENTIAL BY FLOW)
+echo RUNNING PRINTING FLOWS (PARALLEL PER FLOW ACROSS DEVICES)
 echo =====================================
 
 powershell -ExecutionPolicy Bypass -File "%~dp0run_flows_printing.ps1"

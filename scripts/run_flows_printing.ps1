@@ -40,6 +40,7 @@ $flows = @(
 
 New-Item -ItemType Directory -Force -Path "reports\printing" | Out-Null
 
+$projectRoot = (Get-Location).Path
 $hadFailure = $false
 $failedItems = @()
 
@@ -54,33 +55,59 @@ foreach ($flow in $flows) {
 
     Write-Host ""
     Write-Host "======================================="
-    Write-Host "Running $flow on all devices"
+    Write-Host "Running $flow on all devices in parallel"
     Write-Host "======================================="
 
-    foreach ($device in $devices) {
+    $jobs = @()
 
+    foreach ($device in $devices) {
         $safeFlow = [System.IO.Path]::GetFileNameWithoutExtension($flow)
         $logFile = "reports\printing\${safeFlow}_$device.log"
         $xmlFile = "reports\printing\${safeFlow}_$device.xml"
 
-        Write-Host "Running on device: $device"
-        $env:ANDROID_SERIAL = $device
+        Write-Host "Starting on device: $device"
 
-        & maestro test $flow --format junit --output $xmlFile *>&1 | Tee-Object -FilePath $logFile
+        $job = Start-Job -ArgumentList $projectRoot, $flow, $device, $xmlFile, $logFile -ScriptBlock {
+            param($rootPath, $flowFile, $deviceId, $xmlOut, $logOut)
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Failed on device $device for flow $flow"
+            Set-Location $rootPath
+            $env:ANDROID_SERIAL = $deviceId
+
+            & maestro test $flowFile --format junit --output $xmlOut *>&1 | Tee-Object -FilePath $logOut
+
+            [PSCustomObject]@{
+                Device = $deviceId
+                Flow = $flowFile
+                ExitCode = $LASTEXITCODE
+                Xml = $xmlOut
+                Log = $logOut
+            }
+        }
+
+        $jobs += $job
+    }
+
+    Wait-Job -Job $jobs | Out-Null
+
+    foreach ($job in $jobs) {
+        $result = Receive-Job -Job $job
+        if ($null -eq $result) {
             $hadFailure = $true
-            $failedItems += "$flow :: $device"
-            continue
+            $failedItems += "$flow :: UNKNOWN_JOB_FAILURE"
+        } elseif ($result.ExitCode -ne 0) {
+            Write-Host "Failed on device $($result.Device) for flow $($result.Flow)"
+            $hadFailure = $true
+            $failedItems += "$($result.Flow) :: $($result.Device)"
+        } else {
+            Write-Host "Passed on device $($result.Device) for flow $($result.Flow)"
         }
     }
 
+    $jobs | Remove-Job -Force
     Write-Host "Completed $flow on all devices"
 }
 
 $files = Get-ChildItem "reports\printing\*.xml" -ErrorAction SilentlyContinue
-
 if (-not $files) {
     Write-Host "No test reports generated!"
     $hadFailure = $true
