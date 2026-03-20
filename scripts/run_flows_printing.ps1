@@ -67,13 +67,16 @@ foreach ($flow in $flows) {
 
         Write-Host "Starting on device: $device"
 
-        $job = Start-Job -ArgumentList $projectRoot, $flow, $device, $xmlFile, $logFile -ScriptBlock {
-            param($rootPath, $flowFile, $deviceId, $xmlOut, $logOut)
+        $job = Start-Job -ArgumentList $projectRoot, $flow, $device, $xmlFile, $logFile, $adb -ScriptBlock {
+            param($rootPath, $flowFile, $deviceId, $xmlOut, $logOut, $adbPath)
 
             Set-Location $rootPath
             $env:ANDROID_SERIAL = $deviceId
 
-            & maestro test $flowFile --format junit --output $xmlOut *>&1 | Tee-Object -FilePath $logOut
+            Write-Host "Running flow $flowFile on device $deviceId"
+            & $adbPath -s $deviceId shell getprop ro.product.model
+
+            & maestro --device $deviceId test $flowFile --format junit --output $xmlOut *>&1 | Tee-Object -FilePath $logOut
 
             [PSCustomObject]@{
                 Device = $deviceId

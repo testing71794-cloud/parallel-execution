@@ -1,6 +1,9 @@
 $ErrorActionPreference = "Stop"
+
+# Move to project root
 Set-Location "$PSScriptRoot\.."
 
+# ADB path (keep as is)
 $adb = "C:\Users\HP\AppData\Local\Android\Sdk\platform-tools\adb.exe"
 
 if (!(Test-Path $adb)) {
@@ -11,6 +14,7 @@ if (!(Test-Path $adb)) {
 Write-Host "===== ADB DEVICES ====="
 & $adb devices
 
+# Get connected devices
 $devices = & $adb devices | Select-Object -Skip 1 | ForEach-Object {
     $parts = ($_ -replace "`r","") -split "\s+"
     if ($parts.Length -ge 2 -and $parts[1] -eq "device") { $parts[0] }
@@ -24,6 +28,7 @@ if (-not $devices -or $devices.Count -eq 0) {
 Write-Host "Connected devices:"
 $devices | ForEach-Object { Write-Host " - $_" }
 
+# Flow list
 $flows = @(
     "Non printing flows\flow1.yaml",
     "Non printing flows\flow2.yaml",
@@ -34,12 +39,14 @@ $flows = @(
     "Non printing flows\flow7.yaml"
 )
 
+# Create report directory
 New-Item -ItemType Directory -Force -Path "reports\nonprinting" | Out-Null
 
 $projectRoot = (Get-Location).Path
 $hadFailure = $false
 $failedItems = @()
 
+# Loop flows
 foreach ($flow in $flows) {
 
     if (!(Test-Path $flow)) {
@@ -63,18 +70,37 @@ foreach ($flow in $flows) {
 
         Write-Host "Starting on device: $device"
 
-        $job = Start-Job -ArgumentList $projectRoot, $flow, $device, $xmlFile, $logFile -ScriptBlock {
-            param($rootPath, $flowFile, $deviceId, $xmlOut, $logOut)
+        $job = Start-Job -ArgumentList $projectRoot, $flow, $device, $xmlFile, $logFile, $adb -ScriptBlock {
+            param($rootPath, $flowFile, $deviceId, $xmlOut, $logOut, $adbPath)
 
-            Set-Location $rootPath
-            $env:ANDROID_SERIAL = $deviceId
+            try {
+                Set-Location $rootPath
 
-            & maestro test $flowFile --format junit --output $xmlOut *>&1 | Tee-Object -FilePath $logOut
+                # Bind device
+                $env:ANDROID_SERIAL = $deviceId
+
+                Write-Host "=================================="
+                Write-Host "Running flow: $flowFile"
+                Write-Host "On device: $deviceId"
+                Write-Host "=================================="
+
+                # Verify correct device
+                & $adbPath -s $deviceId shell getprop ro.product.model
+
+                # 🔥 IMPORTANT FIX (device binding)
+                & maestro --device $deviceId test $flowFile --format junit --output $xmlOut *>&1 | Tee-Object -FilePath $logOut
+
+                $exitCode = $LASTEXITCODE
+            }
+            catch {
+                Write-Host "Error running flow $flowFile on $deviceId"
+                $exitCode = 1
+            }
 
             [PSCustomObject]@{
                 Device = $deviceId
                 Flow = $flowFile
-                ExitCode = $LASTEXITCODE
+                ExitCode = $exitCode
                 Xml = $xmlOut
                 Log = $logOut
             }
@@ -83,33 +109,43 @@ foreach ($flow in $flows) {
         $jobs += $job
     }
 
+    # Wait for all devices
     Wait-Job -Job $jobs | Out-Null
 
+    # Collect results
     foreach ($job in $jobs) {
         $result = Receive-Job -Job $job
+
         if ($null -eq $result) {
             $hadFailure = $true
             $failedItems += "$flow :: UNKNOWN_JOB_FAILURE"
-        } elseif ($result.ExitCode -ne 0) {
-            Write-Host "Failed on device $($result.Device) for flow $($result.Flow)"
+        }
+        elseif ($result.ExitCode -ne 0) {
+            Write-Host "❌ Failed on device $($result.Device) for flow $($result.Flow)"
             $hadFailure = $true
             $failedItems += "$($result.Flow) :: $($result.Device)"
-        } else {
-            Write-Host "Passed on device $($result.Device) for flow $($result.Flow)"
+        }
+        else {
+            Write-Host "✅ Passed on device $($result.Device) for flow $($result.Flow)"
         }
     }
 
+    # Cleanup
     $jobs | Remove-Job -Force
+
     Write-Host "Completed $flow on all devices"
 }
 
+# Check reports
 $files = Get-ChildItem "reports\nonprinting\*.xml" -ErrorAction SilentlyContinue
+
 if (-not $files) {
     Write-Host "No test reports generated!"
     $hadFailure = $true
     $failedItems += "REPORTS :: NON_PRINTING :: NONE_GENERATED"
 }
 
+# Final result
 if ($hadFailure) {
     Write-Host ""
     Write-Host "================ FAILED FLOWS ================"
@@ -117,5 +153,9 @@ if ($hadFailure) {
     exit 1
 }
 
-Write-Host "All non-printing flows completed successfully."
+Write-Host ""
+Write-Host "==========================================="
+Write-Host "🎉 All non-printing flows completed successfully"
+Write-Host "==========================================="
+
 exit 0
