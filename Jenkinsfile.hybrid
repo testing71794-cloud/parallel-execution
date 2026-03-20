@@ -221,6 +221,21 @@ pipeline {
                                  allowEmptyArchive: true
             }
         }
+
+        stage('Finalize Build Result') {
+            agent { label 'built-in' }
+            steps {
+                script {
+                    echo "Non Printing Exit Code: ${env.NON_PRINTING_EXIT_CODE}"
+                    echo "Printing Exit Code: ${env.PRINTING_EXIT_CODE}"
+                    echo "Any Test Failed: ${env.ANY_TEST_FAILED}"
+
+                    if (env.ANY_TEST_FAILED == '1') {
+                        error('One or more flow groups failed.')
+                    }
+                }
+            }
+        }
     }
 
     post {
