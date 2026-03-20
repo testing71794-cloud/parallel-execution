@@ -16,8 +16,8 @@ pipeline {
 
     environment {
         NON_PRINTING_EXIT_CODE = '0'
-        PRINTING_EXIT_CODE = '0'
-        ANY_TEST_FAILED = '0'
+        PRINTING_EXIT_CODE     = '0'
+        ANY_TEST_FAILED        = '0'
     }
 
     stages {
@@ -35,14 +35,29 @@ pipeline {
             agent { label 'built-in' }
             steps {
                 unstash 'workspace'
-                sh '''
-                    echo "Installing root dependencies..."
-                    npm ci || npm install
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            echo "Installing root dependencies..."
+                            npm ci || npm install
 
-                    echo "Installing AI Doctor dependencies..."
-                    cd ai-doctor
-                    npm ci || npm install
-                '''
+                            echo "Installing AI Doctor dependencies..."
+                            cd ai-doctor
+                            npm ci || npm install
+                        '''
+                    } else {
+                        bat '''
+                            echo Installing root dependencies...
+                            call npm ci
+                            if errorlevel 1 call npm install
+
+                            cd ai-doctor
+                            echo Installing AI Doctor dependencies...
+                            call npm ci
+                            if errorlevel 1 call npm install
+                        '''
+                    }
+                }
                 stash name: 'workspace', includes: '**/*'
             }
         }
@@ -55,6 +70,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                     script {
                         def code
+
                         if (isUnix()) {
                             code = sh(
                                 script: '''
@@ -96,7 +112,13 @@ pipeline {
             agent { label "${params.DEVICES_AGENT}" }
             steps {
                 unstash 'workspace'
-                unstash 'non-printing-results'
+                script {
+                    try {
+                        unstash 'non-printing-results'
+                    } catch (Exception e) {
+                        echo "No non-printing-results stash found"
+                    }
+                }
 
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                     script {
@@ -122,6 +144,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                     script {
                         def code
+
                         if (isUnix()) {
                             code = sh(
                                 script: '''
@@ -163,7 +186,13 @@ pipeline {
             agent { label "${params.DEVICES_AGENT}" }
             steps {
                 unstash 'workspace'
-                unstash 'printing-results'
+                script {
+                    try {
+                        unstash 'printing-results'
+                    } catch (Exception e) {
+                        echo "No printing-results stash found"
+                    }
+                }
 
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                     script {
@@ -183,7 +212,11 @@ pipeline {
 
         stage('AI Failure Analysis + Smart Retry') {
             agent { label 'built-in' }
-            when { expression { env.ANY_TEST_FAILED == '1' } }
+            when {
+                expression {
+                    return env.NON_PRINTING_EXIT_CODE != '0' || env.PRINTING_EXIT_CODE != '0'
+                }
+            }
             steps {
                 unstash 'workspace'
                 script {
@@ -194,10 +227,19 @@ pipeline {
                 }
 
                 dir('ai-doctor') {
-                    sh '''
-                        echo "Running AI analysis and retry flow..."
-                        node index.mjs
-                    '''
+                    script {
+                        if (isUnix()) {
+                            sh '''
+                                echo "Running AI analysis and retry flow..."
+                                node index.mjs
+                            '''
+                        } else {
+                            bat '''
+                                echo Running AI analysis and retry flow...
+                                node index.mjs
+                            '''
+                        }
+                    }
                 }
 
                 stash name: 'ai-results',
@@ -219,6 +261,74 @@ pipeline {
 
                 archiveArtifacts artifacts: '.maestro/**/*,report*.xml,reports/**/*,reports_printing/**/*,ai-doctor/artifacts/**/*',
                                  allowEmptyArchive: true
+            }
+        }
+
+        stage('Send Email Summary') {
+            agent { label 'built-in' }
+            steps {
+                script {
+                    def nonPrintingStatus = env.NON_PRINTING_EXIT_CODE == '0' ? 'PASSED' : 'FAILED'
+                    def printingStatus    = env.PRINTING_EXIT_CODE == '0' ? 'PASSED' : 'FAILED'
+                    def overallStatus     = env.ANY_TEST_FAILED == '1' ? 'FAILED' : 'PASSED'
+
+                    def aiSummary = ''
+                    try {
+                        aiSummary = readFile('ai-doctor/artifacts/final_analysis.txt')
+                    } catch (Exception e) {
+                        aiSummary = 'AI analysis summary file not found.'
+                    }
+
+                    emailext(
+                        to: 'kodaksmilechina@gmail.com',
+                        subject: "Kodak Smile Automation | Build #${env.BUILD_NUMBER} | ${overallStatus}",
+                        mimeType: 'text/html',
+                        body: """
+                            <html>
+                                <body>
+                                    <h2>Kodak Smile Automation Report</h2>
+
+                                    <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
+                                    <p><b>Job Name:</b> ${env.JOB_NAME}</p>
+                                    <p><b>Overall Status:</b> ${overallStatus}</p>
+
+                                    <h3>Execution Summary</h3>
+                                    <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">
+                                        <tr>
+                                            <th>Flow Group</th>
+                                            <th>Status</th>
+                                            <th>Exit Code</th>
+                                        </tr>
+                                        <tr>
+                                            <td>Non Printing</td>
+                                            <td>${nonPrintingStatus}</td>
+                                            <td>${env.NON_PRINTING_EXIT_CODE}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Printing</td>
+                                            <td>${printingStatus}</td>
+                                            <td>${env.PRINTING_EXIT_CODE}</td>
+                                        </tr>
+                                    </table>
+
+                                    <h3>AI Analysis Summary</h3>
+                                    <pre style="background:#f4f4f4; padding:10px; border:1px solid #ddd;">${aiSummary}</pre>
+
+                                    <h3>Attachments</h3>
+                                    <ul>
+                                        <li>Non-printing Excel report</li>
+                                        <li>Printing Excel report</li>
+                                        <li>AI analysis artifacts</li>
+                                        <li>Execution logs / XML reports</li>
+                                    </ul>
+
+                                    <p>Regards,<br/>Jenkins Automation</p>
+                                </body>
+                            </html>
+                        """,
+                        attachmentsPattern: 'reports/**/*.xlsx,reports_printing/**/*.xlsx,ai-doctor/artifacts/**/*,report*.xml,.maestro/**/*'
+                    )
+                }
             }
         }
 
