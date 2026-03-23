@@ -17,6 +17,8 @@ JUnit XML is stored under:
 
 **Execution order (CMD):** for each flow, `run_single_flow_parallel.bat` starts **one minimized `cmd` per device** (parallel), waits until **every** exit marker file exists, then returns — only then `run_all_flows_pipeline.bat` runs Excel for that flow and continues to the **next** flow.
 
+**Jenkins / non-interactive agents:** the wait loop uses `ping 127.0.0.1` for delays, not `timeout`, because `timeout` requires a console stdin and fails with *Input redirection is not supported* under the Jenkins agent.
+
 ## One command (Windows)
 
 ```bat

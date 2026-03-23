@@ -79,7 +79,9 @@ set /a WAIT_SEC=0
 set /a MAX_WAIT=7200
 
 :wait_all
-timeout /t 2 /nobreak >nul
+REM Do not use TIMEOUT here — Jenkins/agent has no TTY and TIMEOUT prints
+REM "Input redirection is not supported". ~2s delay via localhost ping:
+ping 127.0.0.1 -n 3 >nul 2>&1
 set /a WAIT_SEC+=2
 if !WAIT_SEC! GEQ %MAX_WAIT% (
     echo ERROR: Timeout after %MAX_WAIT%s waiting for devices.
