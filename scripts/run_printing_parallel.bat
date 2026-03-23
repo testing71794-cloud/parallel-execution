@@ -1,10 +1,24 @@
 @echo off
-setlocal
-cd /d %~dp0..
+setlocal EnableExtensions EnableDelayedExpansion
+cd /d "%~dp0.."
+if not exist reports\raw mkdir reports\raw
+if not exist reports\logs mkdir reports\logs
+if not exist reports\excel mkdir reports\excel
 
-echo =====================================
-echo RUNNING PRINTING FLOWS (FLOW BY FLOW, ALL DEVICES, EXCEL UPDATE AFTER EACH FLOW)
-echo =====================================
+call scripts\collect_devices.bat
+if errorlevel 1 exit /b 1
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run_flows_printing.ps1"
-exit /b %errorlevel%
+set "FLOWS=flow1.yaml flow2.yaml flow3.yaml flow4.yaml flow5.yaml flow6.yaml flow7.yaml flow8.yaml flow9.yaml flow10.yaml flow11.yaml"
+for %%F in (%FLOWS%) do (
+    echo.
+    echo =====================================
+    echo Running Printing Flow\%%F on all devices in parallel
+    echo =====================================
+    call scripts\run_single_flow_parallel.bat "Printing Flow\%%F"
+    if errorlevel 1 exit /b 1
+
+    echo Updating Excel for %%F
+    python scripts\update_excel_after_flow.py --flow %%F --type printing
+    if errorlevel 1 exit /b 1
+)
+exit /b 0

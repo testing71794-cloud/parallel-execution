@@ -1,172 +1,33 @@
 pipeline {
-    agent none
+    agent { label 'devices' }
 
-    parameters {
-        choice(
-            name: 'DEVICES_AGENT',
-            choices: ['devices', 'built-in'],
-            description: 'devices = your PC with USB phones'
-        )
-    }
-
-    triggers {
-        cron('H 9 * * *')
-        githubPush()
-    }
-
-    environment {
-        NON_PRINTING_EXIT_CODE = '0'
-        PRINTING_EXIT_CODE     = '0'
-        ANY_TEST_FAILED        = '0'
+    options {
+        disableConcurrentBuilds()
+        timestamps()
     }
 
     stages {
-        stage('Fetch Code from GitHub') {
-            agent { label 'built-in' }
+        stage('Clean Workspace') {
+            steps {
+                deleteDir()
+            }
+        }
+
+        stage('Checkout') {
             steps {
                 checkout scm
-                stash name: 'workspace', includes: '**/*'
             }
         }
 
-        stage('Install Dependencies') {
-            agent { label 'built-in' }
+        stage('Run CMD Pipeline') {
             steps {
-                unstash 'workspace'
-                script {
-                    if (isUnix()) {
-                        sh '''
-                            npm ci || npm install
-                        '''
-                    } else {
-                        bat '''
-                            call npm ci
-                            if errorlevel 1 call npm install
-                        '''
-                    }
-                }
-                stash name: 'workspace', includes: '**/*'
+                bat 'scripts\\run_all_flows_pipeline.bat'
             }
         }
 
-        stage('Execute Non Printing Flows') {
-            agent { label "${params.DEVICES_AGENT}" }
+        stage('Archive Reports') {
             steps {
-                unstash 'workspace'
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    script {
-                        def code
-                        if (isUnix()) {
-                            code = sh(script: './scripts/run_non_printing_parallel.sh', returnStatus: true)
-                        } else {
-                            code = bat(script: 'call scripts\\run_non_printing_parallel.bat', returnStatus: true)
-                        }
-                        env.NON_PRINTING_EXIT_CODE = "${code}"
-                        if (code != 0) {
-                            env.ANY_TEST_FAILED = '1'
-                            error("Non Printing flows failed with exit code ${code}")
-                        }
-                    }
-                }
-                stash name: 'non-printing-results', includes: 'reports/**/*,.maestro/**/*', allowEmpty: true
-            }
-        }
-
-        stage('Execute Printing Flows') {
-            agent { label "${params.DEVICES_AGENT}" }
-            steps {
-                unstash 'workspace'
-                script {
-                    try { unstash 'non-printing-results' } catch (Exception e) { echo 'No non-printing-results stash found' }
-                }
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    script {
-                        def code
-                        if (isUnix()) {
-                            code = sh(script: './scripts/run_printing_parallel.sh', returnStatus: true)
-                        } else {
-                            code = bat(script: 'call scripts\\run_printing_parallel.bat', returnStatus: true)
-                        }
-                        env.PRINTING_EXIT_CODE = "${code}"
-                        if (code != 0) {
-                            env.ANY_TEST_FAILED = '1'
-                            error("Printing flows failed with exit code ${code}")
-                        }
-                    }
-                }
-                stash name: 'printing-results', includes: 'reports/**/*,.maestro/**/*', allowEmpty: true
-            }
-        }
-
-        stage('Archive Reports & Artifacts') {
-            agent { label 'built-in' }
-            steps {
-                script {
-                    try { unstash 'non-printing-results' } catch (Exception e) { echo 'No non-printing-results stash found' }
-                    try { unstash 'printing-results' } catch (Exception e) { echo 'No printing-results stash found' }
-                }
-                archiveArtifacts artifacts: 'reports/**/*,.maestro/**/*', allowEmptyArchive: true
-            }
-        }
-
-        stage('Send Email Summary') {
-            agent { label 'built-in' }
-            steps {
-                script {
-                    def nonPrintingStatus = env.NON_PRINTING_EXIT_CODE == '0' ? 'PASSED' : 'FAILED'
-                    def printingStatus = env.PRINTING_EXIT_CODE == '0' ? 'PASSED' : 'FAILED'
-                    def overallStatus = env.ANY_TEST_FAILED == '1' ? 'FAILED' : 'PASSED'
-
-                    emailext(
-                        to: 'kodaksmilechina@gmail.com',
-                        subject: "Kodak Smile Automation | Build #${env.BUILD_NUMBER} | ${overallStatus}",
-                        mimeType: 'text/html',
-                        body: """
-                            <html>
-                                <body>
-                                    <h2>Kodak Smile Automation Report</h2>
-                                    <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
-                                    <p><b>Job Name:</b> ${env.JOB_NAME}</p>
-                                    <p><b>Overall Status:</b> ${overallStatus}</p>
-
-                                    <h3>Execution Summary</h3>
-                                    <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">
-                                        <tr>
-                                            <th>Flow Group</th>
-                                            <th>Status</th>
-                                            <th>Exit Code</th>
-                                        </tr>
-                                        <tr>
-                                            <td>Non Printing</td>
-                                            <td>${nonPrintingStatus}</td>
-                                            <td>${env.NON_PRINTING_EXIT_CODE}</td>
-                                        </tr>
-                                        <tr>
-                                            <td>Printing</td>
-                                            <td>${printingStatus}</td>
-                                            <td>${env.PRINTING_EXIT_CODE}</td>
-                                        </tr>
-                                    </table>
-
-                                    <p>Excel reports are updated after every flow and attached from the reports/excel folder.</p>
-                                    <p>Regards,<br/>Jenkins Automation</p>
-                                </body>
-                            </html>
-                        """,
-                        attachmentsPattern: 'reports/excel/*.xlsx,reports/**/*.xml,reports/**/*.log'
-                    )
-                }
-            }
-        }
-
-        stage('Finalize Build Result') {
-            agent { label 'built-in' }
-            steps {
-                script {
-                    if (env.ANY_TEST_FAILED == '1') {
-                        error('One or more flow groups failed.')
-                    }
-                }
+                archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
             }
         }
     }
