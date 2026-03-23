@@ -1,8 +1,9 @@
 @echo off
-cd /d D:\Projects-Meastro\kodak-Smile-with-OpenAI
+cd /d "%~dp0.."
 
-echo Running Non Printing Flows (Single device mode)...
+echo Running Printing Flow (single device - first available^)...
 adb devices
-maestro test "Non printing flows"
+REM Official CLI: https://docs.maestro.dev/maestro-cli/maestro-cli-commands-and-options
+maestro test "Printing Flow"
 
 pause

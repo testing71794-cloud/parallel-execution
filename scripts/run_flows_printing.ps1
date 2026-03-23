@@ -101,7 +101,8 @@ for ($index = 0; $index -lt $flows.Count; $index++) {
 Set-Location '$projectRoot'
 `$env:ANDROID_SERIAL = '$device'
 
-& '$maestro' --device='$device' test '$flow' --format junit --output '$xmlFile' --debug-output '$debugDir' *>> '$logFile'
+# Official CLI: global --device before `test` — https://docs.maestro.dev/maestro-cli/maestro-cli-commands-and-options
+& '$maestro' --device=$device test '$flow' --format junit --output '$xmlFile' --debug-output '$debugDir' *>> '$logFile'
 exit `$LASTEXITCODE
 "@
         Set-Content -Path $runnerFile -Value $runnerScript -Encoding UTF8

@@ -1,15 +1,27 @@
 # Kodak Smile Maestro Suite (Flows 1-10)
 
+**Maestro — every time:** Any change to flows, `config.yaml`, or Maestro scripts must follow **[Maestro documentation](https://docs.maestro.dev/)** (see `AGENTS.md` and `docs/MAESTRO_OFFICIAL_REFERENCE.md`). **Every time** you edit those files, verify CLI and YAML against the official docs — do not invent flags or syntax.
+
 **ATP Reference:** Test cases and knowledge base in `docs/ATP_KNOWLEDGE_BASE.md` (from `testcases.xlsx`).
 
-## Run all flows
+## Run all flows (uses `config.yaml` in repo root)
+
 ```bash
-maestro test . --format junit --output report.xml
+maestro test . --format=junit --output=report.xml
 ```
 
 ## Run a single flow
+
 ```bash
-maestro test tests/flow6.yaml
+maestro test "Non printing flows/flow6.yaml"
+```
+
+## Run on one device (official CLI)
+
+Global `--device` before `test` — see [Maestro CLI commands and options](https://docs.maestro.dev/maestro-cli/maestro-cli-commands-and-options):
+
+```bash
+maestro --device=<SERIAL> test "Non printing flows/flow1.yaml" --format=junit --output=report.xml
 ```
 
 ## Notes

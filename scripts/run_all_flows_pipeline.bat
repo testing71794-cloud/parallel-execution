@@ -15,6 +15,12 @@ echo RUNNING FULL PIPELINE (FLOW BY FLOW)
 echo =====================================
 
 echo.
+echo Agent user: %USERNAME%  SESSION: %SESSIONNAME%
+echo If the app never opens: run Jenkins agent on the logged-in desktop user ^(not Session 0^).
+echo Set ANDROID_HOME ^+ PATH or job env so adb is found; set MAESTRO_CMD if needed.
+echo See docs\PIPELINE_EXECUTION_AND_EMAIL.md — "App does not launch".
+echo.
+
 echo ===== ADB DEVICES =====
 %ADB_EXE% devices
 
