@@ -34,12 +34,12 @@ set "FLOWS=flow1.yaml flow2.yaml flow3.yaml flow4.yaml flow5.yaml flow6.yaml flo
 for %%F in (%FLOWS%) do (
     echo.
     echo =====================================
-    echo Running Non printing flows\%%F on all devices in parallel
+    echo Running Non printing flows\%%F on ALL devices in parallel
     echo =====================================
-    call scripts\run_single_flow_parallel.bat "Non printing flows\%%F"
+    call scripts\run_single_flow_parallel.bat "Non printing flows\%%F" nonprinting
     if errorlevel 1 exit /b 1
 
-    echo Updating Excel for %%F
+    echo Updating Excel after %%F completed on all devices...
     %PYTHON_EXE% scripts\update_excel_after_flow.py --flow %%F --type nonprinting
     if errorlevel 1 exit /b 1
 )
@@ -52,12 +52,12 @@ set "FLOWS=flow1.yaml flow2.yaml flow3.yaml flow4.yaml flow5.yaml flow6.yaml flo
 for %%F in (%FLOWS%) do (
     echo.
     echo =====================================
-    echo Running Printing Flow\%%F on all devices in parallel
+    echo Running Printing Flow\%%F on ALL devices in parallel
     echo =====================================
-    call scripts\run_single_flow_parallel.bat "Printing Flow\%%F"
+    call scripts\run_single_flow_parallel.bat "Printing Flow\%%F" printing
     if errorlevel 1 exit /b 1
 
-    echo Updating Excel for %%F
+    echo Updating Excel after %%F completed on all devices...
     %PYTHON_EXE% scripts\update_excel_after_flow.py --flow %%F --type printing
     if errorlevel 1 exit /b 1
 )
@@ -65,10 +65,16 @@ for %%F in (%FLOWS%) do (
 echo.
 echo =====================================
 echo ALL FLOWS COMPLETED
-
+echo =====================================
 echo Reports available in:
-echo   reports\raw
+echo   reports\raw\nonprinting  reports\raw\printing
 echo   reports\logs
 echo   reports\excel
 echo =====================================
+
+echo.
+echo Sending Excel summary by email ^(after ALL flows — set MAIL_TO + SMTP_*^)...
+%PYTHON_EXE% scripts\send_execution_email.py
+if errorlevel 1 echo WARNING: Email not sent. Set MAIL_TO, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS ^(see docs/PIPELINE_EXECUTION_AND_EMAIL.md^).
+
 exit /b 0

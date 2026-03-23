@@ -9,6 +9,14 @@ pipeline {
             }
         }
 
+        stage('Python deps (Excel + email)') {
+            steps {
+                bat 'python -m pip install -r scripts\\requirements-python.txt --quiet'
+            }
+        }
+
+        // Flow N on ALL devices in parallel → Excel updated → next flow …
+        // After ALL flows: send_execution_email.py (needs MAIL_TO + SMTP_* on agent)
         stage('Run Pipeline') {
             steps {
                 bat 'scripts\\run_all_flows_pipeline.bat'

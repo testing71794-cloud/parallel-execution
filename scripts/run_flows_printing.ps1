@@ -58,9 +58,8 @@ $flows = @(
     "Printing Flow\flow11.yaml"
 )
 
-$resultsDir = "reports\printing"
+$resultsDir = "reports\raw\printing"
 $excelDir = "reports\excel"
-$excelFile = Join-Path $excelDir "printing_execution.xlsx"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $excelDir | Out-Null
 
@@ -138,11 +137,12 @@ exit `$LASTEXITCODE
         }
     }
 
-    Write-Host "Updating Excel after $flow"
+    Write-Host "Updating Excel after $flow (all devices)"
+    $flowArg = "${safeFlow}.yaml"
     if ($python -eq "py") {
-        & py -3 scripts\update_excel_after_flow.py --results-dir $resultsDir --workbook $excelFile --suite-type "Printing" --flow-name $safeFlow --flow-order ($index + 1)
+        & py -3 scripts\update_excel_after_flow.py --flow $flowArg --type printing
     } else {
-        & python scripts\update_excel_after_flow.py --results-dir $resultsDir --workbook $excelFile --suite-type "Printing" --flow-name $safeFlow --flow-order ($index + 1)
+        & python scripts\update_excel_after_flow.py --flow $flowArg --type printing
     }
 
     if ($LASTEXITCODE -ne 0) {

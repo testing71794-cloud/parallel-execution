@@ -10,7 +10,8 @@ parser.add_argument('--type', required=True, choices=['nonprinting', 'printing']
 args = parser.parse_args()
 
 flow_base = os.path.splitext(os.path.basename(args.flow))[0]
-report_dir = os.path.join('reports', 'raw')
+# Per-suite folder so Non-printing and Printing can both use flow1.yaml without overwriting XML
+report_dir = os.path.join('reports', 'raw', args.type)
 excel_path = os.path.join('reports', 'excel', f'{args.type}_execution.xlsx')
 os.makedirs(os.path.dirname(excel_path), exist_ok=True)
 
