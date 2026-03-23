@@ -7,7 +7,7 @@
 ## Run all flows (uses `config.yaml` in repo root)
 
 ```bash
-maestro test . --format=junit --output=report.xml
+maestro test . --format junit --output report.xml
 ```
 
 ## Run a single flow
@@ -21,7 +21,7 @@ maestro test "Non printing flows/flow6.yaml"
 Global `--device` before `test` — see [Maestro CLI commands and options](https://docs.maestro.dev/maestro-cli/maestro-cli-commands-and-options):
 
 ```bash
-maestro --device=<SERIAL> test "Non printing flows/flow1.yaml" --format=junit --output=report.xml
+maestro --device <SERIAL> test "Non printing flows/flow1.yaml" --format junit --output report.xml
 ```
 
 ## Notes
