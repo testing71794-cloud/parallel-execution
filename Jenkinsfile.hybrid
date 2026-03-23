@@ -21,38 +21,25 @@ pipeline {
     }
 
     stages {
-
         stage('Fetch Code from GitHub') {
             agent { label 'built-in' }
             steps {
-                echo "Fetching latest code..."
                 checkout scm
                 stash name: 'workspace', includes: '**/*'
             }
         }
 
-        stage('Install Dependencies (AI + Node)') {
+        stage('Install Dependencies') {
             agent { label 'built-in' }
             steps {
                 unstash 'workspace'
                 script {
                     if (isUnix()) {
                         sh '''
-                            echo "Installing root dependencies..."
-                            npm ci || npm install
-
-                            echo "Installing AI Doctor dependencies..."
-                            cd ai-doctor
                             npm ci || npm install
                         '''
                     } else {
                         bat '''
-                            echo Installing root dependencies...
-                            call npm ci
-                            if errorlevel 1 call npm install
-
-                            cd ai-doctor
-                            echo Installing AI Doctor dependencies...
                             call npm ci
                             if errorlevel 1 call npm install
                         '''
@@ -62,189 +49,52 @@ pipeline {
             }
         }
 
-        stage('Execute Non Printing Flows on Physical Devices') {
+        stage('Execute Non Printing Flows') {
             agent { label "${params.DEVICES_AGENT}" }
             steps {
                 unstash 'workspace'
-
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                     script {
                         def code
-
                         if (isUnix()) {
-                            code = sh(
-                                script: '''
-                                    echo "RUNNING NON PRINTING FLOWS"
-                                    adb devices
-                                    chmod +x scripts/run_non_printing_parallel.sh || true
-                                    ./scripts/run_non_printing_parallel.sh
-                                ''',
-                                returnStatus: true
-                            )
+                            code = sh(script: './scripts/run_non_printing_parallel.sh', returnStatus: true)
                         } else {
-                            code = bat(
-                                script: '''
-                                    echo RUNNING NON PRINTING FLOWS
-                                    adb devices
-                                    call scripts\\run_non_printing_parallel.bat
-                                ''',
-                                returnStatus: true
-                            )
+                            code = bat(script: 'call scripts\\run_non_printing_parallel.bat', returnStatus: true)
                         }
-
                         env.NON_PRINTING_EXIT_CODE = "${code}"
-                        echo "Non Printing exit code: ${code}"
-
                         if (code != 0) {
                             env.ANY_TEST_FAILED = '1'
                             error("Non Printing flows failed with exit code ${code}")
                         }
                     }
                 }
-
-                stash name: 'non-printing-results',
-                      includes: '.maestro/**/*,report*.xml,reports/**/*',
-                      allowEmpty: true
+                stash name: 'non-printing-results', includes: 'reports/**/*,.maestro/**/*', allowEmpty: true
             }
         }
 
-        stage('Generate Excel Report for Non Printing') {
+        stage('Execute Printing Flows') {
             agent { label "${params.DEVICES_AGENT}" }
             steps {
                 unstash 'workspace'
                 script {
-                    try {
-                        unstash 'non-printing-results'
-                    } catch (Exception e) {
-                        echo "No non-printing-results stash found"
-                    }
+                    try { unstash 'non-printing-results' } catch (Exception e) { echo 'No non-printing-results stash found' }
                 }
-
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    script {
-                        if (isUnix()) {
-                            sh 'python3 scripts/generate_excel_report.py reports maestro_summary.xlsx'
-                        } else {
-                            bat 'python scripts\\generate_excel_report.py reports maestro_summary.xlsx'
-                        }
-                    }
-                }
-
-                stash name: 'excel-report-non-printing',
-                      includes: 'reports/maestro_summary.xlsx',
-                      allowEmpty: true
-            }
-        }
-
-        stage('Execute Printing Flows on Physical Devices') {
-            agent { label "${params.DEVICES_AGENT}" }
-            steps {
-                unstash 'workspace'
-
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                     script {
                         def code
-
                         if (isUnix()) {
-                            code = sh(
-                                script: '''
-                                    echo "RUNNING PRINTING FLOWS"
-                                    adb devices
-                                    chmod +x scripts/run_printing_parallel.sh || true
-                                    ./scripts/run_printing_parallel.sh
-                                ''',
-                                returnStatus: true
-                            )
+                            code = sh(script: './scripts/run_printing_parallel.sh', returnStatus: true)
                         } else {
-                            code = bat(
-                                script: '''
-                                    echo RUNNING PRINTING FLOWS
-                                    adb devices
-                                    call scripts\\run_printing_parallel.bat
-                                ''',
-                                returnStatus: true
-                            )
+                            code = bat(script: 'call scripts\\run_printing_parallel.bat', returnStatus: true)
                         }
-
                         env.PRINTING_EXIT_CODE = "${code}"
-                        echo "Printing exit code: ${code}"
-
                         if (code != 0) {
                             env.ANY_TEST_FAILED = '1'
                             error("Printing flows failed with exit code ${code}")
                         }
                     }
                 }
-
-                stash name: 'printing-results',
-                      includes: '.maestro/**/*,report_printing.xml,reports_printing/**/*',
-                      allowEmpty: true
-            }
-        }
-
-        stage('Generate Excel Report for Printing') {
-            agent { label "${params.DEVICES_AGENT}" }
-            steps {
-                unstash 'workspace'
-                script {
-                    try {
-                        unstash 'printing-results'
-                    } catch (Exception e) {
-                        echo "No printing-results stash found"
-                    }
-                }
-
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    script {
-                        if (isUnix()) {
-                            sh 'python3 scripts/generate_excel_report.py reports_printing maestro_printing_summary.xlsx'
-                        } else {
-                            bat 'python scripts\\generate_excel_report.py reports_printing maestro_printing_summary.xlsx'
-                        }
-                    }
-                }
-
-                stash name: 'excel-report-printing',
-                      includes: 'reports_printing/maestro_printing_summary.xlsx',
-                      allowEmpty: true
-            }
-        }
-
-        stage('AI Failure Analysis + Smart Retry') {
-            agent { label 'built-in' }
-            when {
-                expression {
-                    return env.NON_PRINTING_EXIT_CODE != '0' || env.PRINTING_EXIT_CODE != '0'
-                }
-            }
-            steps {
-                unstash 'workspace'
-                script {
-                    try { unstash 'non-printing-results' } catch (Exception e) { echo "No non-printing-results stash found" }
-                    try { unstash 'printing-results' } catch (Exception e) { echo "No printing-results stash found" }
-                    try { unstash 'excel-report-non-printing' } catch (Exception e) { echo "No non-printing excel stash found" }
-                    try { unstash 'excel-report-printing' } catch (Exception e) { echo "No printing excel stash found" }
-                }
-
-                dir('ai-doctor') {
-                    script {
-                        if (isUnix()) {
-                            sh '''
-                                echo "Running AI analysis and retry flow..."
-                                node index.mjs
-                            '''
-                        } else {
-                            bat '''
-                                echo Running AI analysis and retry flow...
-                                node index.mjs
-                            '''
-                        }
-                    }
-                }
-
-                stash name: 'ai-results',
-                      includes: 'ai-doctor/artifacts/**/*,report_retry.xml',
-                      allowEmpty: true
+                stash name: 'printing-results', includes: 'reports/**/*,.maestro/**/*', allowEmpty: true
             }
         }
 
@@ -252,15 +102,10 @@ pipeline {
             agent { label 'built-in' }
             steps {
                 script {
-                    try { unstash 'non-printing-results' } catch (Exception e) { echo "No non-printing-results stash found" }
-                    try { unstash 'printing-results' } catch (Exception e) { echo "No printing-results stash found" }
-                    try { unstash 'excel-report-non-printing' } catch (Exception e) { echo "No non-printing excel stash found" }
-                    try { unstash 'excel-report-printing' } catch (Exception e) { echo "No printing excel stash found" }
-                    try { unstash 'ai-results' } catch (Exception e) { echo "No ai-results stash found" }
+                    try { unstash 'non-printing-results' } catch (Exception e) { echo 'No non-printing-results stash found' }
+                    try { unstash 'printing-results' } catch (Exception e) { echo 'No printing-results stash found' }
                 }
-
-                archiveArtifacts artifacts: '.maestro/**/*,report*.xml,reports/**/*,reports_printing/**/*,ai-doctor/artifacts/**/*',
-                                 allowEmptyArchive: true
+                archiveArtifacts artifacts: 'reports/**/*,.maestro/**/*', allowEmptyArchive: true
             }
         }
 
@@ -269,15 +114,8 @@ pipeline {
             steps {
                 script {
                     def nonPrintingStatus = env.NON_PRINTING_EXIT_CODE == '0' ? 'PASSED' : 'FAILED'
-                    def printingStatus    = env.PRINTING_EXIT_CODE == '0' ? 'PASSED' : 'FAILED'
-                    def overallStatus     = env.ANY_TEST_FAILED == '1' ? 'FAILED' : 'PASSED'
-
-                    def aiSummary = ''
-                    try {
-                        aiSummary = readFile('ai-doctor/artifacts/final_analysis.txt')
-                    } catch (Exception e) {
-                        aiSummary = 'AI analysis summary file not found.'
-                    }
+                    def printingStatus = env.PRINTING_EXIT_CODE == '0' ? 'PASSED' : 'FAILED'
+                    def overallStatus = env.ANY_TEST_FAILED == '1' ? 'FAILED' : 'PASSED'
 
                     emailext(
                         to: 'kodaksmilechina@gmail.com',
@@ -287,7 +125,6 @@ pipeline {
                             <html>
                                 <body>
                                     <h2>Kodak Smile Automation Report</h2>
-
                                     <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
                                     <p><b>Job Name:</b> ${env.JOB_NAME}</p>
                                     <p><b>Overall Status:</b> ${overallStatus}</p>
@@ -311,22 +148,12 @@ pipeline {
                                         </tr>
                                     </table>
 
-                                    <h3>AI Analysis Summary</h3>
-                                    <pre style="background:#f4f4f4; padding:10px; border:1px solid #ddd;">${aiSummary}</pre>
-
-                                    <h3>Attachments</h3>
-                                    <ul>
-                                        <li>Non-printing Excel report</li>
-                                        <li>Printing Excel report</li>
-                                        <li>AI analysis artifacts</li>
-                                        <li>Execution logs / XML reports</li>
-                                    </ul>
-
+                                    <p>Excel reports are updated after every flow and attached from the reports/excel folder.</p>
                                     <p>Regards,<br/>Jenkins Automation</p>
                                 </body>
                             </html>
                         """,
-                        attachmentsPattern: 'reports/**/*.xlsx,reports_printing/**/*.xlsx,ai-doctor/artifacts/**/*,report*.xml,.maestro/**/*'
+                        attachmentsPattern: 'reports/excel/*.xlsx,reports/**/*.xml,reports/**/*.log'
                     )
                 }
             }
@@ -336,24 +163,11 @@ pipeline {
             agent { label 'built-in' }
             steps {
                 script {
-                    echo "Non Printing Exit Code: ${env.NON_PRINTING_EXIT_CODE}"
-                    echo "Printing Exit Code: ${env.PRINTING_EXIT_CODE}"
-                    echo "Any Test Failed: ${env.ANY_TEST_FAILED}"
-
                     if (env.ANY_TEST_FAILED == '1') {
                         error('One or more flow groups failed.')
                     }
                 }
             }
-        }
-    }
-
-    post {
-        always {
-            echo 'Pipeline completed.'
-            echo "Non Printing Exit Code: ${env.NON_PRINTING_EXIT_CODE}"
-            echo "Printing Exit Code: ${env.PRINTING_EXIT_CODE}"
-            echo "Any Test Failed: ${env.ANY_TEST_FAILED}"
         }
     }
 }

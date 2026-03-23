@@ -1,12 +1,32 @@
 $ErrorActionPreference = "Stop"
 Set-Location "$PSScriptRoot\.."
 
-$adb = "C:\Users\HP\AppData\Local\Android\Sdk\platform-tools\adb.exe"
-
-if (!(Test-Path $adb)) {
-    Write-Host "ADB not found at: $adb"
-    exit 1
+function Get-AdbPath {
+    if ($env:ADB_PATH -and (Test-Path $env:ADB_PATH)) { return $env:ADB_PATH }
+    if ($env:ANDROID_HOME) {
+        $candidate = Join-Path $env:ANDROID_HOME "platform-tools\adb.exe"
+        if (Test-Path $candidate) { return $candidate }
+    }
+    if ($env:ANDROID_SDK_ROOT) {
+        $candidate = Join-Path $env:ANDROID_SDK_ROOT "platform-tools\adb.exe"
+        if (Test-Path $candidate) { return $candidate }
+    }
+    $cmd = Get-Command adb -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    throw "ADB not found. Set ADB_PATH or add adb to PATH."
 }
+
+function Get-MaestroPath {
+    $candidate = Join-Path $env:USERPROFILE ".maestro\bin\maestro.cmd"
+    if (Test-Path $candidate) { return $candidate }
+    $cmd = Get-Command maestro -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    throw "Maestro not found. Install Maestro or add it to PATH."
+}
+
+$adb = Get-AdbPath
+$maestro = Get-MaestroPath
+$python = if (Get-Command py -ErrorAction SilentlyContinue) { "py" } elseif (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { throw "Python not found in PATH." }
 
 Write-Host "===== ADB DEVICES ====="
 & $adb devices
@@ -14,7 +34,7 @@ Write-Host "===== ADB DEVICES ====="
 $devices = & $adb devices | Select-Object -Skip 1 | ForEach-Object {
     $parts = ($_ -replace "`r","") -split "\s+"
     if ($parts.Length -ge 2 -and $parts[1] -eq "device") { $parts[0] }
-}
+} | Where-Object { $_ -and $_.Trim() -ne "" }
 
 if (-not $devices -or $devices.Count -eq 0) {
     Write-Host "No connected Android devices found."
@@ -38,13 +58,18 @@ $flows = @(
     "Printing Flow\flow11.yaml"
 )
 
-New-Item -ItemType Directory -Force -Path "reports\printing" | Out-Null
+$resultsDir = "reports\printing"
+$excelDir = "reports\excel"
+$excelFile = Join-Path $excelDir "printing_execution.xlsx"
+New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
+New-Item -ItemType Directory -Force -Path $excelDir | Out-Null
 
 $projectRoot = (Get-Location).Path
 $hadFailure = $false
 $failedItems = @()
 
-foreach ($flow in $flows) {
+for ($index = 0; $index -lt $flows.Count; $index++) {
+    $flow = $flows[$index]
 
     if (!(Test-Path $flow)) {
         Write-Host "Flow not found: $flow"
@@ -53,64 +78,83 @@ foreach ($flow in $flows) {
         continue
     }
 
-    Write-Host ""
-    Write-Host "======================================="
-    Write-Host "Running $flow on all devices in parallel"
-    Write-Host "======================================="
+    $safeFlow = [System.IO.Path]::GetFileNameWithoutExtension($flow)
 
-    $jobs = @()
+    Write-Host ""
+    Write-Host "========================================================="
+    Write-Host "Running $flow on all devices in parallel"
+    Write-Host "========================================================="
+
+    $running = @()
 
     foreach ($device in $devices) {
-        $safeFlow = [System.IO.Path]::GetFileNameWithoutExtension($flow)
-        $logFile = "reports\printing\${safeFlow}_$device.log"
-        $xmlFile = "reports\printing\${safeFlow}_$device.xml"
+        $logFile = Join-Path $projectRoot "$resultsDir\${safeFlow}_$device.log"
+        $xmlFile = Join-Path $projectRoot "$resultsDir\${safeFlow}_$device.xml"
+        $debugDir = Join-Path $projectRoot "$resultsDir\debug_${safeFlow}_$device"
+        $runnerFile = Join-Path $projectRoot "$resultsDir\runner_${safeFlow}_$device.ps1"
+
+        New-Item -ItemType Directory -Force -Path $debugDir | Out-Null
 
         Write-Host "Starting on device: $device"
+        & $adb -s $device shell getprop ro.product.model
 
-        $job = Start-Job -ArgumentList $projectRoot, $flow, $device, $xmlFile, $logFile, $adb -ScriptBlock {
-            param($rootPath, $flowFile, $deviceId, $xmlOut, $logOut, $adbPath)
+        $runnerScript = @"
+Set-Location '$projectRoot'
+`$env:ANDROID_SERIAL = '$device'
 
-            Set-Location $rootPath
-            $env:ANDROID_SERIAL = $deviceId
+& '$maestro' --device='$device' test '$flow' --format junit --output '$xmlFile' --debug-output '$debugDir' *>> '$logFile'
+exit `$LASTEXITCODE
+"@
+        Set-Content -Path $runnerFile -Value $runnerScript -Encoding UTF8
 
-            Write-Host "Running flow $flowFile on device $deviceId"
-            & $adbPath -s $deviceId shell getprop ro.product.model
+        $proc = Start-Process powershell.exe `
+            -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runnerFile`"" `
+            -PassThru `
+            -WindowStyle Hidden
 
-            & maestro --device $deviceId test $flowFile --format junit --output $xmlOut *>&1 | Tee-Object -FilePath $logOut
-
-            [PSCustomObject]@{
-                Device = $deviceId
-                Flow = $flowFile
-                ExitCode = $LASTEXITCODE
-                Xml = $xmlOut
-                Log = $logOut
-            }
+        $running += [PSCustomObject]@{
+            Device = $device
+            Flow = $flow
+            Process = $proc
+            Xml = $xmlFile
+            Log = $logFile
+            Runner = $runnerFile
         }
-
-        $jobs += $job
     }
 
-    Wait-Job -Job $jobs | Out-Null
+    foreach ($item in $running) {
+        $item.Process.WaitForExit()
 
-    foreach ($job in $jobs) {
-        $result = Receive-Job -Job $job
-        if ($null -eq $result) {
+        if ($item.Process.ExitCode -ne 0) {
+            Write-Host "Failed on device $($item.Device) for flow $($item.Flow)"
             $hadFailure = $true
-            $failedItems += "$flow :: UNKNOWN_JOB_FAILURE"
-        } elseif ($result.ExitCode -ne 0) {
-            Write-Host "Failed on device $($result.Device) for flow $($result.Flow)"
-            $hadFailure = $true
-            $failedItems += "$($result.Flow) :: $($result.Device)"
+            $failedItems += "$($item.Flow) :: $($item.Device)"
         } else {
-            Write-Host "Passed on device $($result.Device) for flow $($result.Flow)"
+            Write-Host "Passed on device $($item.Device) for flow $($item.Flow)"
+        }
+
+        if (Test-Path $item.Runner) {
+            Remove-Item $item.Runner -Force -ErrorAction SilentlyContinue
         }
     }
 
-    $jobs | Remove-Job -Force
+    Write-Host "Updating Excel after $flow"
+    if ($python -eq "py") {
+        & py -3 scripts\update_excel_after_flow.py --results-dir $resultsDir --workbook $excelFile --suite-type "Printing" --flow-name $safeFlow --flow-order ($index + 1)
+    } else {
+        & python scripts\update_excel_after_flow.py --results-dir $resultsDir --workbook $excelFile --suite-type "Printing" --flow-name $safeFlow --flow-order ($index + 1)
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Excel update failed for $flow"
+        $hadFailure = $true
+        $failedItems += "$flow :: EXCEL_UPDATE_FAILED"
+    }
+
     Write-Host "Completed $flow on all devices"
 }
 
-$files = Get-ChildItem "reports\printing\*.xml" -ErrorAction SilentlyContinue
+$files = Get-ChildItem "$resultsDir\*.xml" -ErrorAction SilentlyContinue
 if (-not $files) {
     Write-Host "No test reports generated!"
     $hadFailure = $true

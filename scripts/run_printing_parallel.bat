@@ -3,15 +3,8 @@ setlocal
 cd /d %~dp0..
 
 echo =====================================
-echo RUNNING PRINTING FLOWS (PARALLEL PER FLOW ACROSS DEVICES)
+echo RUNNING PRINTING FLOWS (FLOW BY FLOW, ALL DEVICES, EXCEL UPDATE AFTER EACH FLOW)
 echo =====================================
 
-powershell -ExecutionPolicy Bypass -File "%~dp0run_flows_printing.ps1"
-
-if %ERRORLEVEL% NEQ 0 (
-    echo Printing flows completed with failures.
-    exit /b 1
-)
-
-echo Printing flows completed successfully.
-exit /b 0
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run_flows_printing.ps1"
+exit /b %errorlevel%
