@@ -1,25 +1,15 @@
 pipeline {
     agent { label 'devices' }
 
-    options {
-        disableConcurrentBuilds()
-        timestamps()
-    }
-
     stages {
-        stage('Clean Workspace') {
-            steps {
-                deleteDir()
-            }
-        }
-
         stage('Checkout') {
             steps {
+                deleteDir()
                 checkout scm
             }
         }
 
-        stage('Run CMD Pipeline') {
+        stage('Run Pipeline') {
             steps {
                 bat 'scripts\\run_all_flows_pipeline.bat'
             }
