@@ -85,7 +85,7 @@ pipeline {
                     def projectRoot = getProjectRoot()
                     bat """
                     cd /d "${projectRoot}"
-                    python scripts\\generate_excel_report.py reports\\nonprinting reports\\nonprinting_summary
+                    python scripts\\generate_excel_report.py status reports\\nonprinting_summary nonprinting
                     """
                 }
                 stash name: 'nonprinting-report', includes: '**/reports/nonprinting_summary/**', allowEmpty: true
@@ -116,7 +116,7 @@ pipeline {
                     def projectRoot = getProjectRoot()
                     bat """
                     cd /d "${projectRoot}"
-                    python scripts\\generate_excel_report.py reports\\printing reports\\printing_summary
+                    python scripts\\generate_excel_report.py status reports\\printing_summary printing
                     """
                 }
                 stash name: 'printing-report', includes: '**/reports/printing_summary/**', allowEmpty: true

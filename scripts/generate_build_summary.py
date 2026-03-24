@@ -38,9 +38,7 @@ def main():
 
     html_rows = []
     for row in rows:
-        html_rows.append(
-            f"<tr><td>{escape(row['suite'])}</td><td>{escape(row['flow'])}</td><td>{escape(row['device'])}</td><td>{escape(row['status'])}</td></tr>"
-        )
+        html_rows.append(f"<tr><td>{escape(row['suite'])}</td><td>{escape(row['flow'])}</td><td>{escape(row['device'])}</td><td>{escape(row['status'])}</td></tr>")
 
     html = f"""<html><head><meta charset="utf-8"><title>Kodak Smile Pipeline Summary</title>
 <style>body{{font-family:Arial,sans-serif;margin:24px}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ccc;padding:8px;text-align:left}}th{{background:#f5f5f5}}</style>

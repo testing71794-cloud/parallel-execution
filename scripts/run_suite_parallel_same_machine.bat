@@ -17,6 +17,10 @@ set "RUNNER_DIR=%PROJECT_DIR%\temp-runners"
 if not exist "%COLLECT_DIR%" mkdir "%COLLECT_DIR%"
 if not exist "%RUNNER_DIR%" mkdir "%RUNNER_DIR%"
 
+del /q "%PROJECT_DIR%\*.failed" >nul 2>&1
+del /q "%RUNNER_DIR%\done_*.flag" >nul 2>&1
+del /q "%RUNNER_DIR%\run_*.cmd" >nul 2>&1
+
 for %%F in ("%FLOW_DIR%\*.yaml") do (
     set "FLOW_PATH=%%F"
     set "FLOW_NAME=%%~nF"
@@ -33,6 +37,8 @@ for %%F in ("%FLOW_DIR%\*.yaml") do (
 
     del /q "!DONE1!" >nul 2>&1
     del /q "!DONE2!" >nul 2>&1
+    del /q "%PROJECT_DIR%\%SUITE_NAME%_!FLOW_NAME!_%DEVICE1_ID%.failed" >nul 2>&1
+    del /q "%PROJECT_DIR%\%SUITE_NAME%_!FLOW_NAME!_%DEVICE2_ID%.failed" >nul 2>&1
 
     > "!R1!" echo @echo off
     >> "!R1!" echo cd /d "%PROJECT_DIR%"
@@ -49,7 +55,12 @@ for %%F in ("%FLOW_DIR%\*.yaml") do (
     start "FLOW1" cmd /c "!R1!"
     start "FLOW2" cmd /c "!R2!"
 
-    call :wait_for_flags "!DONE1!" "!DONE2!"
+    call :wait_for_flags "!DONE1!" "!DONE2!" 900
+
+    if errorlevel 1 (
+        echo Timeout waiting for !FLOW_NAME! completion flags.
+        echo 1> "%PIPELINE_FAIL_FLAG%"
+    )
 
     if exist "%PROJECT_DIR%\%SUITE_NAME%_!FLOW_NAME!_%DEVICE1_ID%.failed" (
         echo 1> "%PIPELINE_FAIL_FLAG%"
@@ -71,7 +82,11 @@ exit /b 0
 :wait_for_flags
 set "FLAG1=%~1"
 set "FLAG2=%~2"
+set /a MAX_WAIT=%~3
+set /a ELAPSED=0
 :loop
 if exist "%FLAG1%" if exist "%FLAG2%" exit /b 0
+if %ELAPSED% GEQ %MAX_WAIT% exit /b 1
 timeout /t 3 /nobreak >nul
+set /a ELAPSED+=3
 goto loop

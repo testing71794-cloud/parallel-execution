@@ -55,6 +55,12 @@ if "%EXPECTED_DEVICE%"=="" (
 ) else (
     adb -s "%EXPECTED_DEVICE%" get-state >nul 2>&1
     if errorlevel 1 exit /b 1
+    if not "%APP_PACKAGE%"=="" (
+        adb -s "%EXPECTED_DEVICE%" shell pm list packages | findstr /i /c:"%APP_PACKAGE%" >nul
+        if errorlevel 1 (
+            echo WARNING: %APP_PACKAGE% not installed on %EXPECTED_DEVICE%.
+        )
+    )
 )
 
 if /i "%SESSIONNAME%"=="Services" (
