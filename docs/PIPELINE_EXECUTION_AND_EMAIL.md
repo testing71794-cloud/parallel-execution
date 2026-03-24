@@ -1,88 +1,91 @@
-# Pipeline: flow-by-flow on all devices → Excel per flow → email when done
+# Kodak Smile Pipeline Execution and Email Guide
 
-**Maestro CLI** invocations follow [Maestro CLI commands and options](https://docs.maestro.dev/maestro-cli/maestro-cli-commands-and-options): `--device` before `test`, then space-separated options such as `--format junit`, `--output <path>`, `--debug-output <path>`. See `docs/MAESTRO_OFFICIAL_REFERENCE.md`.
+## Execution modes
 
-## What runs
+### 1) same_machine_sequential
+Use this when both phones are connected to one Windows machine.
 
-1. **Flow 1** (`Non printing flows\flow1.yaml`) runs **in parallel on every connected device** (via `run_single_flow_parallel.bat`).
-2. When **all devices** finish that flow → **`update_excel_after_flow.py`** appends rows to `reports\excel\nonprinting_execution.xlsx`.
-3. Steps 1–2 repeat for **flow2 … flow7** (non-printing).
-4. Same pattern for **Printing Flow** `flow1.yaml` … `flow11.yaml` → **`printing_execution.xlsx`**.
-5. After **all** flows complete → **`send_execution_email.py`** sends **both** Excel files by email (if SMTP is configured).
+Behavior:
+- flow1 -> device1
+- flow1 -> device2
+- flow2 -> device1
+- flow2 -> device2
 
-JUnit XML is stored under:
+Why:
+- avoids same-machine parallel Maestro conflicts
+- most stable option on one PC
 
-- `reports\raw\nonprinting\flowN_<deviceTag>.xml`
-- `reports\raw\printing\flowN_<deviceTag>.xml`
+### 2) multi_agent_parallel
+Use this when you have one Jenkins agent per device.
 
-`<deviceTag>` is the ADB serial with `:` and `\` replaced so paths are valid on Windows (Maestro still uses the real serial via global `--device`). Non-printing and printing suites never overwrite each other’s `flow1` reports.
+Behavior:
+- same flow runs on both agents in parallel
+- next flow waits until both agents finish
 
-**Execution order (CMD):** for each flow, `run_single_flow_parallel.bat` starts **one minimized `cmd` per device** (parallel), waits until **every** exit marker file exists, then returns — only then `run_all_flows_pipeline.bat` runs Excel for that flow and continues to the **next** flow.
+Why:
+- keeps speed
+- avoids shared temp / screenshot / workspace conflicts
 
-**Jenkins / non-interactive agents:** the wait loop uses `ping 127.0.0.1` for delays, not `timeout`, because `timeout` requires a console stdin and fails with *Input redirection is not supported* under the Jenkins agent.
+## Output structure
 
-### Stuck on “Waiting until ALL devices finish this flow”
+### Logs
+reports/<suite>/<flow>/<device>/logs/
 
-The script waits until each device writes `reports\pids\exit_*.txt`. If that never happens, Maestro may not be running or never exits.
+### Screenshots
+.maestro/screenshots/<device>/<suite>/<flow>/
 
-1. **Open** `reports\logs\kickoff_<suite>_<flow>_<device>.log` — confirms ADB + command line.
-2. **Open** `reports\logs\<suite>_<flow>_<device>.log` — Maestro stdout/stderr.
-3. **Maestro path / user:** the Jenkins agent often runs as **SYSTEM** or another account. Maestro is usually under `C:\Users\<YourLogin>\.maestro\`. Set a Jenkins job environment variable:  
-   `MAESTRO_CMD=C:\Users\<YourLogin>\.maestro\bin\maestro.cmd`  
-   (use the real full path to `maestro.cmd`).
-4. **UI tests:** Maestro must drive the app in an **interactive session**. Run the Jenkins agent as the **same user** that is logged on to the desktop (not as a non-interactive service without a session), or tests can hang at launch.
+### Status files
+status/
+- nonprinting_flow1_DEVICEID.pass
+- nonprinting_flow1_DEVICEID.fail
 
-### App does not launch / flow hangs at `launchApp`
+### Collected artifacts
+collected-artifacts/
 
-Maestro can only drive UI if Android can show the app on a **visible, unlocked** display.
+## Email summary
+The pipeline sends an HTML summary generated from status files.
 
-1. **Kickoff log:** `reports\logs\kickoff_<suite>_<flow>_<device>.log` includes `pm path com.kodaksmile`. If you see `package:` missing, install the **debug** APK on that device (`adb -s SERIAL install -r app.apk`).
-2. **`ANDROID_HOME`:** Each parallel runner prepends `%ANDROID_HOME%\platform-tools` to `PATH` so Maestro can find **adb**. Set `ANDROID_HOME` on the Jenkins job (or machine) to your Android SDK root.
-3. **Screen / lock:** Unlock the device; USB debugging authorized. The pipeline sends **KEYCODE_WAKEUP** (224) before Maestro; keep the display from sleeping during the run if possible.
-4. **Session:** `SESSIONNAME` is written to the kickoff log. A service-only agent often cannot start activities — use a **logged-in** agent (e.g. `javaws` agent or agent started from Startup as your user).
+SEND_EMAIL_MODE values:
+- failed_only
+- always
+- never
 
-## One command (Windows)
+## AI analysis
+AI analysis runs only when:
+- AI_ANALYSIS = true
+- pipeline_failed.flag exists
 
-```bat
-scripts\run_all_flows_pipeline.bat
-```
+Script used:
+scripts/run_ai_analysis.bat
 
-Or from repo root:
+## Recommended Jenkins labels
+- built-in
+- devices
+- device-agent-1
+- device-agent-2
 
-```bat
-cd D:\path\to\kodak-Smile-with-OpenAI
-scripts\run_all_flows_pipeline.bat
-```
+## Troubleshooting
 
-## Python dependencies
+### App does not launch
+- Ensure the Jenkins agent runs on the logged-in desktop session.
+- Avoid Session 0 / service-only UI context.
+- Confirm adb sees the phone.
+- Confirm the app is installed.
+- Confirm Maestro is callable.
 
-```bat
-pip install -r scripts\requirements-python.txt
-```
+### Device missing
+Run:
+adb devices
 
-## Email (after all flows)
+### Maestro missing
+Run:
+maestro --version
 
-Set these **environment variables** (Jenkins: job → Configure → Build Environment → Inject, or system env on your PC):
+### Python missing
+Run:
+python --version
 
-| Variable     | Example              | Required |
-|-------------|----------------------|----------|
-| `MAIL_TO`   | `you@company.com`    | Yes, to send |
-| `SMTP_HOST` | `smtp.gmail.com`     | Yes      |
-| `SMTP_PORT` | `587`                | Optional (default 587) |
-| `SMTP_USER` | `your@gmail.com`   | Yes      |
-| `SMTP_PASS` | app password         | Yes      |
-| `SMTP_FROM` | same as user         | Optional |
-| `MAIL_SUBJECT` | custom subject    | Optional |
-
-If **`MAIL_TO` is not set**, the email step is skipped and the build still **succeeds**.
-
-## Jenkins
-
-- Job runs `scripts\run_all_flows_pipeline.bat` on an agent with **devices** (see `Jenkinsfile.hybrid`).
-- Add the same SMTP variables to the job so the final email runs inside the batch file.
-
-Alternative: install **Email Extension Plugin** and add a post-build step with `attachmentsPattern: reports/excel/*.xlsx` (then you can remove the Python email call from the `.bat` if you prefer Jenkins-only mail).
-
-## PowerShell entry points
-
-`run_flows_non_printing.ps1` and `run_flows_printing.ps1` use the **same** `reports\raw\<suite>` layout and `update_excel_after_flow.py` as the `.bat` pipeline. They do **not** send the final email by default; use the full `run_all_flows_pipeline.bat` for email after both suites.
+### Node missing
+Run:
+node --version
+npm --version
