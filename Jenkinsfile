@@ -13,29 +13,24 @@ pipeline {
     }
 
     parameters {
-        choice(name: 'RUN_MODE', choices: ['same_machine_sequential', 'multi_agent_parallel'], description: 'same_machine_sequential = stable on one USB PC. multi_agent_parallel = one Jenkins agent per device.')
+        string(name: 'DEVICES_AGENT', defaultValue: 'devices', description: 'Agent label for same-machine execution.')
+        string(name: 'DEVICE1_LABEL', defaultValue: 'device-agent-1', description: 'Agent label for device 1 in multi-agent mode.')
+        string(name: 'DEVICE2_LABEL', defaultValue: 'device-agent-2', description: 'Agent label for device 2 in multi-agent mode.')
+        string(name: 'DEVICE1_ID', defaultValue: '3C1625009Q500000', description: 'ADB device ID for device 1.')
+        string(name: 'DEVICE2_ID', defaultValue: 'RZCWA2B05RB', description: 'ADB device ID for device 2.')
+        choice(name: 'RUN_MODE', choices: ['multi_agent_parallel', 'same_machine_parallel'], description: 'multi_agent_parallel is recommended. same_machine_parallel runs both devices from one PC.')
         choice(name: 'SUITE', choices: ['both', 'nonprinting', 'printing'], description: 'Which suites to run.')
-        string(name: 'DEVICES_AGENT', defaultValue: 'devices', description: 'Label for the USB device machine when RUN_MODE=same_machine_sequential.')
-        string(name: 'DEVICE1_LABEL', defaultValue: 'device-agent-1', description: 'Agent label for device 1 when RUN_MODE=multi_agent_parallel.')
-        string(name: 'DEVICE2_LABEL', defaultValue: 'device-agent-2', description: 'Agent label for device 2 when RUN_MODE=multi_agent_parallel.')
-        string(name: 'DEVICE1_ID', defaultValue: '3C1625009Q500000', description: 'ADB device ID for device 1 in multi-agent mode.')
-        string(name: 'DEVICE2_ID', defaultValue: 'RZCWA2B05RB', description: 'ADB device ID for device 2 in multi-agent mode.')
-        booleanParam(name: 'AI_ANALYSIS', defaultValue: true, description: 'Run ai-doctor at the end when tests fail.')
-        booleanParam(name: 'RETRY_FAILED', defaultValue: true, description: 'Retry a failed flow once before marking final failure.')
-        choice(name: 'SEND_EMAIL_MODE', choices: ['failed_only', 'always', 'never'], description: 'When to send email summary.')
-        string(name: 'MAESTRO_CMD', defaultValue: '', description: 'Optional override. Leave blank to auto-detect maestro.')
-        string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'Optional app package for launch validation.')
-        string(name: 'PROJECT_SUBDIR', defaultValue: '', description: 'Optional repo subfolder if the project is not at workspace root.')
-        string(name: 'EMAIL_TO', defaultValue: 'your-email@example.com', description: 'Summary email recipient(s). Comma separated.')
-    }
-
-    environment {
-        PIPELINE_FAILED = '0'
-        AI_FAILED = '0'
+        booleanParam(name: 'AI_ANALYSIS', defaultValue: true, description: 'Run AI analysis when failures exist.')
+        booleanParam(name: 'RETRY_FAILED', defaultValue: true, description: 'Retry failed flow once.')
+        choice(name: 'SEND_EMAIL_MODE', choices: ['failed_only', 'always', 'never'], description: 'When to send summary email.')
+        string(name: 'MAESTRO_CMD', defaultValue: '', description: 'Optional Maestro override path.')
+        string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'App package for validation.')
+        string(name: 'EMAIL_TO', defaultValue: 'your-email@example.com', description: 'Summary email recipient(s).')
+        string(name: 'PROJECT_SUBDIR', defaultValue: '', description: 'Optional repo subfolder if project is not at workspace root.')
     }
 
     stages {
-        stage('Checkout Source') {
+        stage('Fetch Code from GitHub') {
             agent { label 'built-in' }
             steps {
                 deleteDir()
@@ -44,100 +39,7 @@ pipeline {
             }
         }
 
-        stage('Precheck - Controller') {
-            agent { label 'built-in' }
-            steps {
-                deleteDir()
-                unstash 'source-code'
-                script {
-                    def projectRoot = getProjectRoot()
-                    echo "Controller project root: ${projectRoot}"
-                    if (!fileExists("${projectRoot}/scripts")) {
-                        error "scripts folder not found under ${projectRoot}"
-                    }
-                }
-            }
-        }
-
-        stage('Precheck - Device Side') {
-            parallel {
-                stage('Same Machine Devices Agent') {
-                    when { expression { params.RUN_MODE == 'same_machine_sequential' } }
-                    agent { label params.DEVICES_AGENT }
-                    steps {
-                        deleteDir()
-                        unstash 'source-code'
-                        script {
-                            def projectRoot = getProjectRoot()
-                            bat """
-                            cd /d "${projectRoot}"
-                            call scripts\\precheck_environment.bat "${resolveMaestroCmd()}" "${params.APP_PACKAGE}"
-                            """
-                        }
-                    }
-                }
-
-                stage('Multi Agent Device 1') {
-                    when { expression { params.RUN_MODE == 'multi_agent_parallel' } }
-                    agent { label params.DEVICE1_LABEL }
-                    steps {
-                        deleteDir()
-                        unstash 'source-code'
-                        script {
-                            def projectRoot = getProjectRoot()
-                            bat """
-                            cd /d "${projectRoot}"
-                            call scripts\\precheck_environment.bat "${resolveMaestroCmd()}" "${params.APP_PACKAGE}" "${params.DEVICE1_ID}"
-                            """
-                        }
-                    }
-                }
-
-                stage('Multi Agent Device 2') {
-                    when { expression { params.RUN_MODE == 'multi_agent_parallel' } }
-                    agent { label params.DEVICE2_LABEL }
-                    steps {
-                        deleteDir()
-                        unstash 'source-code'
-                        script {
-                            def projectRoot = getProjectRoot()
-                            bat """
-                            cd /d "${projectRoot}"
-                            call scripts\\precheck_environment.bat "${resolveMaestroCmd()}" "${params.APP_PACKAGE}" "${params.DEVICE2_ID}"
-                            """
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Run Non-Printing') {
-            when { expression { params.SUITE in ['both', 'nonprinting'] } }
-            steps {
-                script {
-                    if (params.RUN_MODE == 'same_machine_sequential') {
-                        runSuiteSameMachine('nonprinting', 'Non printing flows')
-                    } else {
-                        runSuiteMultiAgent('nonprinting', 'Non printing flows')
-                    }
-                }
-            }
-        }
-
-        stage('Run Printing') {
-            when { expression { params.SUITE in ['both', 'printing'] } }
-            steps {
-                script {
-                    if (params.RUN_MODE == 'same_machine_sequential') {
-                        runSuiteSameMachine('printing', 'Printing Flow')
-                    } else {
-                        runSuiteMultiAgent('printing', 'Printing Flow')
-                    }
-                }
-            }
-        }
-
-        stage('Generate Build Summary') {
+        stage('Install Dependencies') {
             agent { label 'built-in' }
             steps {
                 deleteDir()
@@ -146,37 +48,124 @@ pipeline {
                     def projectRoot = getProjectRoot()
                     bat """
                     cd /d "${projectRoot}"
-                    if not exist collected-artifacts mkdir collected-artifacts
-                    python scripts\\generate_build_summary.py collected-artifacts build-summary
+                    if exist package.json (
+                        call npm ci || call npm install
+                    )
+                    if exist ai-doctor\\package.json (
+                        cd ai-doctor
+                        call npm ci || call npm install
+                    )
                     """
-                    stash name: 'summary-artifacts', includes: "${projectRoot}/build-summary/**", allowEmpty: true
+                }
+                stash name: 'workspace-with-deps', includes: '**/*', allowEmpty: true
+            }
+        }
+
+        stage('Execute Non Printing Flows') {
+            when { expression { params.SUITE in ['both', 'nonprinting'] } }
+            agent { label 'built-in' }
+            steps {
+                script {
+                    if (params.RUN_MODE == 'multi_agent_parallel') {
+                        runSuiteMultiAgent('nonprinting', 'Non printing flows')
+                    } else {
+                        runSuiteSameMachineParallel('nonprinting', 'Non printing flows')
+                    }
                 }
             }
         }
 
-        stage('Run AI Analysis') {
-            when { expression { params.AI_ANALYSIS && fileExists("${getProjectRoot()}/pipeline_failed.flag") } }
+        stage('Generate Excel Report for Non Printing') {
+            when { expression { params.SUITE in ['both', 'nonprinting'] } }
             agent { label 'built-in' }
             steps {
                 deleteDir()
-                unstash 'source-code'
+                unstash 'workspace-with-deps'
                 script {
                     def projectRoot = getProjectRoot()
-                    catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                        bat """
-                        cd /d "${projectRoot}"
-                        call scripts\\run_ai_analysis.bat
-                        if errorlevel 1 (
-                            echo 1> ai_failed.flag
-                            exit /b 0
-                        )
-                        """
+                    bat """
+                    cd /d "${projectRoot}"
+                    python scripts\\generate_excel_report.py reports\\nonprinting reports\\nonprinting_summary
+                    """
+                }
+                stash name: 'nonprinting-report', includes: '**/reports/nonprinting_summary/**', allowEmpty: true
+            }
+        }
+
+        stage('Execute Printing Flows') {
+            when { expression { params.SUITE in ['both', 'printing'] } }
+            agent { label 'built-in' }
+            steps {
+                script {
+                    if (params.RUN_MODE == 'multi_agent_parallel') {
+                        runSuiteMultiAgent('printing', 'Printing Flow')
+                    } else {
+                        runSuiteSameMachineParallel('printing', 'Printing Flow')
                     }
+                }
+            }
+        }
+
+        stage('Generate Excel Report for Printing') {
+            when { expression { params.SUITE in ['both', 'printing'] } }
+            agent { label 'built-in' }
+            steps {
+                deleteDir()
+                unstash 'workspace-with-deps'
+                script {
+                    def projectRoot = getProjectRoot()
+                    bat """
+                    cd /d "${projectRoot}"
+                    python scripts\\generate_excel_report.py reports\\printing reports\\printing_summary
+                    """
+                }
+                stash name: 'printing-report', includes: '**/reports/printing_summary/**', allowEmpty: true
+            }
+        }
+
+        stage('AI Failure Analysis + Smart Retry') {
+            when { expression { params.AI_ANALYSIS } }
+            agent { label 'built-in' }
+            steps {
+                deleteDir()
+                unstash 'workspace-with-deps'
+                script {
+                    def projectRoot = getProjectRoot()
+                    if (fileExists("${projectRoot}/pipeline_failed.flag")) {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                            bat """
+                            cd /d "${projectRoot}"
+                            call scripts\\run_ai_analysis.bat
+                            if errorlevel 1 (
+                                echo 1> ai_failed.flag
+                                exit /b 0
+                            )
+                            """
+                        }
+                    } else {
+                        echo "No failures found. Skipping AI analysis."
+                    }
+                }
+            }
+        }
+
+        stage('Archive Reports & Artifacts') {
+            agent { label 'built-in' }
+            steps {
+                deleteDir()
+                unstash 'workspace-with-deps'
+                script {
+                    def projectRoot = getProjectRoot()
+                    bat """
+                    cd /d "${projectRoot}"
+                    if not exist build-summary mkdir build-summary
+                    python scripts\\generate_build_summary.py collected-artifacts build-summary
+                    """
                 }
             }
             post {
                 always {
-                    archiveArtifacts artifacts: '**/ai-doctor/artifacts/**, **/ai_failed.flag', allowEmptyArchive: true
+                    archiveArtifacts artifacts: '**/reports/**, **/.maestro/screenshots/**, **/status/**, **/collected-artifacts/**, **/build-summary/**, **/ai-doctor/artifacts/**, **/*.flag', allowEmptyArchive: true
                 }
             }
         }
@@ -185,7 +174,7 @@ pipeline {
             agent { label 'built-in' }
             steps {
                 deleteDir()
-                unstash 'source-code'
+                unstash 'workspace-with-deps'
                 script {
                     def projectRoot = getProjectRoot()
                     def pipelineFailed = fileExists("${projectRoot}/pipeline_failed.flag")
@@ -199,8 +188,8 @@ pipeline {
                         currentBuild.result = 'SUCCESS'
                     }
 
-                    echo "Pipeline failed flag = ${pipelineFailed}"
-                    echo "AI failed flag = ${aiFailed}"
+                    echo "pipeline_failed = ${pipelineFailed}"
+                    echo "ai_failed = ${aiFailed}"
                     echo "Final result = ${currentBuild.result}"
                 }
             }
@@ -208,10 +197,6 @@ pipeline {
     }
 
     post {
-        always {
-            archiveArtifacts artifacts: '**/collected-artifacts/**, **/build-summary/**, **/*.flag', allowEmptyArchive: true
-        }
-
         success {
             script {
                 if (params.SEND_EMAIL_MODE == 'always') {
@@ -219,7 +204,6 @@ pipeline {
                 }
             }
         }
-
         unstable {
             script {
                 if (params.SEND_EMAIL_MODE != 'never') {
@@ -227,7 +211,6 @@ pipeline {
                 }
             }
         }
-
         failure {
             script {
                 if (params.SEND_EMAIL_MODE != 'never') {
@@ -246,17 +229,18 @@ def resolveMaestroCmd() {
     return params.MAESTRO_CMD?.trim() ? params.MAESTRO_CMD.trim() : ""
 }
 
-def runSuiteSameMachine(String suiteName, String suiteDir) {
+def runSuiteSameMachineParallel(String suiteName, String suiteDir) {
     node(params.DEVICES_AGENT) {
         deleteDir()
-        unstash 'source-code'
+        unstash 'workspace-with-deps'
         def projectRoot = getProjectRoot()
 
         catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
             bat """
             cd /d "${projectRoot}"
+            call scripts\\precheck_environment.bat "${resolveMaestroCmd()}" "${params.APP_PACKAGE}"
             if not exist collected-artifacts mkdir collected-artifacts
-            call scripts\\run_suite_same_machine.bat "${suiteName}" "${suiteDir}" "${resolveMaestroCmd()}" "${params.APP_PACKAGE}" "${params.RETRY_FAILED}"
+            call scripts\\run_suite_parallel_same_machine.bat "${suiteName}" "${suiteDir}" "${params.DEVICE1_ID}" "${params.DEVICE2_ID}" "${resolveMaestroCmd()}" "${params.APP_PACKAGE}" "${params.RETRY_FAILED}"
             if errorlevel 1 (
                 echo 1> pipeline_failed.flag
                 exit /b 0
@@ -264,12 +248,12 @@ def runSuiteSameMachine(String suiteName, String suiteDir) {
             """
         }
 
-        stash name: "suite-${suiteName}-same-machine", includes: '**/reports/**, **/.maestro/screenshots/**, **/status/**, **/collected-artifacts/**, **/*.flag', allowEmpty: true
+        stash name: "suite-${suiteName}-same-machine-parallel", includes: '**/reports/**, **/.maestro/screenshots/**, **/status/**, **/collected-artifacts/**, **/*.flag', allowEmpty: true
 
         node('built-in') {
             deleteDir()
-            unstash 'source-code'
-            unstash "suite-${suiteName}-same-machine"
+            unstash 'workspace-with-deps'
+            unstash "suite-${suiteName}-same-machine-parallel"
             bat """
             cd /d "${getProjectRoot()}"
             if not exist collected-artifacts mkdir collected-artifacts
@@ -284,7 +268,7 @@ def runSuiteSameMachine(String suiteName, String suiteDir) {
 def runSuiteMultiAgent(String suiteName, String suiteDir) {
     node('built-in') {
         deleteDir()
-        unstash 'source-code'
+        unstash 'workspace-with-deps'
         def projectRoot = getProjectRoot()
         def flows = findFiles(glob: "${projectRoot}/${suiteDir}/*.yaml").collect { it.path }.sort()
 
@@ -300,18 +284,19 @@ def runSuiteMultiAgent(String suiteName, String suiteDir) {
 
         for (flow in flows) {
             def flowName = flow.tokenize('/\\\\')[-1].replace('.yaml','')
-            echo "Running ${suiteName}/${flowName} in parallel across device agents"
+            echo "Running ${flowName} on both devices in parallel. Pipeline will continue even if one branch fails."
 
             def branches = [:]
 
             branches["${flowName} - ${params.DEVICE1_ID}"] = {
                 node(params.DEVICE1_LABEL) {
                     deleteDir()
-                    unstash 'source-code'
+                    unstash 'workspace-with-deps'
                     def root = getProjectRoot()
                     catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                         bat """
                         cd /d "${root}"
+                        call scripts\\precheck_environment.bat "${resolveMaestroCmd()}" "${params.APP_PACKAGE}" "${params.DEVICE1_ID}"
                         call scripts\\run_one_flow_on_device.bat "${suiteName}" "${flowName}" "${flow}" "${params.DEVICE1_ID}" "${resolveMaestroCmd()}" "${params.APP_PACKAGE}" "${params.RETRY_FAILED}"
                         if errorlevel 1 (
                             echo 1> "${root}\\${suiteName}_${flowName}_${params.DEVICE1_ID}.failed"
@@ -326,11 +311,12 @@ def runSuiteMultiAgent(String suiteName, String suiteDir) {
             branches["${flowName} - ${params.DEVICE2_ID}"] = {
                 node(params.DEVICE2_LABEL) {
                     deleteDir()
-                    unstash 'source-code'
+                    unstash 'workspace-with-deps'
                     def root = getProjectRoot()
                     catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                         bat """
                         cd /d "${root}"
+                        call scripts\\precheck_environment.bat "${resolveMaestroCmd()}" "${params.APP_PACKAGE}" "${params.DEVICE2_ID}"
                         call scripts\\run_one_flow_on_device.bat "${suiteName}" "${flowName}" "${flow}" "${params.DEVICE2_ID}" "${resolveMaestroCmd()}" "${params.APP_PACKAGE}" "${params.RETRY_FAILED}"
                         if errorlevel 1 (
                             echo 1> "${root}\\${suiteName}_${flowName}_${params.DEVICE2_ID}.failed"
@@ -345,17 +331,16 @@ def runSuiteMultiAgent(String suiteName, String suiteDir) {
             parallel branches
 
             deleteDir()
-            unstash 'source-code'
-            def root = getProjectRoot()
+            unstash 'workspace-with-deps'
             bat """
-            cd /d "${root}"
+            cd /d "${projectRoot}"
             if not exist collected-artifacts mkdir collected-artifacts
             """
 
             [params.DEVICE1_ID, params.DEVICE2_ID].each { devId ->
                 unstash "artifacts-${suiteName}-${flowName}-${devId}"
                 bat """
-                cd /d "${root}"
+                cd /d "${projectRoot}"
                 if exist reports xcopy /E /I /Y reports collected-artifacts\\reports >nul
                 if exist .maestro\\screenshots xcopy /E /I /Y .maestro\\screenshots collected-artifacts\\.maestro\\screenshots >nul
                 if exist status xcopy /E /I /Y status collected-artifacts\\status >nul

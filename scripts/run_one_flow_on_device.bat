@@ -34,54 +34,37 @@ if not "%MAESTRO_OVERRIDE%"=="" (
     set "MAESTRO_CMD=C:\maestro\bin\maestro.exe"
 )
 
-echo ===================================== > "%KICKOFF_LOG%"
-echo RUN ONE FLOW ON ONE DEVICE >> "%KICKOFF_LOG%"
-echo ===================================== >> "%KICKOFF_LOG%"
-echo Suite: %SUITE_NAME% >> "%KICKOFF_LOG%"
+echo Suite: %SUITE_NAME% > "%KICKOFF_LOG%"
 echo Flow: %FLOW_NAME% >> "%KICKOFF_LOG%"
-echo Flow path: %FLOW_PATH% >> "%KICKOFF_LOG%"
 echo Device: %DEVICE_ID% >> "%KICKOFF_LOG%"
-echo Maestro: %MAESTRO_CMD% >> "%KICKOFF_LOG%"
-echo Retry failed once: %RETRY_FAILED% >> "%KICKOFF_LOG%"
+echo Flow path: %FLOW_PATH% >> "%KICKOFF_LOG%"
 echo Started: %date% %time% >> "%KICKOFF_LOG%"
 
 adb -s "%DEVICE_ID%" get-state >nul 2>&1
 if errorlevel 1 (
-    echo Device %DEVICE_ID% is not available. > "%FLOW_LOG%"
-    echo FAILED: device not available. >> "%KICKOFF_LOG%"
     echo device unavailable> "%STATUS_FAIL%"
+    echo Device unavailable > "%FLOW_LOG%"
     exit /b 1
 )
 
-echo Starting %FLOW_NAME% on %DEVICE_ID%
 call "%MAESTRO_CMD%" test "%FLOW_PATH%" --device "%DEVICE_ID%" > "%FLOW_LOG%" 2>&1
 set "RUN_EXIT=%ERRORLEVEL%"
 
 if "%RUN_EXIT%"=="0" (
     echo pass> "%STATUS_PASS%"
-    echo Finished: %date% %time% >> "%KICKOFF_LOG%"
-    echo Exit code: %RUN_EXIT% >> "%KICKOFF_LOG%"
-    echo PASSED on device %DEVICE_ID%
     exit /b 0
 )
 
-echo First attempt failed with exit %RUN_EXIT% >> "%KICKOFF_LOG%"
-
 if /i "%RETRY_FAILED%"=="true" (
-    echo Retrying once for %FLOW_NAME% on %DEVICE_ID% >> "%KICKOFF_LOG%"
+    echo Retrying once >> "%KICKOFF_LOG%"
     call "%MAESTRO_CMD%" test "%FLOW_PATH%" --device "%DEVICE_ID%" >> "%FLOW_LOG%" 2>&1
     set "RUN_EXIT=%ERRORLEVEL%"
 )
 
-echo Finished: %date% %time% >> "%KICKOFF_LOG%"
-echo Exit code: %RUN_EXIT% >> "%KICKOFF_LOG%"
-
-if not "%RUN_EXIT%"=="0" (
-    echo fail> "%STATUS_FAIL%"
-    echo FAILED on device %DEVICE_ID% (exit %RUN_EXIT%)
-    exit /b 1
+if "%RUN_EXIT%"=="0" (
+    echo pass> "%STATUS_PASS%"
+    exit /b 0
 )
 
-echo pass> "%STATUS_PASS%"
-echo PASSED on device %DEVICE_ID%
-exit /b 0
+echo fail> "%STATUS_FAIL%"
+exit /b 1

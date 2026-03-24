@@ -33,13 +33,7 @@ def main():
     passed = sum(1 for r in rows if r["status"] == "PASS")
     failed = sum(1 for r in rows if r["status"] == "FAIL")
 
-    payload = {
-        "total": total,
-        "passed": passed,
-        "failed": failed,
-        "rows": rows,
-    }
-
+    payload = {"total": total, "passed": passed, "failed": failed, "rows": rows}
     (output / "summary.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     html_rows = []
@@ -48,37 +42,17 @@ def main():
             f"<tr><td>{escape(row['suite'])}</td><td>{escape(row['flow'])}</td><td>{escape(row['device'])}</td><td>{escape(row['status'])}</td></tr>"
         )
 
-    html = f"""<html>
-<head>
-<meta charset="utf-8">
-<title>Kodak Smile Pipeline Summary</title>
-<style>
-body {{ font-family: Arial, sans-serif; margin: 24px; }}
-table {{ border-collapse: collapse; width: 100%; }}
-th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
-th {{ background: #f5f5f5; }}
-.summary {{ margin-bottom: 16px; }}
-.fail {{ color: #b00020; font-weight: bold; }}
-.pass {{ color: #0a7c2f; font-weight: bold; }}
-</style>
-</head>
-<body>
+    html = f"""<html><head><meta charset="utf-8"><title>Kodak Smile Pipeline Summary</title>
+<style>body{{font-family:Arial,sans-serif;margin:24px}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ccc;padding:8px;text-align:left}}th{{background:#f5f5f5}}</style>
+</head><body>
 <h2>Kodak Smile Pipeline Summary</h2>
-<div class="summary">
 <p>Total: <strong>{total}</strong></p>
-<p>Passed: <strong class="pass">{passed}</strong></p>
-<p>Failed: <strong class="fail">{failed}</strong></p>
-</div>
-<table>
-<thead><tr><th>Suite</th><th>Flow</th><th>Device</th><th>Status</th></tr></thead>
-<tbody>
+<p>Passed: <strong>{passed}</strong></p>
+<p>Failed: <strong>{failed}</strong></p>
+<table><thead><tr><th>Suite</th><th>Flow</th><th>Device</th><th>Status</th></tr></thead><tbody>
 {''.join(html_rows) if html_rows else '<tr><td colspan="4">No status files found.</td></tr>'}
-</tbody>
-</table>
-</body>
-</html>"""
+</tbody></table></body></html>"""
     (output / "summary.html").write_text(html, encoding="utf-8")
-    print(f"Wrote summary to {output}")
 
 if __name__ == "__main__":
     main()

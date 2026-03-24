@@ -11,21 +11,10 @@ if not exist ai-doctor (
 )
 
 cd /d ai-doctor
-
-call npm ci
-if errorlevel 1 (
-    call npm install
-    if errorlevel 1 (
-        echo ERROR: npm install failed in ai-doctor.
-        exit /b 1
-    )
-)
+call npm ci || call npm install
+if errorlevel 1 exit /b 1
 
 node index.mjs
-if errorlevel 1 (
-    echo ERROR: ai-doctor failed.
-    exit /b 1
-)
+if errorlevel 1 exit /b 1
 
-echo AI analysis completed.
 exit /b 0
