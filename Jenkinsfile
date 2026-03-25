@@ -61,7 +61,7 @@ pipeline {
 
                     if exist ai-doctor\\package.json (
                         cd ai-doctor
-                        call npm ci || call npm install || (echo 1> ..\install_failed.flag & exit /b 1)
+                        call npm ci || call npm install || (echo 1> ..\\install_failed.flag & exit /b 1)
                         cd ..
                     )
                     '''
