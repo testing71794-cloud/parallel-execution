@@ -1,28 +1,16 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
+REM =====================================
+REM RUN ONE FLOW ON ONE DEVICE (FIXED)
+REM =====================================
 
-set "SUITE_NAME=%~1"
-set "FLOW_NAME=%~2"
-set "FLOW_PATH=%~3"
-set "DEVICE_ID=%~4"
-set "MAESTRO_OVERRIDE=%~5"
-set "APP_PACKAGE=%~6"
-set "RETRY_FAILED=%~7"
-
-set "LOG_DIR=logs"
-if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
-
-set "LOG_FILE=%LOG_DIR%\%SUITE_NAME%_%FLOW_NAME%_%DEVICE_ID%.log"
+set DEVICE_ID=%1
+set FLOW_FILE=%2
+set FLOW_NAME=%3
 
 echo Running %FLOW_NAME% on device %DEVICE_ID%
 
-REM ✅ FIX: remove any input redirection, only use output redirection
-maestro test "%FLOW_PATH%" --device %DEVICE_ID% > "%LOG_FILE%" 2>&1
+REM Ensure logs folder exists
+if not exist logs mkdir logs
 
-if errorlevel 1 (
-    echo FAILED %FLOW_NAME% on %DEVICE_ID%
-    exit /b 1
-)
-
-echo PASSED %FLOW_NAME% on %DEVICE_ID%
-exit /b 0
+REM FIX: Proper use of start with cmd /c and redirection inside quotes
+start "" cmd /c "maestro test \"%FLOW_FILE%\" --device %DEVICE_ID% > logs\%DEVICE_ID%_%FLOW_NAME%.log 2>&1"
