@@ -1,78 +1,73 @@
-import csv
+import os
 import sys
-from pathlib import Path
+import xml.etree.ElementTree as ET
+from datetime import datetime
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
 
-SEPARATOR = "__"
+project_root = os.getcwd()
+input_dir_name = sys.argv[1] if len(sys.argv) > 1 else "reports"
+output_file_name = sys.argv[2] if len(sys.argv) > 2 else "summary.xlsx"
+suite_name = sys.argv[3] if len(sys.argv) > 3 else "suite"
 
+reports_dir = os.path.join(project_root, input_dir_name)
+output_file = os.path.join(reports_dir, output_file_name)
+os.makedirs(reports_dir, exist_ok=True)
 
-def parse_status_name(path: Path):
-    parts = path.stem.split(SEPARATOR)
-    if len(parts) < 3:
-        return None
-    suite = parts[0]
-    flow = parts[1]
-    device = SEPARATOR.join(parts[2:])
-    status = "PASS" if path.suffix.lower() == ".pass" else "FAIL"
-    return {
-        "suite": suite,
-        "flow": flow,
-        "device": device,
-        "status": status,
-        "path": str(path),
-    }
+wb = Workbook()
+ws = wb.active
+ws.title = "Execution Summary"
+headers = ["Suite", "Build Number", "Timestamp", "Device ID", "Flow Name", "Status", "Duration (s)", "Failure Reason"]
+ws.append(headers)
 
+header_fill = PatternFill("solid", fgColor="1F4E78")
+header_font = Font(color="FFFFFF", bold=True)
+for idx in range(1, len(headers) + 1):
+    cell = ws.cell(row=1, column=idx)
+    cell.fill = header_fill
+    cell.font = header_font
+    cell.alignment = Alignment(horizontal="center")
 
-def main():
-    if len(sys.argv) < 4:
-        print("Usage: generate_excel_report.py <status_dir> <output_dir> <suite_prefix>")
-        sys.exit(1)
+build_number = os.environ.get("BUILD_NUMBER", "")
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    status_dir = Path(sys.argv[1])
-    output_dir = Path(sys.argv[2])
-    suite_prefix = sys.argv[3].strip().lower()
-    output_dir.mkdir(parents=True, exist_ok=True)
+for device_id in sorted(os.listdir(reports_dir)) if os.path.isdir(reports_dir) else []:
+    device_path = os.path.join(reports_dir, device_id)
+    report_file = os.path.join(device_path, "report.xml")
+    if not os.path.isdir(device_path) or not os.path.exists(report_file):
+        continue
+    try:
+        tree = ET.parse(report_file)
+        root = tree.getroot()
+        testcases = root.findall(".//testcase")
+        if not testcases:
+            ws.append([suite_name, build_number, timestamp, device_id, "NO_TESTCASE_FOUND", "Failed", "", "No testcase entries in report.xml"])
+        for tc in testcases:
+            flow_name = tc.attrib.get("name", "")
+            duration = tc.attrib.get("time", "")
+            failure = tc.find("failure")
+            if failure is None:
+                status = "Passed"
+                failure_reason = ""
+            else:
+                status = "Failed"
+                failure_reason = failure.attrib.get("message", "") or (failure.text or "").strip()
+            ws.append([suite_name, build_number, timestamp, device_id, flow_name, status, duration, failure_reason])
+    except Exception as exc:
+        ws.append([suite_name, build_number, timestamp, device_id, "REPORT_PARSE_ERROR", "Failed", "", str(exc)])
 
-    rows = []
-    if status_dir.exists():
-        for status_file in sorted(status_dir.glob(f"{suite_prefix}{SEPARATOR}*.*")):
-            row = parse_status_name(status_file)
-            if row:
-                rows.append(row)
+for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=6, max_col=6):
+    for cell in row:
+        if cell.value == "Passed":
+            cell.font = Font(color="008000", bold=True)
+        elif cell.value == "Failed":
+            cell.font = Font(color="FF0000", bold=True)
 
-    csv_path = output_dir / "summary.csv"
-    with csv_path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["suite", "flow", "device", "status", "path"])
-        for row in rows:
-            writer.writerow([row["suite"], row["flow"], row["device"], row["status"], row["path"]])
+for col in range(1, ws.max_column + 1):
+    letter = get_column_letter(col)
+    max_length = max((len(str(cell.value)) if cell.value is not None else 0) for cell in ws[letter])
+    ws.column_dimensions[letter].width = min(max_length + 2, 45)
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Summary"
-    headers = ["suite", "flow", "device", "status", "path"]
-    ws.append(headers)
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-    for row in rows:
-        ws.append([row["suite"], row["flow"], row["device"], row["status"], row["path"]])
-    if not rows:
-        ws.append([suite_prefix, "No status files found", "", "", ""])
-    for col in ["A", "B", "C", "D", "E"]:
-        ws.column_dimensions[col].width = 28
-    wb.save(output_dir / "summary.xlsx")
-
-    html_path = output_dir / "summary.html"
-    with html_path.open("w", encoding="utf-8") as f:
-        f.write("<html><body><h3>Suite Summary</h3><table border='1'><tr><th>Suite</th><th>Flow</th><th>Device</th><th>Status</th><th>Path</th></tr>")
-        if rows:
-            for row in rows:
-                f.write(f"<tr><td>{row['suite']}</td><td>{row['flow']}</td><td>{row['device']}</td><td>{row['status']}</td><td>{row['path']}</td></tr>")
-        else:
-            f.write("<tr><td colspan='5'>No status files found.</td></tr>")
-        f.write("</table></body></html>")
-
-
-if __name__ == "__main__":
-    main()
+wb.save(output_file)
+print(f"Excel report generated: {output_file}")
