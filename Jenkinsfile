@@ -47,19 +47,19 @@ pipeline {
                     if exist build-summary rmdir /s /q build-summary
                     if exist .maestro rmdir /s /q .maestro
                     if exist temp-runners rmdir /s /q temp-runners
-                    if exist ai-doctor\artifacts rmdir /s /q ai-doctor\artifacts
+                    if exist ai-doctor\\artifacts rmdir /s /q ai-doctor\\artifacts
                     del /q detected_devices.txt 2>nul
                     del /q *.flag 2>nul
                     del /q *.failed 2>nul
 
                     python -m pip install --upgrade pip || (echo 1> install_failed.flag & exit /b 1)
-                    python -m pip install -r scripts\requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
+                    python -m pip install -r scripts\\requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
 
                     if exist package.json (
                         call npm ci || call npm install || (echo 1> install_failed.flag & exit /b 1)
                     )
 
-                    if exist ai-doctor\package.json (
+                    if exist ai-doctor\\package.json (
                         cd ai-doctor
                         call npm ci || call npm install || (echo 1> ..\install_failed.flag & exit /b 1)
                         cd ..
