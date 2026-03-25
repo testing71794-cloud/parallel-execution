@@ -1,0 +1,73 @@
+{
+  "rootCause": "ATP pattern match: timing",
+  "failureType": "timing",
+  "suggestedFix": "See resultsByFlow for per-test suggestions.\n\n- Flow10 - Signup -> Permissions -> Onboarding (skip)->Camera-> Connect -> Print: Flaky/state-dependent assert – home screen not reached.\n- flow11 - EDITING SUITE - Kodak Smile: Element not found – selector may be wrong or element not yet visible.\n- Flow2 - Signup to Home - Go to Homepage: Flaky/state-dependent assert – home screen not reached.",
+  "retryRecommended": true,
+  "confidence": 0.8333333333333334,
+  "failuresCount": 3,
+  "failedTests": [
+    {
+      "name": "Flow10 - Signup -> Permissions -> Onboarding (skip)->Camera-> Connect -> Print",
+      "time": 80,
+      "message": "Assertion is false: id: imageViewPreview is visible"
+    },
+    {
+      "name": "flow11 - EDITING SUITE - Kodak Smile",
+      "time": 369,
+      "message": "Element not found: Text matching regex: Album"
+    },
+    {
+      "name": "Flow2 - Signup to Home - Go to Homepage",
+      "time": 114,
+      "message": "Assertion is false: \"KODAK SMILE\" is visible"
+    }
+  ],
+  "patchGenerated": true,
+  "resultsByFlow": [
+    {
+      "flowKey": "flow10",
+      "flowName": "Flow10 - Signup -> Permissions -> Onboarding (skip)->Camera-> Connect -> Print",
+      "time": 80,
+      "failureMessage": "Assertion is false: id: imageViewPreview is visible",
+      "rootCause": "ATP pattern match: timing",
+      "failureType": "timing",
+      "suggestedFix": "Flaky/state-dependent assert – home screen not reached.\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 before assertVisible.\n2) Add conditional popup handling (Allow/OK/Pair) before home assert.\n3) Use runFlow/when for alternate states (Rate App, Fine-Tune, etc).\n4) Ensure output.home.titleText = \"KODAK SMILE\" in elements/home.js.",
+      "retryRecommended": true,
+      "confidence": 0.85,
+      "patchGenerated": true,
+      "screenshots": [
+        "/mnt/d/MEASTRO/new-workspace/kodak-Smile-with-OpenAI/ai-doctor/artifacts/test-output/2026-02-26_094655/screenshot-❌-1772099546968-(Flow10 - Signup -> Permissions -> Onboarding (skip)->Camera-> Connect -> Print).png"
+      ]
+    },
+    {
+      "flowKey": "flow11",
+      "flowName": "flow11 - EDITING SUITE - Kodak Smile",
+      "time": 369,
+      "failureMessage": "Element not found: Text matching regex: Album",
+      "rootCause": "ATP pattern match: selectors",
+      "failureType": "selectors",
+      "suggestedFix": "Element not found – selector may be wrong or element not yet visible.\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add retry loop.\n3) Prefer text or point: over id: when id is unknown (see ATP knowledge base).\n4) Use scrollUntilVisible if element is in a scrollable list.",
+      "retryRecommended": true,
+      "confidence": 0.8,
+      "patchGenerated": true,
+      "screenshots": [
+        "/mnt/d/MEASTRO/new-workspace/kodak-Smile-with-OpenAI/ai-doctor/artifacts/test-output/2026-02-26_094655/screenshot-❌-1772099916243-(flow11 - EDITING SUITE - Kodak Smile).png"
+      ]
+    },
+    {
+      "flowKey": "flow2",
+      "flowName": "Flow2 - Signup to Home - Go to Homepage",
+      "time": 114,
+      "failureMessage": "Assertion is false: \"KODAK SMILE\" is visible",
+      "rootCause": "ATP pattern match: timing",
+      "failureType": "timing",
+      "suggestedFix": "Flaky/state-dependent assert – home screen not reached.\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 before assertVisible.\n2) Add conditional popup handling (Allow/OK/Pair) before home assert.\n3) Use runFlow/when for alternate states (Rate App, Fine-Tune, etc).\n4) Ensure output.home.titleText = \"KODAK SMILE\" in elements/home.js.",
+      "retryRecommended": true,
+      "confidence": 0.85,
+      "patchGenerated": true,
+      "screenshots": [
+        "/mnt/d/MEASTRO/new-workspace/kodak-Smile-with-OpenAI/ai-doctor/artifacts/test-output/2026-02-26_094655/screenshot-❌-1772100030491-(Flow2 - Signup to Home - Go to Homepage).png"
+      ]
+    }
+  ]
+}

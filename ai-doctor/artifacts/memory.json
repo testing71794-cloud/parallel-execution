@@ -1,0 +1,511 @@
+{
+  "flows": {
+    "flow10": [
+      {
+        "signature": "Assertion is false: id: imageViewPreview is visible",
+        "date": "2026-02-26T10:46:09.903Z",
+        "rootCause": "ATP pattern match: timing",
+        "suggestedFix": "Flaky/state-dependent assert – home screen not reached.\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 before assertVisible.\n2) Add conditional popup handling (Allow/OK/Pair) before home assert.\n3) Use runFlow/when for alternate states (Rate App, Fine-Tune, etc).\n4) Ensure output.home.titleText = \"KODAK SMILE\" in elements/home.js.",
+        "confidence": 0.85
+      },
+      {
+        "signature": "Assertion is false: id: imageViewPreview is visible",
+        "date": "2026-02-25T12:56:12.068Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow10 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: id: imageViewPreview is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-25T07:09:23.960Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow10 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-23T13:45:48.571Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow10 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-23T08:02:35.842Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow10 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-22T07:53:31.084Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow10 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-22T06:34:17.614Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow unknown failed:\n- Failure: \n\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 around the failing step.\n2) Add conditional popup handling (Allow/OK/Pair) before/after the step.\n3) Add a retry loop for flaky network/bluetooth actions.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-22T05:36:07.894Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow unknown failed:\n- Failure: \n\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 around the failing step.\n2) Add conditional popup handling (Allow/OK/Pair) before/after the step.\n3) Add a retry loop for flaky network/bluetooth actions.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-21T18:54:40.661Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow unknown failed:\n- Failure: \n\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 around the failing step.\n2) Add conditional popup handling (Allow/OK/Pair) before/after the step.\n3) Add a retry loop for flaky network/bluetooth actions.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-20T13:20:07.799Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow10 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert (e.g., \"KODAK SMILE\"/\"Sign Up\") with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states (Sign Up vs Home vs popups).\n3) Add waits before assert:\n   - waitForAnimationToEnd\n   - wait: 1500\n4) If this is printer connect flow: retry loop + handle pairing/permission popups inside loop.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-20T12:52:46.733Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-20T12:46:05.084Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-20T11:10:38.820Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-20T11:03:21.255Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-20T10:36:29.671Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-20T08:23:16.434Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-19T12:20:58.041Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-19T10:58:24.348Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-19T08:41:14.746Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-19T06:27:10.958Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-19T06:25:33.854Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-18T10:46:35.353Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-18T09:02:47.727Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-18T08:30:46.210Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-17T14:50:18.968Z",
+        "rootCause": "Invalid selector or instability in the application causing the selector to be unavailable.",
+        "suggestedFix": "Try using a different method to locate the element, such as XPath or CSS selector. Additionally, check if there are any issues with the app causing the selector to be unstable. Add a wait condition and try to find a stable selector (id-based) for the 'KODAK SMILE' text in the screenshot. This will ensure that the test waits for the app to fully load before executing the assertion.",
+        "confidence": 0.5
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-17T14:04:30.105Z",
+        "rootCause": "Stable selector for 'KODAK SMILE' text is not found",
+        "suggestedFix": "Try using a different method to locate the element, such as XPath or CSS selector. Additionally, check if there are any issues with the app causing the selector to be unstable.",
+        "confidence": 0.5
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-17T13:50:15.616Z",
+        "rootCause": "The assertion 'Assertion is false: \"KODAK SMILE\" is visible' is not met in the screenshot.",
+        "suggestedFix": "Add a wait condition and try to find a stable selector (id-based) for the 'KODAK SMILE' text in the screenshot. This will ensure that the test waits for the app to fully load before executing the assertion.",
+        "confidence": 0.5
+      }
+    ],
+    "flow1": [
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-26T06:35:46.830Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow1 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-25T15:11:50.172Z",
+        "rootCause": "flaky/state-dependent assert",
+        "suggestedFix": "Replace text assert with stable id selector from loadElements.yaml, add waits and conditional routing for alternate states.",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-25T12:56:11.742Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow1 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Element not found: Text matching regex: Next",
+        "date": "2026-02-25T07:09:24.253Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow1 is failing because an element was not found:\n- Failure: Element not found: Text matching regex: Next\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"Sign Up\" is visible",
+        "date": "2026-02-23T08:02:36.091Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow1 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"Sign Up\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: id: imageViewPreview is visible",
+        "date": "2026-02-22T07:53:31.557Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow1 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: id: imageViewPreview is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: id: imageViewPreview is visible",
+        "date": "2026-02-22T06:34:17.614Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow unknown failed:\n- Failure: \n\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 around the failing step.\n2) Add conditional popup handling (Allow/OK/Pair) before/after the step.\n3) Add a retry loop for flaky network/bluetooth actions.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: id: imageViewPreview is visible",
+        "date": "2026-02-22T05:36:07.895Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow unknown failed:\n- Failure: \n\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 around the failing step.\n2) Add conditional popup handling (Allow/OK/Pair) before/after the step.\n3) Add a retry loop for flaky network/bluetooth actions.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: id: imageViewPreview is visible",
+        "date": "2026-02-19T12:20:58.042Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      }
+    ],
+    "flow4": [
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-26T06:35:47.736Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow4 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-25T12:56:12.580Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow4 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-25T07:09:25.218Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow4 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-23T13:45:48.765Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow4 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-23T08:02:36.371Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow4 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-22T07:53:31.828Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow4 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-22T06:34:17.614Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow unknown failed:\n- Failure: \n\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 around the failing step.\n2) Add conditional popup handling (Allow/OK/Pair) before/after the step.\n3) Add a retry loop for flaky network/bluetooth actions.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-22T05:36:07.895Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow unknown failed:\n- Failure: \n\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 around the failing step.\n2) Add conditional popup handling (Allow/OK/Pair) before/after the step.\n3) Add a retry loop for flaky network/bluetooth actions.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-19T12:20:58.042Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      }
+    ],
+    "flow6": [
+      {
+        "signature": "Element not found: Id matching regex: imageRelativelayout",
+        "date": "2026-02-25T12:56:12.716Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow6 is failing because an element was not found:\n- Failure: Element not found: Id matching regex: imageRelativelayout\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Element not found: Id matching regex: imageRelativelayout",
+        "date": "2026-02-25T07:09:25.451Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow6 is failing because an element was not found:\n- Failure: Element not found: Id matching regex: imageRelativelayout\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Element not found: Id matching regex: imageRelativelayout",
+        "date": "2026-02-19T12:20:58.042Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      }
+    ],
+    "flow8": [
+      {
+        "signature": "Element not found: Id matching regex: imageRelativelayout",
+        "date": "2026-02-25T12:56:12.869Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow8 is failing because an element was not found:\n- Failure: Element not found: Id matching regex: imageRelativelayout\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Element not found: Id matching regex: imageRelativelayout",
+        "date": "2026-02-25T07:09:25.762Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow8 is failing because an element was not found:\n- Failure: Element not found: Id matching regex: imageRelativelayout\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"Sign Up\" is visible",
+        "date": "2026-02-22T07:53:32.024Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow8 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"Sign Up\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Element not found: Id matching regex: imageRelativelayout",
+        "date": "2026-02-19T12:20:58.042Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      }
+    ],
+    "flow9": [
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-23T08:02:36.580Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow9 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"Sign Up\" is visible",
+        "date": "2026-02-22T07:53:32.245Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow9 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"Sign Up\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-22T06:34:17.614Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow unknown failed:\n- Failure: \n\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 around the failing step.\n2) Add conditional popup handling (Allow/OK/Pair) before/after the step.\n3) Add a retry loop for flaky network/bluetooth actions.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-22T05:36:07.895Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow unknown failed:\n- Failure: \n\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 around the failing step.\n2) Add conditional popup handling (Allow/OK/Pair) before/after the step.\n3) Add a retry loop for flaky network/bluetooth actions.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-19T12:20:58.042Z",
+        "rootCause": "AI output parse failure",
+        "suggestedFix": "Manual debugging required",
+        "confidence": 0
+      }
+    ],
+    "flow3": [
+      {
+        "signature": "Element not found: Text matching regex: Password",
+        "date": "2026-02-25T07:09:24.953Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow3 is failing because an element was not found:\n- Failure: Element not found: Text matching regex: Password\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-23T08:02:36.199Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow3 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      }
+    ],
+    "flow7": [
+      {
+        "signature": "Element not found: Id matching regex: imageRelativelayout",
+        "date": "2026-02-25T07:09:25.584Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow7 is failing because an element was not found:\n- Failure: Element not found: Id matching regex: imageRelativelayout\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"Sign Up\" is visible",
+        "date": "2026-02-23T08:02:36.450Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow7 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"Sign Up\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      }
+    ],
+    "unknown": [
+      {
+        "signature": "Element not found: Text matching regex: All Photos",
+        "date": "2026-02-25T07:09:24.713Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow unknown is failing because an element was not found:\n- Failure: Element not found: Text matching regex: All Photos\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+        "confidence": 0.35
+      }
+    ],
+    "flow5": [
+      {
+        "signature": "Assertion is false: \"Support\" is visible",
+        "date": "2026-02-25T07:09:25.323Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow5 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"Support\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      }
+    ],
+    "flow11": [
+      {
+        "signature": "Element not found: Text matching regex: Album",
+        "date": "2026-02-26T10:46:24.473Z",
+        "rootCause": "ATP pattern match: selectors",
+        "suggestedFix": "Element not found – selector may be wrong or element not yet visible.\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add retry loop.\n3) Prefer text or point: over id: when id is unknown (see ATP knowledge base).\n4) Use scrollUntilVisible if element is in a scrollable list.",
+        "confidence": 0.8
+      },
+      {
+        "signature": "Element not found: Text matching regex: Album",
+        "date": "2026-02-26T06:35:47.108Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow11 is failing because an element was not found:\n- Failure: Element not found: Text matching regex: Album\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Element not found: Text matching regex: Text",
+        "date": "2026-02-25T12:56:12.232Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow11 is failing because an element was not found:\n- Failure: Element not found: Text matching regex: Text\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+        "confidence": 0.35
+      }
+    ],
+    "flow2": [
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-26T10:46:27.318Z",
+        "rootCause": "ATP pattern match: timing",
+        "suggestedFix": "Flaky/state-dependent assert – home screen not reached.\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 before assertVisible.\n2) Add conditional popup handling (Allow/OK/Pair) before home assert.\n3) Use runFlow/when for alternate states (Rate App, Fine-Tune, etc).\n4) Ensure output.home.titleText = \"KODAK SMILE\" in elements/home.js.",
+        "confidence": 0.85
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-26T06:35:47.340Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow2 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      },
+      {
+        "signature": "Assertion is false: \"KODAK SMILE\" is visible",
+        "date": "2026-02-25T12:56:12.364Z",
+        "rootCause": "AI output parse failure (model did not return valid JSON)",
+        "suggestedFix": "Flow flow2 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+        "confidence": 0.35
+      }
+    ]
+  }
+}

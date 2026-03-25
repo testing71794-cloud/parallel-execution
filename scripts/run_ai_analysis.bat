@@ -10,6 +10,11 @@ if not exist ai-doctor (
     exit /b 0
 )
 
+if not exist pipeline_failed.flag (
+    echo No pipeline_failed.flag found. Skipping AI analysis.
+    exit /b 0
+)
+
 cd /d ai-doctor
 call npm ci || call npm install
 if errorlevel 1 exit /b 1

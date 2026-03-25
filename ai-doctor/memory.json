@@ -1,0 +1,102 @@
+{
+  "flow10": {
+    "flowKey": "flow10",
+    "flowName": "Flow10 - Signup -> Permissions -> Onboarding (skip)->Camera-> Connect -> Print",
+    "lastFailure": "Assertion is false: id: imageViewPreview is visible",
+    "lastRootCause": "ATP pattern match: timing",
+    "lastSuggestedFix": "Flaky/state-dependent assert – home screen not reached.\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 before assertVisible.\n2) Add conditional popup handling (Allow/OK/Pair) before home assert.\n3) Use runFlow/when for alternate states (Rate App, Fine-Tune, etc).\n4) Ensure output.home.titleText = \"KODAK SMILE\" in elements/home.js.",
+    "confidence": 0.85,
+    "failureType": "timing",
+    "updatedAt": "2026-02-26T10:46:27.338Z"
+  },
+  "flow1": {
+    "flowKey": "flow1",
+    "flowName": "Flow1 - I will do it later -> Find Printer until Available + Connect",
+    "lastFailure": "Assertion is false: \"KODAK SMILE\" is visible",
+    "lastRootCause": "AI output parse failure (model did not return valid JSON)",
+    "lastSuggestedFix": "Flow flow1 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+    "confidence": 0.35,
+    "failureType": "ai_parse",
+    "updatedAt": "2026-02-26T06:35:47.745Z"
+  },
+  "flow3": {
+    "flowKey": "flow3",
+    "flowName": "Flow3 - Login + Onboarding + Camera (AR) + Home",
+    "lastFailure": "Element not found: Text matching regex: Password",
+    "lastRootCause": "AI output parse failure (model did not return valid JSON)",
+    "lastSuggestedFix": "Flow flow3 is failing because an element was not found:\n- Failure: Element not found: Text matching regex: Password\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+    "confidence": 0.35,
+    "failureType": "ai_parse",
+    "updatedAt": "2026-02-25T07:09:25.775Z"
+  },
+  "flow4": {
+    "flowKey": "flow4",
+    "flowName": "Flow4 - Wrong then Correct Login + MultiPrinting",
+    "lastFailure": "Assertion is false: \"KODAK SMILE\" is visible",
+    "lastRootCause": "AI output parse failure (model did not return valid JSON)",
+    "lastSuggestedFix": "Flow flow4 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"KODAK SMILE\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+    "confidence": 0.35,
+    "failureType": "ai_parse",
+    "updatedAt": "2026-02-26T06:35:47.745Z"
+  },
+  "flow5": {
+    "flowKey": "flow5",
+    "flowName": "Flow5 - Do Later + Skip + Settings + Home",
+    "lastFailure": "Assertion is false: \"Support\" is visible",
+    "lastRootCause": "AI output parse failure (model did not return valid JSON)",
+    "lastSuggestedFix": "Flow flow5 is failing due to a flaky/state-dependent assert:\n- Failure: Assertion is false: \"Support\" is visible\n\nFix steps:\n1) Replace text assert with a stable selector (id) from loadElements.yaml.\n2) Add conditional routing using runFlow/when for alternate states.\n3) Add waits before assert: waitForAnimationToEnd + wait: 1500.\n4) If printer connect: retry loop + handle pairing/permission popups.\n",
+    "confidence": 0.35,
+    "failureType": "ai_parse",
+    "updatedAt": "2026-02-25T07:09:25.775Z"
+  },
+  "flow6": {
+    "flowKey": "flow6",
+    "flowName": "Flow6 - Connect + Album 3 Photos + Print + Back to Album",
+    "lastFailure": "Element not found: Id matching regex: imageRelativelayout",
+    "lastRootCause": "AI output parse failure (model did not return valid JSON)",
+    "lastSuggestedFix": "Flow flow6 is failing because an element was not found:\n- Failure: Element not found: Id matching regex: imageRelativelayout\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+    "confidence": 0.35,
+    "failureType": "ai_parse",
+    "updatedAt": "2026-02-25T12:56:12.881Z"
+  },
+  "flow7": {
+    "flowKey": "flow7",
+    "flowName": "Flow7 - Filter/Edit + Print 3 + Back to Album",
+    "lastFailure": "Element not found: Id matching regex: imageRelativelayout",
+    "lastRootCause": "AI output parse failure (model did not return valid JSON)",
+    "lastSuggestedFix": "Flow flow7 is failing because an element was not found:\n- Failure: Element not found: Id matching regex: imageRelativelayout\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+    "confidence": 0.35,
+    "failureType": "ai_parse",
+    "updatedAt": "2026-02-25T07:09:25.775Z"
+  },
+  "flow8": {
+    "flowKey": "flow8",
+    "flowName": "Flow8 - Precut Print + Cooldown + Back",
+    "lastFailure": "Element not found: Id matching regex: imageRelativelayout",
+    "lastRootCause": "AI output parse failure (model did not return valid JSON)",
+    "lastSuggestedFix": "Flow flow8 is failing because an element was not found:\n- Failure: Element not found: Id matching regex: imageRelativelayout\n\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add a retry loop.\n3) Use stable id selectors + scrollUntilVisible if list is long.\n",
+    "confidence": 0.35,
+    "failureType": "ai_parse",
+    "updatedAt": "2026-02-25T12:56:12.881Z"
+  },
+  "flow11": {
+    "flowKey": "flow11",
+    "flowName": "flow11 - EDITING SUITE - Kodak Smile",
+    "lastFailure": "Element not found: Text matching regex: Album",
+    "lastRootCause": "ATP pattern match: selectors",
+    "lastSuggestedFix": "Element not found – selector may be wrong or element not yet visible.\nFix steps:\n1) Add assertVisible for expected screen title BEFORE tapping.\n2) Wrap tap in runFlow/when visible and add retry loop.\n3) Prefer text or point: over id: when id is unknown (see ATP knowledge base).\n4) Use scrollUntilVisible if element is in a scrollable list.",
+    "confidence": 0.8,
+    "failureType": "selectors",
+    "updatedAt": "2026-02-26T10:46:27.338Z"
+  },
+  "flow2": {
+    "flowKey": "flow2",
+    "flowName": "Flow2 - Signup to Home - Go to Homepage",
+    "lastFailure": "Assertion is false: \"KODAK SMILE\" is visible",
+    "lastRootCause": "ATP pattern match: timing",
+    "lastSuggestedFix": "Flaky/state-dependent assert – home screen not reached.\nFix steps:\n1) Add waitForAnimationToEnd + wait: 1500 before assertVisible.\n2) Add conditional popup handling (Allow/OK/Pair) before home assert.\n3) Use runFlow/when for alternate states (Rate App, Fine-Tune, etc).\n4) Ensure output.home.titleText = \"KODAK SMILE\" in elements/home.js.",
+    "confidence": 0.85,
+    "failureType": "timing",
+    "updatedAt": "2026-02-26T10:46:27.338Z"
+  }
+}
