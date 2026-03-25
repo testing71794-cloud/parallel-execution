@@ -39,8 +39,9 @@
 8. Generate Excel Report for Printing
 9. AI Failure Analysis + Smart Retry
 10. Build Summary
-11. Archive Reports & Artifacts
-12. Finalize Build Result
+11. Send Final Email
+12. Archive Reports & Artifacts
+13. Finalize Build Result
 
 ## Parameters
 - `DEVICES_AGENT`: Windows node label, default `devices`
@@ -62,3 +63,43 @@
 - This setup is designed for **one Windows Jenkins agent controlling all connected Android devices**.
 - Flows are executed **per flow across all detected devices in parallel**.
 - If a flow fails on one device, the pipeline continues and still generates reports.
+
+
+## End-of-run email
+The pipeline now sends one email after all flows finish.
+
+### What the email attaches
+- `build-summary/final_execution_report.xlsx`
+- `reports/nonprinting_summary/summary.xlsx`
+- `reports/printing_summary/summary.xlsx`
+- `build-summary/summary.html`
+- AI analysis files from `ai-doctor/artifacts/` when generated
+
+### Required Jenkins environment variables for email
+Set these on the job or node before enabling `SEND_FINAL_EMAIL`:
+- `MAIL_TO`
+- `SMTP_HOST`
+- `SMTP_PORT` (optional, default 587)
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM` (optional)
+- `MAIL_SUBJECT` (optional)
+
+If `MAIL_TO` is not set, the email stage skips without failing the build.
+
+## Execution model
+This package runs exactly as requested:
+- Flow 1 runs on all detected devices in parallel.
+- Jenkins waits until Flow 1 finishes on every detected device.
+- Then Flow 2 starts on all detected devices in parallel.
+- The same pattern continues for the full suite.
+
+
+## Continue-on-failure behavior
+
+This package is configured so that all major stages continue even when an earlier stage fails.
+- Each flow runs on all detected devices in parallel.
+- The next flow starts only after the current flow finishes on all devices.
+- Non-printing and printing suites continue independently.
+- Excel, AI analysis, archive, and end-of-run email still run even if earlier execution failed.
+- Final Jenkins result is decided only in the last stage using flag files.
