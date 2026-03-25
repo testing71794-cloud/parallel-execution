@@ -36,14 +36,14 @@ for %%F in ("%FLOW_DIR%\*.yaml") do (
     echo Running !FLOW_NAME! on all devices
     echo =====================================
 
-    :: Run on all devices in parallel
+    :: RUN PARALLEL (FIXED - NO cmd /c)
     for /L %%I in (1,1,%DEVICE_COUNT%) do (
         call set "DEVICE_ID=%%DEVICE_%%I%%"
-        start "" cmd /c "call scripts\run_one_flow_on_device.bat %SUITE_NAME% !FLOW_NAME! !FLOW_PATH! !DEVICE_ID!"
+        start "" /b scripts\run_one_flow_on_device.bat %SUITE_NAME% !FLOW_NAME! "!FLOW_PATH!" !DEVICE_ID!
     )
 
-    :: Wait for completion (simple wait)
-    timeout /t 10 >nul
+    :: Wait for all processes to finish
+    timeout /t 15 >nul
 )
 
 exit /b 0
