@@ -6,15 +6,14 @@ pipeline {
     }
 
     options {
-        
         disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '20'))
     }
 
     parameters {
-        string(name: 'DEVICES_AGENT', defaultValue: 'devices', description: 'Agent label for same-machine execution.')
-        string(name: 'DEVICE1_LABEL', defaultValue: 'device-agent-1', description: 'Agent label for device 1 in multi-agent mode.')
-        string(name: 'DEVICE2_LABEL', defaultValue: 'device-agent-2', description: 'Agent label for device 2 in multi-agent mode.')
+        string(name: 'DEVICES_AGENT', defaultValue: 'devices', description: 'Windows agent label for same-machine execution and report steps.')
+        string(name: 'DEVICE1_LABEL', defaultValue: 'device-agent-1', description: 'Windows agent label for device 1 in multi-agent mode.')
+        string(name: 'DEVICE2_LABEL', defaultValue: 'device-agent-2', description: 'Windows agent label for device 2 in multi-agent mode.')
         string(name: 'DEVICE1_ID', defaultValue: '3C1625009Q500000', description: 'ADB device ID for device 1.')
         string(name: 'DEVICE2_ID', defaultValue: 'RZCWA2B05RB', description: 'ADB device ID for device 2.')
         choice(name: 'RUN_MODE', choices: ['multi_agent_parallel', 'same_machine_parallel'], description: 'multi_agent_parallel is recommended. same_machine_parallel runs both devices from one PC.')
@@ -39,7 +38,7 @@ pipeline {
         }
 
         stage('Install Dependencies') {
-            agent { label 'built-in' }
+            agent { label 'devices' }
             steps {
                 deleteDir()
                 unstash 'source-code'
@@ -62,7 +61,7 @@ pipeline {
 
         stage('Execute Non Printing Flows') {
             when { expression { params.SUITE in ['both', 'nonprinting'] } }
-            agent { label 'built-in' }
+            agent none
             steps {
                 script {
                     if (params.RUN_MODE == 'multi_agent_parallel') {
@@ -76,7 +75,7 @@ pipeline {
 
         stage('Generate Excel Report for Non Printing') {
             when { expression { params.SUITE in ['both', 'nonprinting'] } }
-            agent { label 'built-in' }
+            agent { label 'devices' }
             steps {
                 deleteDir()
                 unstash 'workspace-with-deps'
@@ -93,7 +92,7 @@ pipeline {
 
         stage('Execute Printing Flows') {
             when { expression { params.SUITE in ['both', 'printing'] } }
-            agent { label 'built-in' }
+            agent none
             steps {
                 script {
                     if (params.RUN_MODE == 'multi_agent_parallel') {
@@ -107,7 +106,7 @@ pipeline {
 
         stage('Generate Excel Report for Printing') {
             when { expression { params.SUITE in ['both', 'printing'] } }
-            agent { label 'built-in' }
+            agent { label 'devices' }
             steps {
                 deleteDir()
                 unstash 'workspace-with-deps'
@@ -124,7 +123,7 @@ pipeline {
 
         stage('AI Failure Analysis + Smart Retry') {
             when { expression { params.AI_ANALYSIS } }
-            agent { label 'built-in' }
+            agent { label 'devices' }
             steps {
                 deleteDir()
                 unstash 'workspace-with-deps'
@@ -149,7 +148,7 @@ pipeline {
         }
 
         stage('Archive Reports & Artifacts') {
-            agent { label 'built-in' }
+            agent { label 'devices' }
             steps {
                 deleteDir()
                 unstash 'workspace-with-deps'
@@ -170,7 +169,7 @@ pipeline {
         }
 
         stage('Finalize Build Result') {
-            agent { label 'built-in' }
+            agent { label 'devices' }
             steps {
                 deleteDir()
                 unstash 'workspace-with-deps'
@@ -248,28 +247,29 @@ def runSuiteSameMachineParallel(String suiteName, String suiteDir) {
         }
 
         stash name: "suite-${suiteName}-same-machine-parallel", includes: '**/reports/**, **/.maestro/screenshots/**, **/status/**, **/collected-artifacts/**, **/*.flag', allowEmpty: true
+    }
 
-        node('built-in') {
-            deleteDir()
-            unstash 'workspace-with-deps'
-            unstash "suite-${suiteName}-same-machine-parallel"
-            bat """
-            cd /d "${getProjectRoot()}"
-            if not exist collected-artifacts mkdir collected-artifacts
-            if exist reports xcopy /E /I /Y reports collected-artifacts\\reports >nul
-            if exist .maestro\\screenshots xcopy /E /I /Y .maestro\\screenshots collected-artifacts\\.maestro\\screenshots >nul
-            if exist status xcopy /E /I /Y status collected-artifacts\\status >nul
-            """
-        }
+    node(params.DEVICES_AGENT) {
+        deleteDir()
+        unstash 'workspace-with-deps'
+        unstash "suite-${suiteName}-same-machine-parallel"
+        bat """
+        cd /d "${getProjectRoot()}"
+        if not exist collected-artifacts mkdir collected-artifacts
+        if exist reports xcopy /E /I /Y reports collected-artifacts\\reports >nul
+        if exist .maestro\\screenshots xcopy /E /I /Y .maestro\\screenshots collected-artifacts\\.maestro\\screenshots >nul
+        if exist status xcopy /E /I /Y status collected-artifacts\\status >nul
+        """
+        stash name: 'workspace-with-deps', includes: '**/*', allowEmpty: true
     }
 }
 
 def runSuiteMultiAgent(String suiteName, String suiteDir) {
-    node('built-in') {
+    node(params.DEVICES_AGENT) {
         deleteDir()
         unstash 'workspace-with-deps'
         def projectRoot = getProjectRoot()
-        def flows = findFiles(glob: "${projectRoot}/${suiteDir}/*.yaml").collect { it.path }.sort()
+        def flows = findFiles(glob: "${suiteDir}/*.yaml").collect { it.path }.sort()
 
         if (flows.isEmpty()) {
             echo "No flows found in ${suiteDir}. Skipping."
@@ -350,6 +350,8 @@ def runSuiteMultiAgent(String suiteName, String suiteDir) {
                 del /q *.failed >nul 2>&1
                 """
             }
+
+            stash name: 'workspace-with-deps', includes: '**/*', allowEmpty: true
         }
     }
 }
