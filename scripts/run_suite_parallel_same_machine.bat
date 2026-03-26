@@ -10,17 +10,50 @@ set "CLEAR_STATE=%~5"
 echo =====================================
 echo RUN SUITE SAME MACHINE PARALLEL
 echo =====================================
+echo.
+echo Suite: %SUITE%
+echo Flow dir: %FLOW_DIR%
+echo Include tag: %INCLUDE_TAG%
+echo App id: %APP_ID%
+echo Clear state: %CLEAR_STATE%
+echo.
 
-if not exist "reports" mkdir "reports"
-if not exist "reports\%SUITE%" mkdir "reports\%SUITE%"
-if not exist "reports\%SUITE%\logs" mkdir "reports\%SUITE%\logs"
-if not exist "reports\%SUITE%\results" mkdir "reports\%SUITE%\results"
+if "%SUITE%"=="" (
+    echo ERROR: SUITE is required
+    exit /b 1
+)
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\run_suite_parallel_same_machine.ps1" ^
+if "%FLOW_DIR%"=="" (
+    echo ERROR: FLOW_DIR is required
+    exit /b 1
+)
+
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..") do set "REPO_ROOT=%%~fI"
+
+if not exist "%REPO_ROOT%\%FLOW_DIR%" (
+    echo ERROR: Flow directory not found: %REPO_ROOT%\%FLOW_DIR%
+    exit /b 1
+)
+
+if not exist "%REPO_ROOT%\reports" mkdir "%REPO_ROOT%\reports"
+if not exist "%REPO_ROOT%\reports\%SUITE%" mkdir "%REPO_ROOT%\reports\%SUITE%"
+if not exist "%REPO_ROOT%\reports\%SUITE%\logs" mkdir "%REPO_ROOT%\reports\%SUITE%\logs"
+if not exist "%REPO_ROOT%\reports\%SUITE%\results" mkdir "%REPO_ROOT%\reports\%SUITE%\results"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run_suite_parallel_same_machine.ps1" ^
+  -RepoRoot "%REPO_ROOT%" ^
   -Suite "%SUITE%" ^
   -FlowDir "%FLOW_DIR%" ^
   -IncludeTag "%INCLUDE_TAG%" ^
   -AppId "%APP_ID%" ^
   -ClearState "%CLEAR_STATE%"
 
-exit /b %ERRORLEVEL%
+set "RC=%ERRORLEVEL%"
+
+echo.
+echo =====================================
+echo FINAL RESULT FOR SUITE %SUITE% = %RC%
+echo =====================================
+
+exit /b %RC%
