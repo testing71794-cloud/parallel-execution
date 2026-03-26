@@ -88,12 +88,14 @@ foreach ($flow in $flowFiles) {
         ) -ScriptBlock {
             param($RunnerBat, $Suite, $flowPath, $flowName, $device, $AppId, $ClearState, $IncludeTag)
 
-            $argString = '"' + $RunnerBat + '" "' + $Suite + '" "' + $flowPath + '" "' + $flowName + '" "' + $device + '" "' + $AppId + '" "' + $ClearState + '" "' + $IncludeTag + '"'
-            $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $argString" -Wait -PassThru -NoNewWindow
+            Set-Location (Split-Path -Parent (Split-Path -Parent $RunnerBat))
+
+            & $RunnerBat $Suite $flowPath $flowName $device $AppId $ClearState $IncludeTag
+
             [pscustomobject]@{
                 Flow = $flowName
                 Device = $device
-                ExitCode = $proc.ExitCode
+                ExitCode = $LASTEXITCODE
             }
         }
     }
@@ -109,11 +111,16 @@ foreach ($flow in $flowFiles) {
             $flowFailed = $true
             $overallFailed = $true
         } else {
-            foreach ($item in $result) {
-                Write-Host ("Device {0} -> ExitCode {1}" -f $item.Device, $item.ExitCode)
-                if ([int]$item.ExitCode -ne 0) {
-                    $flowFailed = $true
-                    $overallFailed = $true
+            foreach ($item in @($result)) {
+                if ($item.PSObject.Properties.Name -contains 'Device') {
+                    Write-Host ("Device {0} -> ExitCode {1}" -f $item.Device, $item.ExitCode)
+                    if ([int]$item.ExitCode -ne 0) {
+                        $flowFailed = $true
+                        $overallFailed = $true
+                    }
+                } else {
+                    $text = [string]$item
+                    if ($text.Trim().Length -gt 0) { Write-Host $text }
                 }
             }
         }
