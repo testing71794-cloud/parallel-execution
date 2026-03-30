@@ -1,7 +1,3 @@
-# Execution order: flow1.yaml on EVERY device at the same time -> wait until all finish ->
-# flow2.yaml on every device at the same time -> ... (sorted by file name).
-# Non-printing and printing suites both use this script via run_suite_parallel_same_machine.bat
-
 param(
     [Parameter(Mandatory=$true)][string]$RepoRoot,
     [Parameter(Mandatory=$true)][string]$Suite,
@@ -21,14 +17,11 @@ function Write-Section([string]$Text) {
     Write-Host "====================================="
 }
 
-# cmd.exe splits the command line on spaces unless args are quoted; paths like
-# "Non printing flows\flow1.yaml" must be one argv or %~2 in the batch becomes "C:\...\Non" only.
 function Escape-CmdArg([string]$s) {
     if ($null -eq $s) { return '""' }
     return '"' + ($s.Replace('"', '""')) + '"'
 }
 
-# Build one cmd.exe command line (spaces in paths; Start-Process -PassThru often leaves ExitCode null on Win PS 5.x).
 function Build-RunnerCmdLine([string]$RunnerBat, [string]$Suite, [string]$FlowPath, [string]$FlowName, [string]$Device, [string]$AppId, [string]$ClearState, [string]$IncludeTagArg, [string]$MaestroCmdArg) {
     $parts = @(
         "/c",
@@ -69,12 +62,33 @@ function Get-ProcessExitCodeSafe([System.Diagnostics.Process]$p) {
     return -1
 }
 
+function Test-ExecutionArtifacts([string]$StatusFile, [string]$ResultFile, [string]$LogFile) {
+    if (-not (Test-Path -LiteralPath $StatusFile)) { return $false }
+    if (-not (Test-Path -LiteralPath $ResultFile)) { return $false }
+    if (-not (Test-Path -LiteralPath $LogFile)) { return $false }
+
+    $statusText = Get-Content -LiteralPath $StatusFile -Raw -ErrorAction SilentlyContinue
+    if ([string]::IsNullOrWhiteSpace($statusText)) { return $false }
+    if ($statusText -match 'status\s*=\s*RUNNING') { return $false }
+
+    $resultLines = @(Get-Content -LiteralPath $ResultFile -ErrorAction SilentlyContinue)
+    if ($resultLines.Count -lt 2) { return $false }
+
+    $logItem = Get-Item -LiteralPath $LogFile -ErrorAction SilentlyContinue
+    if ($null -eq $logItem) { return $false }
+    if ($logItem.Length -le 0) { return $false }
+
+    return $true
+}
+
 $RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
 $FlowRoot = Join-Path $RepoRoot $FlowDir
 $ScriptsDir = Join-Path $RepoRoot "scripts"
 $RunnerBat = Join-Path $ScriptsDir "run_one_flow_on_device.bat"
 $ReportsDir = Join-Path $RepoRoot ("reports\" + $Suite)
+$LogsDir = Join-Path $ReportsDir "logs"
 $ResultsDir = Join-Path $ReportsDir "results"
+$StatusDir = Join-Path $RepoRoot "status"
 $MasterCsv = Join-Path $ReportsDir "all_results.csv"
 
 Write-Section "RUN SUITE SAME MACHINE PARALLEL"
@@ -94,7 +108,9 @@ if (-not (Test-Path -LiteralPath $FlowRoot)) {
 }
 
 New-Item -ItemType Directory -Force -Path $ReportsDir | Out-Null
+New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ResultsDir | Out-Null
+New-Item -ItemType Directory -Force -Path $StatusDir | Out-Null
 
 $adbOutput = & adb devices
 if ($LASTEXITCODE -ne 0) {
@@ -127,9 +143,6 @@ if (-not $flowFiles -or $flowFiles.Count -eq 0) {
 }
 
 $overallFailed = $false
-
-# Start-Process -ArgumentList cannot contain null or empty strings on Windows PowerShell 5.x
-# (Jenkins passes "" for optional INCLUDE_TAG / MAESTRO_CMD). Use a sentinel the bat strips.
 $IncludeTagArg = if ([string]::IsNullOrWhiteSpace($IncludeTag)) { "__EMPTY__" } else { $IncludeTag }
 $MaestroCmdArg = if ([string]::IsNullOrWhiteSpace($MaestroCmd)) { "__EMPTY__" } else { $MaestroCmd }
 
@@ -138,16 +151,14 @@ foreach ($flow in $flowFiles) {
     $flowPath = $flow.FullName
 
     Write-Section "Running $flowName on all devices"
-    Write-Host "Pattern: this flow runs on ALL $($devices.Count) device(s) in parallel; the next flow starts only after every device finishes this one."
 
     $flowFailed = $false
-    # Start-Job breaks adb/Maestro on many Jenkins agents. Use System.Diagnostics.Process for reliable ExitCode.
     $procInfos = @()
     foreach ($device in $devices) {
         $cmdLine = Build-RunnerCmdLine $RunnerBat $Suite $flowPath $flowName $device $AppId $ClearState $IncludeTagArg $MaestroCmdArg
         try {
             $p = Start-RunnerProcess -WorkingDir $RepoRoot -Arguments $cmdLine
-            $procInfos += [pscustomobject]@{ Process = $p; Device = $device }
+            $procInfos += [pscustomobject]@{ Process = $p; Device = $device; Flow = $flowName }
         } catch {
             Write-Host "ERROR starting process for ${device}: $_"
             $overallFailed = $true
@@ -162,8 +173,17 @@ foreach ($flow in $flowFiles) {
             Write-Host "ERROR waiting for process $($info.Device): $_"
             $code = -1
         }
-        Write-Host ("Device {0} -> ExitCode {1}" -f $info.Device, $code)
-        if ($code -ne 0) {
+
+        $safeFlow = $info.Flow.Replace(' ', '_')
+        $safeDevice = $info.Device.Replace(' ', '_')
+        $statusFile = Join-Path $StatusDir ("{0}__{1}__{2}.txt" -f $Suite, $safeFlow, $safeDevice)
+        $resultFile = Join-Path $ResultsDir ("{0}_{1}.csv" -f $safeFlow, $safeDevice)
+        $logFile = Join-Path $LogsDir ("{0}_{1}.log" -f $safeFlow, $safeDevice)
+
+        $artifactsOk = Test-ExecutionArtifacts -StatusFile $statusFile -ResultFile $resultFile -LogFile $logFile
+        Write-Host ("Device {0} -> ExitCode {1} -> ArtifactsOk {2}" -f $info.Device, $code, $artifactsOk)
+
+        if (($code -ne 0) -or (-not $artifactsOk)) {
             $flowFailed = $true
             $overallFailed = $true
         }
@@ -172,16 +192,19 @@ foreach ($flow in $flowFiles) {
 
     if ($flowFailed) {
         Write-Host "Flow $flowName failed on one or more devices"
-        Write-Host "Check Maestro logs: $ReportsDir\logs\${flowName}_*.log (ExitCode 1 = test or Maestro failure, not Jenkins)."
     } else {
         Write-Host "Flow $flowName completed successfully on all devices"
     }
 }
 
 Write-Section "Merging per-device result files"
-
 "suite,flow_name,device_id,status,exit_code,log_file" | Set-Content -Path $MasterCsv -Encoding Ascii
 $tempCsvs = Get-ChildItem -LiteralPath $ResultsDir -Filter *.csv -File | Sort-Object Name
+
+if (-not $tempCsvs -or $tempCsvs.Count -eq 0) {
+    Write-Host "ERROR: No per-device result CSV files were produced for suite $Suite"
+    exit 1
+}
 
 foreach ($csv in $tempCsvs) {
     $lines = Get-Content -LiteralPath $csv.FullName
@@ -190,6 +213,11 @@ foreach ($csv in $tempCsvs) {
     }
 }
 
-Write-Host "Merged result file: $MasterCsv"
+$statusFiles = @(Get-ChildItem -LiteralPath $StatusDir -Filter ("{0}__*.txt" -f $Suite) -File -ErrorAction SilentlyContinue)
+if (-not $statusFiles -or $statusFiles.Count -eq 0) {
+    Write-Host "ERROR: No status files were produced for suite $Suite"
+    exit 1
+}
 
+Write-Host "Merged result file: $MasterCsv"
 if ($overallFailed) { exit 1 } else { exit 0 }

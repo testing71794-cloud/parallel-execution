@@ -1,25 +1,40 @@
 pipeline {
     agent none
 
-    triggers {
-        cron('H 9 * * *')
+    parameters {
+        choice(
+            name: 'DEVICES_AGENT',
+            choices: ['devices', 'built-in'],
+            description: 'devices = your PC with USB phones'
+        )
+        string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'App package id for Maestro/app launch checks')
+        string(name: 'MAESTRO_CMD', defaultValue: 'maestro', description: 'Maestro command to use')
+        string(name: 'JAVA_HOME_OVERRIDE', defaultValue: '', description: 'Optional JAVA_HOME override on device node')
+        booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run non-printing flows')
+        booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run printing flows')
+        booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Run AI analysis when failures happen')
+        booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send final summary email')
+        booleanParam(name: 'CLEAR_STATE', defaultValue: true, description: 'Reserved for flow runner; do not map RETRY here')
+        booleanParam(name: 'RETRY_FAILED', defaultValue: false, description: 'Reserved for future retry logic only')
     }
 
     options {
         disableConcurrentBuilds()
-        buildDiscarder(logRotator(numToKeepStr: '20'))
         skipDefaultCheckout(true)
+        preserveStashes(buildCount: 5)
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timeout(time: 180, unit: 'MINUTES')
     }
 
-    parameters {
-        string(name: 'DEVICES_AGENT', defaultValue: 'devices', description: 'Windows Jenkins node label that has ADB, Maestro, Python and Node installed.')
-        string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'Android app package checked during precheck.')
-        string(name: 'MAESTRO_CMD', defaultValue: '', description: 'Optional full path to Maestro executable. Leave blank to use PATH or C:\\maestro\\bin\\maestro.exe.')
-        booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run flows from Non printing flows folder.')
-        booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run flows from Printing Flow folder.')
-        booleanParam(name: 'RETRY_FAILED', defaultValue: true, description: 'Retry failed flows once on the same device.')
-        booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Run AI doctor only when failures are detected.')
-        booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: true, description: 'Send one end-of-run email with the Excel reports and AI analysis artifacts.')
+    triggers {
+        cron('H 9 * * *')
+        githubPush()
+    }
+
+    environment {
+        NON_PRINTING_EXIT_CODE = '0'
+        PRINTING_EXIT_CODE = '0'
+        ANY_TEST_FAILED = '0'
     }
 
     stages {
@@ -49,21 +64,21 @@ pipeline {
                     if exist build-summary rmdir /s /q build-summary
                     if exist .maestro rmdir /s /q .maestro
                     if exist temp-runners rmdir /s /q temp-runners
-                    if exist ai-doctor\\artifacts rmdir /s /q ai-doctor\\artifacts
+                    if exist ai-doctor\artifacts rmdir /s /q ai-doctor\artifacts
                     del /q detected_devices.txt 2>nul
                     del /q *.flag 2>nul
                     del /q *.failed 2>nul
 
                     python -m pip install --upgrade pip || (echo 1> install_failed.flag & exit /b 1)
-                    python -m pip install -r scripts\\requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
+                    python -m pip install -r scripts\requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
 
                     if exist package.json (
                         call npm ci || call npm install || (echo 1> install_failed.flag & exit /b 1)
                     )
 
-                    if exist ai-doctor\\package.json (
+                    if exist ai-doctor\package.json (
                         cd ai-doctor
-                        call npm ci || call npm install || (echo 1> ..\\install_failed.flag & exit /b 1)
+                        call npm ci || call npm install || (echo 1> ..\install_failed.flag & exit /b 1)
                         cd ..
                     )
                     """
@@ -75,67 +90,18 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    call scripts\\precheck_environment.bat "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" || (echo 1> precheck_failed.flag & exit /b 1)
-                    """
-                }
-            }
-        }
-
-        stage('Debug Runner Files') {
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-
-                    echo ===== WORKSPACE =====
-                    cd
-
-                    echo ===== SCRIPTS =====
-                    dir scripts
-
-                    echo ===== TEMP RUNNERS =====
-                    dir temp-runners
-
-                    echo ===== NON PRINTING LOGS =====
-                    dir reports\\nonprinting\\logs
-
-                    echo ===== STATUS =====
-                    dir status
-
-                    echo ===== FIND IN BAT =====
-                    findstr /i /n "temp-runners run_one_flow_on_device logs results status" scripts\\run_suite_parallel_same_machine.bat
-
-                    echo ===== FIND IN PS1 =====
-                    findstr /i /n "temp-runners run_one_flow_on_device logs results status" scripts\\run_suite_parallel_same_machine.ps1
-
-                    echo ===== RUN ONE FLOW FILE =====
-                    type scripts\\run_one_flow_on_device.bat
-                    """
-                }
-            }
-        }
-
-        stage('Manual Single Device Test') {
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-
-                    call scripts\\run_one_flow_on_device.bat nonprinting "${env.WORKSPACE}\\Non printing flows\\flow1.yaml" flow1 RZCT415WSSW com.kodaksmile true __EMPTY__ __EMPTY__
-
-                    echo ===== AFTER RUN LOGS =====
-                    dir reports\\nonprinting\\logs
-
-                    echo ===== AFTER RUN RESULTS =====
-                    dir reports\\nonprinting\\results
-
-                    echo ===== AFTER RUN STATUS =====
-                    dir status
-                    """
+                    script {
+                        def envList = []
+                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
+                            envList << "JAVA_HOME_OVERRIDE=${params.JAVA_HOME_OVERRIDE}"
+                        }
+                        withEnv(envList) {
+                            bat """
+                            cd /d "${env.WORKSPACE}"
+                            call scripts\precheck_environment.bat "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" || (echo 1> precheck_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                            """
+                        }
+                    }
                 }
             }
         }
@@ -146,21 +112,43 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    call scripts\\list_devices.bat || (echo 1> device_detection_failed.flag & exit /b 1)
+                    call scripts\list_devices.bat || (echo 1> device_detection_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     """
                 }
             }
         }
 
-        // run_suite_parallel_same_machine.bat: %1=SUITE %2=FLOW_DIR %3=INCLUDE_TAG %4=APP_ID %5=CLEAR_STATE %6=MAESTRO_CMD
         stage('Execute Non Printing Flows') {
+            when { expression { return params.RUN_NON_PRINTING } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    script {
+                        def envList = []
+                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
+                            envList << "JAVA_HOME_OVERRIDE=${params.JAVA_HOME_OVERRIDE}"
+                        }
+                        withEnv(envList) {
+                            bat """
+                            cd /d "${env.WORKSPACE}"
+                            call scripts\run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Validate Non Printing Artifacts') {
             when { expression { return params.RUN_NON_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    call scripts\\run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.RETRY_FAILED.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist status\nonprinting__*.txt (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist reports\nonprinting\results\*.csv (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist reports\nonprinting\logs\*.log (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     """
                 }
             }
@@ -173,7 +161,7 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    python scripts\\generate_excel_report.py status reports\\nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag & exit /b 1)
+                    python scripts\generate_excel_report.py status reports\nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     """
                 }
             }
@@ -184,9 +172,32 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    script {
+                        def envList = []
+                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
+                            envList << "JAVA_HOME_OVERRIDE=${params.JAVA_HOME_OVERRIDE}"
+                        }
+                        withEnv(envList) {
+                            bat """
+                            cd /d "${env.WORKSPACE}"
+                            call scripts\run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Validate Printing Artifacts') {
+            when { expression { return params.RUN_PRINTING } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    call scripts\\run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.RETRY_FAILED.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist status\printing__*.txt (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist reports\printing\results\*.csv (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist reports\printing\logs\*.log (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     """
                 }
             }
@@ -199,7 +210,7 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    python scripts\\generate_excel_report.py status reports\\printing_summary printing || (echo 1> printing_report_failed.flag & exit /b 1)
+                    python scripts\generate_excel_report.py status reports\printing_summary printing || (echo 1> printing_report_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     """
                 }
             }
@@ -214,7 +225,7 @@ pipeline {
                         catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
                             bat """
                             cd /d "${env.WORKSPACE}"
-                            call scripts\\run_ai_analysis.bat || (echo 1> ai_failed.flag & exit /b 1)
+                            call scripts\run_ai_analysis.bat || (echo 1> ai_failed.flag & exit /b 1)
                             """
                         }
                     } else {
@@ -230,14 +241,9 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    python scripts\\generate_build_summary.py status build-summary || (echo 1> summary_failed.flag & exit /b 1)
-                    """
-                }
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    if exist scripts\\generate_final_report.py (
-                        python scripts\\generate_final_report.py . status build-summary\\final_execution_report.xlsx || (echo 1>> summary_failed.flag & exit /b 1)
+                    python scripts\generate_build_summary.py status build-summary || (echo 1> summary_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if exist scripts\generate_final_report.py (
+                        python scripts\generate_final_report.py . status build-summary\final_execution_report.xlsx || (echo 1>> summary_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     ) else (
                         echo generate_final_report.py not found. Skipping final report generation.
                     )
@@ -253,8 +259,8 @@ pipeline {
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    if exist scripts\\send_execution_email.py (
-                        python scripts\\send_execution_email.py || (echo 1> email_failed.flag & exit /b 1)
+                    if exist scripts\send_execution_email.py (
+                        python scripts\send_execution_email.py || (echo 1> email_failed.flag & exit /b 1)
                     ) else (
                         echo send_execution_email.py not found. Skipping email step.
                     )
@@ -276,15 +282,15 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 script {
-                    echo "Workspace (flags must live here): ${env.WORKSPACE}"
-
                     def hardFailureFlags = [
                         'pipeline_failed.flag',
                         'install_failed.flag',
                         'precheck_failed.flag',
                         'device_detection_failed.flag',
                         'nonprinting_failed.flag',
-                        'printing_failed.flag'
+                        'printing_failed.flag',
+                        'nonprinting_no_results.flag',
+                        'printing_no_results.flag'
                     ]
 
                     def unstableFlags = [

@@ -1,24 +1,7 @@
 #!/usr/bin/env python3
-"""
-Enhanced Excel report generator for Jenkins/Maestro execution results.
-
-Usage:
-    python scripts/generate_excel_report.py <status_dir> <output_dir> <suite_name>
-
-Example:
-    python scripts/generate_excel_report.py status reports\nonprinting_summary nonprinting
-
-What it generates in <output_dir>:
-    - summary.xlsx   -> Excel workbook with device-wise and flow-wise summaries
-    - all_results.csv
-    - failed_results.csv
-    - passed_results.csv
-"""
-
 from __future__ import annotations
 
 import csv
-import os
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -27,7 +10,6 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-
 
 PASS_FILL = PatternFill(fill_type="solid", fgColor="C6EFCE")
 FAIL_FILL = PatternFill(fill_type="solid", fgColor="FFC7CE")
@@ -77,6 +59,8 @@ def load_results(status_dir: Path, suite_name: str) -> list[dict]:
         row = parse_status_file(file_path)
         row_suite = (row.get("suite") or "").strip().lower()
         if suite_name and row_suite and row_suite != suite_name.lower():
+            continue
+        if row.get("status") == "RUNNING":
             continue
         results.append(row)
 
@@ -148,7 +132,6 @@ def build_workbook(results: list[dict], output_file: Path, suite_name: str):
         ws_summary.cell(row=r_idx, column=1, value=row[0]).font = Font(bold=True)
         ws_summary.cell(row=r_idx, column=2, value=row[1])
 
-    # Flow-wise summary
     flow_counter = defaultdict(lambda: Counter())
     for row in results:
         flow_counter[row["flow"]][row["status"]] += 1
@@ -162,15 +145,8 @@ def build_workbook(results: list[dict], output_file: Path, suite_name: str):
             sum(flow_counter[flow].values()),
         ])
 
-    next_row = write_table(
-        ws_summary,
-        10,
-        "Flow-wise Summary",
-        ["Flow", "Pass", "Fail", "Total"],
-        flow_rows,
-    )
+    next_row = write_table(ws_summary, 10, "Flow-wise Summary", ["Flow", "Pass", "Fail", "Total"], flow_rows)
 
-    # Device-wise summary
     device_counter = defaultdict(lambda: Counter())
     for row in results:
         device_counter[row["device"]][row["status"]] += 1
@@ -184,22 +160,13 @@ def build_workbook(results: list[dict], output_file: Path, suite_name: str):
             sum(device_counter[device].values()),
         ])
 
-    write_table(
-        ws_summary,
-        next_row,
-        "Device-wise Summary",
-        ["Device", "Pass", "Fail", "Total"],
-        device_rows,
-    )
-
+    write_table(ws_summary, next_row, "Device-wise Summary", ["Device", "Pass", "Fail", "Total"], device_rows)
     autosize(ws_summary)
 
-    # All Results
     ws_all = wb.create_sheet("All Results")
     all_headers = ["Suite", "Flow", "Device", "Status", "Exit Code", "Log", "Source File"]
     ws_all.append(all_headers)
     style_header(ws_all[1])
-
     for row in results:
         ws_all.append([
             row.get("suite", ""),
@@ -210,16 +177,10 @@ def build_workbook(results: list[dict], output_file: Path, suite_name: str):
             row.get("log", ""),
             row.get("file_name", ""),
         ])
-
     for row in ws_all.iter_rows(min_row=2):
-        status_cell = row[3]
-        if status_cell.value == "PASS":
-            status_cell.fill = PASS_FILL
-        else:
-            status_cell.fill = FAIL_FILL
+        row[3].fill = PASS_FILL if row[3].value == "PASS" else FAIL_FILL
     autosize(ws_all)
 
-    # Failed Results
     ws_failed = wb.create_sheet("Failed Results")
     ws_failed.append(all_headers)
     style_header(ws_failed[1])
@@ -238,7 +199,6 @@ def build_workbook(results: list[dict], output_file: Path, suite_name: str):
         row[3].fill = FAIL_FILL
     autosize(ws_failed)
 
-    # Passed Results
     ws_passed = wb.create_sheet("Passed Results")
     ws_passed.append(all_headers)
     style_header(ws_passed[1])
@@ -257,12 +217,10 @@ def build_workbook(results: list[dict], output_file: Path, suite_name: str):
         row[3].fill = PASS_FILL
     autosize(ws_passed)
 
-    # Per-device detail sheet
     ws_device = wb.create_sheet("Per Device Detail")
     device_headers = ["Device", "Flow", "Status", "Exit Code", "Log"]
     ws_device.append(device_headers)
     style_header(ws_device[1])
-
     for row in sorted(results, key=lambda x: (x.get("device", ""), x.get("flow", ""))):
         ws_device.append([
             row.get("device", ""),
@@ -272,10 +230,7 @@ def build_workbook(results: list[dict], output_file: Path, suite_name: str):
             row.get("log", ""),
         ])
     for row in ws_device.iter_rows(min_row=2):
-        if row[2].value == "PASS":
-            row[2].fill = PASS_FILL
-        else:
-            row[2].fill = FAIL_FILL
+        row[2].fill = PASS_FILL if row[2].value == "PASS" else FAIL_FILL
     autosize(ws_device)
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -285,7 +240,6 @@ def build_workbook(results: list[dict], output_file: Path, suite_name: str):
 def write_csv(path: Path, rows: list[dict], only_status: str | None = None):
     path.parent.mkdir(parents=True, exist_ok=True)
     headers = ["suite", "flow", "device", "status", "exit_code", "log", "file_name"]
-
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=headers)
         writer.writeheader()
@@ -307,12 +261,14 @@ def main():
     suite_name = sys.argv[3].strip().lower()
 
     output_dir.mkdir(parents=True, exist_ok=True)
-
     results = load_results(status_dir, suite_name)
+
+    if not results:
+        print(f"ERROR: No completed status results found for suite '{suite_name}' in {status_dir}")
+        sys.exit(1)
 
     output_file = output_dir / "summary.xlsx"
     build_workbook(results, output_file, suite_name)
-
     write_csv(output_dir / "all_results.csv", results)
     write_csv(output_dir / "failed_results.csv", results, only_status="FAIL")
     write_csv(output_dir / "passed_results.csv", results, only_status="PASS")

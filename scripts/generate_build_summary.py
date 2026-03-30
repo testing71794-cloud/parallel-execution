@@ -43,7 +43,10 @@ def main() -> int:
     output_dir = Path(sys.argv[2]).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    results = [parse_status_file(p) for p in sorted(status_dir.glob("*.txt"))]
+    results = [parse_status_file(p) for p in sorted(status_dir.glob("*.txt")) if parse_status_file(p).get("status") != "RUNNING"]
+    if not results:
+        print(f"ERROR: No completed status files found in {status_dir}")
+        return 1
 
     wb = Workbook()
     ws = wb.active
@@ -61,14 +64,9 @@ def main() -> int:
     ws["B5"] = sum(1 for r in results if r["status"] != "PASS")
 
     start = 8
-    ws.cell(row=start, column=1, value="Suite")
-    ws.cell(row=start, column=2, value="Flow")
-    ws.cell(row=start, column=3, value="Device")
-    ws.cell(row=start, column=4, value="Status")
-    ws.cell(row=start, column=5, value="Exit Code")
-    ws.cell(row=start, column=6, value="Log")
-    for c in range(1, 7):
-        ws.cell(row=start, column=c).font = Font(bold=True)
+    headers = ["Suite", "Flow", "Device", "Status", "Exit Code", "Log"]
+    for idx, header in enumerate(headers, start=1):
+        ws.cell(row=start, column=idx, value=header).font = Font(bold=True)
 
     row_idx = start + 1
     for row in results:
