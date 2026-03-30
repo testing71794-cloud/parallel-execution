@@ -82,57 +82,42 @@ foreach ($flow in $flowFiles) {
 
     Write-Section "Running $flowName on all devices"
 
-    $jobs = @()
-
+    # Start-Job breaks adb/Maestro on many Jenkins agents (no inherited PATH/session).
+    # Parallel real processes inherit this session's environment.
+    $procInfos = @()
     foreach ($device in $devices) {
-        $jobs += Start-Job -Name "$flowName-$device" -ArgumentList @(
-            $RunnerBat, $Suite, $flowPath, $flowName, $device, $AppId, $ClearState, $IncludeTag, $MaestroCmd
-        ) -ScriptBlock {
-            param($RunnerBat, $Suite, $flowPath, $flowName, $device, $AppId, $ClearState, $IncludeTag, $MaestroCmd)
-
-            Set-Location (Split-Path -Parent (Split-Path -Parent $RunnerBat))
-
-            & $RunnerBat $Suite $flowPath $flowName $device $AppId $ClearState $IncludeTag $MaestroCmd
-
-            [pscustomobject]@{
-                Flow = $flowName
-                Device = $device
-                ExitCode = $LASTEXITCODE
-            }
-        }
+        $p = Start-Process -FilePath "cmd.exe" `
+            -ArgumentList @(
+                '/c', 'call', $RunnerBat,
+                $Suite,
+                $flowPath,
+                $flowName,
+                $device,
+                $AppId,
+                $ClearState,
+                $IncludeTag,
+                $MaestroCmd
+            ) `
+            -WorkingDirectory $RepoRoot `
+            -PassThru `
+            -NoNewWindow
+        $procInfos += [pscustomobject]@{ Process = $p; Device = $device }
     }
 
-    Wait-Job -Job $jobs | Out-Null
-
     $flowFailed = $false
-
-    foreach ($job in $jobs) {
-        $result = Receive-Job -Job $job
-        if ($null -eq $result) {
-            Write-Host "No result returned from job $($job.Name)"
-            $flowFailed = $true
-            $overallFailed = $true
-        } else {
-            foreach ($item in @($result)) {
-                if ($item.PSObject.Properties.Name -contains 'Device') {
-                    Write-Host ("Device {0} -> ExitCode {1}" -f $item.Device, $item.ExitCode)
-                    if ([int]$item.ExitCode -ne 0) {
-                        $flowFailed = $true
-                        $overallFailed = $true
-                    }
-                } else {
-                    $text = [string]$item
-                    if ($text.Trim().Length -gt 0) { Write-Host $text }
-                }
-            }
+    foreach ($info in $procInfos) {
+        try {
+            $info.Process.WaitForExit()
+            $code = $info.Process.ExitCode
+        } catch {
+            Write-Host "ERROR waiting for process: $_"
+            $code = 1
         }
-
-        if ($job.State -ne "Completed") {
+        Write-Host ("Device {0} -> ExitCode {1}" -f $info.Device, $code)
+        if ([int]$code -ne 0) {
             $flowFailed = $true
             $overallFailed = $true
         }
-
-        Remove-Job -Job $job -Force | Out-Null
     }
 
     if ($flowFailed) {

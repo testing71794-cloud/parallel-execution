@@ -13,6 +13,8 @@ set "MAESTRO_CMD=%~8"
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "REPO_ROOT=%%~fI"
 
+if defined ANDROID_HOME if exist "%ANDROID_HOME%\platform-tools" set "PATH=%ANDROID_HOME%\platform-tools;%PATH%"
+
 if "%SUITE%"=="" exit /b 1
 if "%FLOW_PATH%"=="" exit /b 1
 if "%FLOW_NAME%"=="" exit /b 1
@@ -64,7 +66,12 @@ if exist "%STATUS_FILE%" del /f /q "%STATUS_FILE%"
 )
 
 set "RC=0"
-"%MAESTRO_CMD%" test "%FLOW_PATH%" --device "%DEVICE_ID%" >> "%LOG_FILE%" 2>&1
+REM Official CLI: global --device before test — https://docs.maestro.dev/maestro-cli/maestro-cli-commands-and-options
+if exist "%REPO_ROOT%\config.yaml" (
+    call "%MAESTRO_CMD%" --device "%DEVICE_ID%" test "%FLOW_PATH%" --config "%REPO_ROOT%\config.yaml" >> "%LOG_FILE%" 2>&1
+) else (
+    call "%MAESTRO_CMD%" --device "%DEVICE_ID%" test "%FLOW_PATH%" >> "%LOG_FILE%" 2>&1
+)
 set "RC=%ERRORLEVEL%"
 
 if "%RC%"=="0" (

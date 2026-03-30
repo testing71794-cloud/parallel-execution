@@ -26,10 +26,10 @@ if not "%MAESTRO_CMD%"=="" (
 )
 
 adb start-server >nul 2>&1 || (echo adb start-server failed & exit /b 1)
+set "COUNT=0"
 for /f "skip=1 tokens=1,2" %%A in ('adb devices') do (
     if /I "%%B"=="device" set /a COUNT+=1
 )
-if not defined COUNT set COUNT=0
 adb devices
 
 echo Devices detected: %COUNT%

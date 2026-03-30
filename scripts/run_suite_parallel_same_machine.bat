@@ -44,6 +44,8 @@ if not exist "%REPO_ROOT%\reports\%SUITE%\logs" mkdir "%REPO_ROOT%\reports\%SUIT
 if not exist "%REPO_ROOT%\reports\%SUITE%\results" mkdir "%REPO_ROOT%\reports\%SUITE%\results"
 if not exist "%REPO_ROOT%\status" mkdir "%REPO_ROOT%\status"
 
+if defined ANDROID_HOME if exist "%ANDROID_HOME%\platform-tools" set "PATH=%ANDROID_HOME%\platform-tools;%PATH%"
+
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run_suite_parallel_same_machine.ps1" ^
   -RepoRoot "%REPO_ROOT%" ^
   -Suite "%SUITE%" ^
