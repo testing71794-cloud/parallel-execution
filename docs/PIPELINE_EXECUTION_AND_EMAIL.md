@@ -48,6 +48,8 @@ Wrong order can prevent runs from targeting devices correctly. Optional `--confi
 
 ## Flows still do not run
 
+- **ExitCode 1 with Maestro running:** The runner is OK; Maestro failed the flow. On failure, `run_one_flow_on_device.bat` prints the **last 60 lines** of that run’s log to the Jenkins console so you can see errors without opening files on the agent. Typical causes: **Java 17+** required for Maestro 2.x, app not installed, device locked, or UI assertion/timeouts.
+
 - **Spaces in paths:** The non-printing folder is named `Non printing flows` (space). The PowerShell runner **quotes** every argument passed to `cmd.exe` so the full path reaches `run_one_flow_on_device.bat`. If you see `Flow file not found: ...\Non` only, an older script without quoting was used — update the repo.
 
 - **ADB / devices:** Precheck and list stages require at least one `adb devices` **device**.

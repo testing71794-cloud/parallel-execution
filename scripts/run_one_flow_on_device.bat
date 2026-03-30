@@ -94,4 +94,12 @@ if "%RC%"=="0" (
 ) > "%STATUS_FILE%"
 
 echo Device=%DEVICE_ID% Flow=%FLOW_NAME% Result=%STATUS% ExitCode=%RC%
+
+if not "%RC%"=="0" (
+    echo.
+    echo ----- Maestro log tail ^(device %DEVICE_ID% flow %FLOW_NAME%^): %LOG_FILE% -----
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Content -LiteralPath '%LOG_FILE%' -Tail 60 -ErrorAction SilentlyContinue"
+    echo ----- end log tail -----
+)
+
 exit /b %RC%
