@@ -58,12 +58,33 @@ echo Status file : %STATUS_FILE%
 echo =====================================
 ) > "%LOG_FILE%"
 
+REM Pre-create artifacts so parent runner can always inspect them even if child process crashes.
+> "%STATUS_FILE%" (
+    echo suite=%SUITE%
+    echo flow=%FLOW_NAME%
+    echo device=%DEVICE_ID%
+    echo app_id=%APP_ID%
+    echo clear_state=%CLEAR_STATE%
+    echo maestro_cmd=%MAESTRO_CMD%
+    echo status=STARTED
+    echo exit_code=
+    echo reason=RUNNING
+)
+
+> "%RESULT_FILE%" (
+    echo suite,flow,device,status,exit_code,reason,log_file
+    echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,STARTED,,RUNNING,"%LOG_FILE%"
+)
+
 if not exist "%FLOW_PATH%" (
     echo ERROR: Flow file not found: %FLOW_PATH%>> "%LOG_FILE%"
     > "%STATUS_FILE%" (
         echo suite=%SUITE%
         echo flow=%FLOW_NAME%
         echo device=%DEVICE_ID%
+        echo app_id=%APP_ID%
+        echo clear_state=%CLEAR_STATE%
+        echo maestro_cmd=%MAESTRO_CMD%
         echo status=FAIL
         echo exit_code=20
         echo reason=FLOW_NOT_FOUND
@@ -82,6 +103,9 @@ if errorlevel 1 (
         echo suite=%SUITE%
         echo flow=%FLOW_NAME%
         echo device=%DEVICE_ID%
+        echo app_id=%APP_ID%
+        echo clear_state=%CLEAR_STATE%
+        echo maestro_cmd=%MAESTRO_CMD%
         echo status=FAIL
         echo exit_code=21
         echo reason=ADB_NOT_FOUND
@@ -93,12 +117,6 @@ if errorlevel 1 (
     exit /b 21
 )
 
-where "%MAESTRO_CMD%" >> "%LOG_FILE%" 2>&1
-if errorlevel 1 (
-    echo WARNING: Maestro command not found via WHERE: %MAESTRO_CMD%>> "%LOG_FILE%"
-    echo Continuing anyway...>> "%LOG_FILE%"
-)
-
 adb -s "%DEVICE_ID%" get-state >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
     echo ERROR: Device is not reachable via adb: %DEVICE_ID%>> "%LOG_FILE%"
@@ -106,6 +124,9 @@ if errorlevel 1 (
         echo suite=%SUITE%
         echo flow=%FLOW_NAME%
         echo device=%DEVICE_ID%
+        echo app_id=%APP_ID%
+        echo clear_state=%CLEAR_STATE%
+        echo maestro_cmd=%MAESTRO_CMD%
         echo status=FAIL
         echo exit_code=22
         echo reason=DEVICE_NOT_READY
@@ -125,16 +146,20 @@ if /I "%CLEAR_STATE%"=="true" (
 
 echo Starting Maestro test...>> "%LOG_FILE%"
 echo Command: %MAESTRO_CMD% test "%FLOW_PATH%" --device "%DEVICE_ID%">> "%LOG_FILE%"
-"%MAESTRO_CMD%" test "%FLOW_PATH%" --device "%DEVICE_ID%" >> "%LOG_FILE%" 2>&1
-set "RUN_EXIT=!errorlevel!"
 
-if "!RUN_EXIT!"=="0" (
+REM Run maestro in a nested cmd so a native crash does not kill this parent batch unexpectedly.
+cmd /d /c ""%MAESTRO_CMD%" test "%FLOW_PATH%" --device "%DEVICE_ID%" >> "%LOG_FILE%" 2>&1"
+set "RUN_EXIT=%ERRORLEVEL%"
+
+if "%RUN_EXIT%"=="0" (
     set "STATUS_VALUE=PASS"
     set "REASON=OK"
 ) else (
     set "STATUS_VALUE=FAIL"
     set "REASON=MAESTRO_FAILED"
 )
+
+if "%RUN_EXIT%"=="-1073741819" set "REASON=ACCESS_VIOLATION_CRASH"
 
 > "%STATUS_FILE%" (
     echo suite=%SUITE%
@@ -143,15 +168,15 @@ if "!RUN_EXIT!"=="0" (
     echo app_id=%APP_ID%
     echo clear_state=%CLEAR_STATE%
     echo maestro_cmd=%MAESTRO_CMD%
-    echo status=!STATUS_VALUE!
-    echo exit_code=!RUN_EXIT!
-    echo reason=!REASON!
+    echo status=%STATUS_VALUE%
+    echo exit_code=%RUN_EXIT%
+    echo reason=%REASON%
 )
 
 > "%RESULT_FILE%" (
     echo suite,flow,device,status,exit_code,reason,log_file
-    echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,!STATUS_VALUE!,!RUN_EXIT!,!REASON!,"%LOG_FILE%"
+    echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,%STATUS_VALUE%,%RUN_EXIT%,%REASON%,"%LOG_FILE%"
 )
 
-echo Final exit code: !RUN_EXIT!>> "%LOG_FILE%"
-exit /b !RUN_EXIT!
+echo Final exit code: %RUN_EXIT%>> "%LOG_FILE%"
+exit /b %RUN_EXIT%

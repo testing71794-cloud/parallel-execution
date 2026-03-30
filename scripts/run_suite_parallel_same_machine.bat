@@ -4,7 +4,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 REM Args:
 REM %1 = SUITE
 REM %2 = FLOW_DIR
-REM %3 = INCLUDE_TAG (unused here)
+REM %3 = INCLUDE_TAG
 REM %4 = APP_ID
 REM %5 = CLEAR_STATE
 REM %6 = MAESTRO_CMD
@@ -74,7 +74,7 @@ for %%F in ("%FLOW_ROOT%\*.yaml") do (
 
     for /f %%D in (%TMP_DEVICES%) do (
         call "%RUNNER_BAT%" "%SUITE%" "!FLOW_PATH!" "%%D" "%APP_ID%" "%CLEAR_STATE%" "%MAESTRO_CMD%"
-        set "RUN_EXIT=!errorlevel!"
+        set "RUN_EXIT=!ERRORLEVEL!"
 
         set "STATUS_FILE=%REPO_ROOT%\status\%SUITE%__!FLOW_NAME!__%%D.txt"
         set "RESULT_FILE=%REPO_ROOT%\reports\%SUITE%\results\!FLOW_NAME!_%%D.csv"
