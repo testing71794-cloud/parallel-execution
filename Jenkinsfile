@@ -14,12 +14,16 @@ pipeline {
     parameters {
         string(name: 'DEVICES_AGENT', defaultValue: 'devices', description: 'Windows Jenkins node label that has ADB, Maestro, Python and Node installed.')
         string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'Android app package checked during precheck.')
-        string(name: 'MAESTRO_CMD', defaultValue: '', description: 'Optional full path to Maestro executable. Leave blank to use PATH or C:\\maestro\\bin\\maestro.exe.')
+        string(name: 'MAESTRO_CMD', defaultValue: '', description: 'Optional full path to Maestro executable. Leave blank to use PATH.')
         booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run flows from Non printing flows folder.')
         booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run flows from Printing Flow folder.')
         booleanParam(name: 'RETRY_FAILED', defaultValue: true, description: 'Retry failed flows once on the same device.')
         booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Run AI doctor only when failures are detected.')
-        booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: true, description: 'Send one end-of-run email with the Excel reports and AI analysis artifacts.')
+        booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send one end-of-run email if SMTP env vars are configured.')
+    }
+
+    environment {
+        WORKSPACE_DIR = 'C:\\JenkinsAgent\\workspace\\Kodak-smile-automation'
     }
 
     stages {
@@ -34,13 +38,15 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Prepare Workspace on Device Agent') {
             agent { label params.DEVICES_AGENT }
             steps {
-                deleteDir()
-                unstash 'repo'
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat '''
+                    deleteDir()
+                    unstash 'repo'
+                    bat """
+                    cd /d "${env.WORKSPACE_DIR}"
+
                     if exist reports rmdir /s /q reports
                     if exist status rmdir /s /q status
                     if exist collected-artifacts rmdir /s /q collected-artifacts
@@ -48,12 +54,27 @@ pipeline {
                     if exist .maestro rmdir /s /q .maestro
                     if exist temp-runners rmdir /s /q temp-runners
                     if exist ai-doctor\\artifacts rmdir /s /q ai-doctor\\artifacts
+
                     del /q detected_devices.txt 2>nul
                     del /q *.flag 2>nul
                     del /q *.failed 2>nul
+                    """
+                }
+            }
+        }
+
+        stage('Install Dependencies') {
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    bat """
+                    cd /d "${env.WORKSPACE_DIR}"
 
                     python -m pip install --upgrade pip || (echo 1> install_failed.flag & exit /b 1)
-                    python -m pip install -r scripts\\requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
+
+                    if exist scripts\\requirements-python.txt (
+                        python -m pip install -r scripts\\requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
+                    )
 
                     if exist package.json (
                         call npm ci || call npm install || (echo 1> install_failed.flag & exit /b 1)
@@ -64,7 +85,7 @@ pipeline {
                         call npm ci || call npm install || (echo 1> ..\\install_failed.flag & exit /b 1)
                         cd ..
                     )
-                    '''
+                    """
                 }
             }
         }
@@ -73,7 +94,10 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat 'call scripts\\precheck_environment.bat "' + params.MAESTRO_CMD + '" "' + params.APP_PACKAGE + '" || (echo 1> precheck_failed.flag & exit /b 1)'
+                    bat """
+                    cd /d "${env.WORKSPACE_DIR}"
+                    call scripts\\precheck_environment.bat "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" || (echo 1> precheck_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
@@ -82,7 +106,10 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat 'call scripts\\list_devices.bat || (echo 1> device_detection_failed.flag & exit /b 1)'
+                    bat """
+                    cd /d "${env.WORKSPACE_DIR}"
+                    call scripts\\list_devices.bat || (echo 1> device_detection_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
@@ -92,17 +119,23 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat 'call scripts\\run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "' + params.MAESTRO_CMD + '" "' + params.APP_PACKAGE + '" "' + params.RETRY_FAILED.toString() + '" || (echo 1> nonprinting_failed.flag & exit /b 1)'
+                    bat """
+                    cd /d "${env.WORKSPACE_DIR}"
+                    call scripts\\run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.RETRY_FAILED.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
 
-        stage('Generate Excel Report for Non Printing') {
+        stage('Generate Device-wise Excel Report for Non Printing') {
             when { expression { return params.RUN_NON_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat 'python scripts\\generate_excel_report.py status reports\\nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag & exit /b 1)'
+                    bat """
+                    cd /d "${env.WORKSPACE_DIR}"
+                    python scripts\\generate_excel_report.py status reports\\nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
@@ -112,17 +145,23 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat 'call scripts\\run_suite_parallel_same_machine.bat printing "Printing Flow" "' + params.MAESTRO_CMD + '" "' + params.APP_PACKAGE + '" "' + params.RETRY_FAILED.toString() + '" || (echo 1> printing_failed.flag & exit /b 1)'
+                    bat """
+                    cd /d "${env.WORKSPACE_DIR}"
+                    call scripts\\run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.RETRY_FAILED.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag & echo 1>> pipeline_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
 
-        stage('Generate Excel Report for Printing') {
+        stage('Generate Device-wise Excel Report for Printing') {
             when { expression { return params.RUN_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat 'python scripts\\generate_excel_report.py status reports\\printing_summary printing || (echo 1> printing_report_failed.flag & exit /b 1)'
+                    bat """
+                    cd /d "${env.WORKSPACE_DIR}"
+                    python scripts\\generate_excel_report.py status reports\\printing_summary printing || (echo 1> printing_report_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
@@ -134,7 +173,14 @@ pipeline {
                 script {
                     if (fileExists('pipeline_failed.flag')) {
                         catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                            bat 'call scripts\\run_ai_analysis.bat || (echo 1> ai_failed.flag & exit /b 1)'
+                            bat """
+                            cd /d "${env.WORKSPACE_DIR}"
+                            if exist scripts\\run_ai_analysis.bat (
+                                call scripts\\run_ai_analysis.bat || (echo 1> ai_failed.flag & exit /b 1)
+                            ) else (
+                                echo AI analysis script missing, skipping AI stage
+                            )
+                            """
                         }
                     } else {
                         echo 'No failures detected. Skipping AI analysis.'
@@ -147,10 +193,10 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat 'python scripts\\generate_build_summary.py collected-artifacts build-summary || (echo 1> summary_failed.flag & exit /b 1)'
-                }
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat 'python scripts\\generate_final_report.py . status build-summary\\final_execution_report.xlsx || (echo 1>> summary_failed.flag & exit /b 1)'
+                    bat """
+                    cd /d "${env.WORKSPACE_DIR}"
+                    python scripts\\generate_build_summary.py status build-summary || (echo 1> summary_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
@@ -160,7 +206,10 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat 'python scripts\\send_execution_email.py || (echo 1> email_failed.flag & exit /b 1)'
+                    bat """
+                    cd /d "${env.WORKSPACE_DIR}"
+                    python scripts\\send_execution_email.py || (echo 1> email_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
@@ -186,6 +235,7 @@ pipeline {
                         'nonprinting_failed.flag',
                         'printing_failed.flag'
                     ]
+
                     def unstableFlags = [
                         'nonprinting_report_failed.flag',
                         'printing_report_failed.flag',

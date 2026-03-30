@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory=$true)][string]$FlowDir,
     [string]$IncludeTag = "",
     [string]$AppId = "",
-    [string]$ClearState = "true"
+    [string]$ClearState = "true",
+    [string]$MaestroCmd = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,6 +29,7 @@ Write-Section "RUN SUITE SAME MACHINE PARALLEL"
 Write-Host "Repo root: $RepoRoot"
 Write-Host "Flow root: $FlowRoot"
 Write-Host "Runner bat: $RunnerBat"
+Write-Host "Maestro cmd: $MaestroCmd"
 
 if (-not (Test-Path -LiteralPath $RunnerBat)) {
     Write-Host "ERROR: Runner file not found: $RunnerBat"
@@ -84,13 +86,13 @@ foreach ($flow in $flowFiles) {
 
     foreach ($device in $devices) {
         $jobs += Start-Job -Name "$flowName-$device" -ArgumentList @(
-            $RunnerBat, $Suite, $flowPath, $flowName, $device, $AppId, $ClearState, $IncludeTag
+            $RunnerBat, $Suite, $flowPath, $flowName, $device, $AppId, $ClearState, $IncludeTag, $MaestroCmd
         ) -ScriptBlock {
-            param($RunnerBat, $Suite, $flowPath, $flowName, $device, $AppId, $ClearState, $IncludeTag)
+            param($RunnerBat, $Suite, $flowPath, $flowName, $device, $AppId, $ClearState, $IncludeTag, $MaestroCmd)
 
             Set-Location (Split-Path -Parent (Split-Path -Parent $RunnerBat))
 
-            & $RunnerBat $Suite $flowPath $flowName $device $AppId $ClearState $IncludeTag
+            & $RunnerBat $Suite $flowPath $flowName $device $AppId $ClearState $IncludeTag $MaestroCmd
 
             [pscustomobject]@{
                 Flow = $flowName
