@@ -28,6 +28,47 @@ function Escape-CmdArg([string]$s) {
     return '"' + ($s.Replace('"', '""')) + '"'
 }
 
+# Build one cmd.exe command line (spaces in paths; Start-Process -PassThru often leaves ExitCode null on Win PS 5.x).
+function Build-RunnerCmdLine([string]$RunnerBat, [string]$Suite, [string]$FlowPath, [string]$FlowName, [string]$Device, [string]$AppId, [string]$ClearState, [string]$IncludeTagArg, [string]$MaestroCmdArg) {
+    $parts = @(
+        "/c",
+        "call",
+        (Escape-CmdArg $RunnerBat),
+        (Escape-CmdArg $Suite),
+        (Escape-CmdArg $FlowPath),
+        (Escape-CmdArg $FlowName),
+        (Escape-CmdArg $Device),
+        (Escape-CmdArg $AppId),
+        (Escape-CmdArg $ClearState),
+        (Escape-CmdArg $IncludeTagArg),
+        (Escape-CmdArg $MaestroCmdArg)
+    )
+    return ($parts -join " ")
+}
+
+function Start-RunnerProcess([string]$WorkingDir, [string]$Arguments) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "cmd.exe"
+    $psi.Arguments = $Arguments
+    $psi.WorkingDirectory = $WorkingDir
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    [void]$p.Start()
+    return $p
+}
+
+function Get-ProcessExitCodeSafe([System.Diagnostics.Process]$p) {
+    if (-not $p.HasExited) {
+        $p.WaitForExit()
+    }
+    try { $p.Refresh() | Out-Null } catch {}
+    $ec = $p.ExitCode
+    if ($null -ne $ec) { return [int]$ec }
+    return -1
+}
+
 $RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
 $FlowRoot = Join-Path $RepoRoot $FlowDir
 $ScriptsDir = Join-Path $RepoRoot "scripts"
@@ -99,49 +140,39 @@ foreach ($flow in $flowFiles) {
     Write-Section "Running $flowName on all devices"
     Write-Host "Pattern: this flow runs on ALL $($devices.Count) device(s) in parallel; the next flow starts only after every device finishes this one."
 
-    # Start-Job breaks adb/Maestro on many Jenkins agents (no inherited PATH/session).
-    # Parallel real processes inherit this session's environment.
+    $flowFailed = $false
+    # Start-Job breaks adb/Maestro on many Jenkins agents. Use System.Diagnostics.Process for reliable ExitCode.
     $procInfos = @()
     foreach ($device in $devices) {
-        $p = Start-Process -FilePath "cmd.exe" `
-            -ArgumentList @(
-                '/c',
-                'call',
-                (Escape-CmdArg $RunnerBat),
-                (Escape-CmdArg $Suite),
-                (Escape-CmdArg $flowPath),
-                (Escape-CmdArg $flowName),
-                (Escape-CmdArg $device),
-                (Escape-CmdArg $AppId),
-                (Escape-CmdArg $ClearState),
-                (Escape-CmdArg $IncludeTagArg),
-                (Escape-CmdArg $MaestroCmdArg)
-            ) `
-            -WorkingDirectory $RepoRoot `
-            -PassThru `
-            -NoNewWindow
-        $procInfos += [pscustomobject]@{ Process = $p; Device = $device }
+        $cmdLine = Build-RunnerCmdLine $RunnerBat $Suite $flowPath $flowName $device $AppId $ClearState $IncludeTagArg $MaestroCmdArg
+        try {
+            $p = Start-RunnerProcess -WorkingDir $RepoRoot -Arguments $cmdLine
+            $procInfos += [pscustomobject]@{ Process = $p; Device = $device }
+        } catch {
+            Write-Host "ERROR starting process for ${device}: $_"
+            $overallFailed = $true
+            $flowFailed = $true
+        }
     }
 
-    $flowFailed = $false
     foreach ($info in $procInfos) {
         try {
-            $info.Process.WaitForExit()
-            $code = $info.Process.ExitCode
+            $code = Get-ProcessExitCodeSafe $info.Process
         } catch {
-            Write-Host "ERROR waiting for process: $_"
-            $code = 1
+            Write-Host "ERROR waiting for process $($info.Device): $_"
+            $code = -1
         }
-        $codeDisp = if ($null -ne $code) { $code } else { "null" }
-        Write-Host ("Device {0} -> ExitCode {1}" -f $info.Device, $codeDisp)
-        if ($null -eq $code -or [int]$code -ne 0) {
+        Write-Host ("Device {0} -> ExitCode {1}" -f $info.Device, $code)
+        if ($code -ne 0) {
             $flowFailed = $true
             $overallFailed = $true
         }
+        try { $info.Process.Dispose() } catch {}
     }
 
     if ($flowFailed) {
         Write-Host "Flow $flowName failed on one or more devices"
+        Write-Host "Check Maestro logs: $ReportsDir\logs\${flowName}_*.log (ExitCode 1 = test or Maestro failure, not Jenkins)."
     } else {
         Write-Host "Flow $flowName completed successfully on all devices"
     }
