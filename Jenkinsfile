@@ -26,7 +26,7 @@ pipeline {
         stage('Fetch Code from GitHub') {
             agent { label 'built-in' }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     deleteDir()
                     checkout scm
                     stash name: 'repo', includes: '**/*', useDefaultExcludes: false
@@ -39,9 +39,9 @@ pipeline {
             steps {
                 deleteDir()
                 unstash 'repo'
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
 
                     if exist reports rmdir /s /q reports
                     if exist status rmdir /s /q status
@@ -66,7 +66,7 @@ pipeline {
                         call npm ci || call npm install || (echo 1> ..\\install_failed.flag & exit /b 1)
                         cd ..
                     )
-                    '''
+                    """
                 }
             }
         }
@@ -74,11 +74,11 @@ pipeline {
         stage('Environment Precheck') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
-                    call scripts\\precheck_environment.bat "''' + params.MAESTRO_CMD + '''" "''' + params.APP_PACKAGE + '''" || (echo 1> precheck_failed.flag & exit /b 1)
-                    '''
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
+                    call scripts\\precheck_environment.bat "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" || (echo 1> precheck_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
@@ -86,9 +86,9 @@ pipeline {
         stage('Debug Runner Files') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
 
                     echo ===== WORKSPACE =====
                     cd
@@ -113,7 +113,7 @@ pipeline {
 
                     echo ===== RUN ONE FLOW FILE =====
                     type scripts\\run_one_flow_on_device.bat
-                    '''
+                    """
                 }
             }
         }
@@ -121,11 +121,11 @@ pipeline {
         stage('Manual Single Device Test') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
 
-                    call scripts\\run_one_flow_on_device.bat nonprinting "C:\\JenkinsAgent\\workspace\\Kodak-smile-automation\\Non printing flows\\flow1.yaml" flow1 RZCT415WSSW com.kodaksmile true __EMPTY__ __EMPTY__
+                    call scripts\\run_one_flow_on_device.bat nonprinting "${env.WORKSPACE}\\Non printing flows\\flow1.yaml" flow1 RZCT415WSSW com.kodaksmile true __EMPTY__ __EMPTY__
 
                     echo ===== AFTER RUN LOGS =====
                     dir reports\\nonprinting\\logs
@@ -135,7 +135,7 @@ pipeline {
 
                     echo ===== AFTER RUN STATUS =====
                     dir status
-                    '''
+                    """
                 }
             }
         }
@@ -143,24 +143,25 @@ pipeline {
         stage('Detect Connected Devices') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
                     call scripts\\list_devices.bat || (echo 1> device_detection_failed.flag & exit /b 1)
-                    '''
+                    """
                 }
             }
         }
 
+        // run_suite_parallel_same_machine.bat: %1=SUITE %2=FLOW_DIR %3=INCLUDE_TAG %4=APP_ID %5=CLEAR_STATE %6=MAESTRO_CMD
         stage('Execute Non Printing Flows') {
             when { expression { return params.RUN_NON_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
-                    call scripts\\run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "''' + params.MAESTRO_CMD + '''" "''' + params.APP_PACKAGE + '''" "''' + params.RETRY_FAILED.toString() + '''" || (echo 1> nonprinting_failed.flag & exit /b 1)
-                    '''
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
+                    call scripts\\run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.RETRY_FAILED.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
@@ -169,11 +170,11 @@ pipeline {
             when { expression { return params.RUN_NON_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
                     python scripts\\generate_excel_report.py status reports\\nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag & exit /b 1)
-                    '''
+                    """
                 }
             }
         }
@@ -182,11 +183,11 @@ pipeline {
             when { expression { return params.RUN_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
-                    call scripts\\run_suite_parallel_same_machine.bat printing "Printing Flow" "''' + params.MAESTRO_CMD + '''" "''' + params.APP_PACKAGE + '''" "''' + params.RETRY_FAILED.toString() + '''" || (echo 1> printing_failed.flag & exit /b 1)
-                    '''
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
+                    call scripts\\run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.RETRY_FAILED.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
@@ -195,11 +196,11 @@ pipeline {
             when { expression { return params.RUN_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
                     python scripts\\generate_excel_report.py status reports\\printing_summary printing || (echo 1> printing_report_failed.flag & exit /b 1)
-                    '''
+                    """
                 }
             }
         }
@@ -210,11 +211,11 @@ pipeline {
             steps {
                 script {
                     if (fileExists('pipeline_failed.flag')) {
-                        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                            bat '''
-                            cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
+                        catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                            bat """
+                            cd /d "${env.WORKSPACE}"
                             call scripts\\run_ai_analysis.bat || (echo 1> ai_failed.flag & exit /b 1)
-                            '''
+                            """
                         }
                     } else {
                         echo 'No failures detected. Skipping AI analysis.'
@@ -226,21 +227,21 @@ pipeline {
         stage('Build Summary') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
-                    python scripts\\generate_build_summary.py collected-artifacts build-summary || (echo 1> summary_failed.flag & exit /b 1)
-                    '''
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
+                    python scripts\\generate_build_summary.py status build-summary || (echo 1> summary_failed.flag & exit /b 1)
+                    """
                 }
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
                     if exist scripts\\generate_final_report.py (
                         python scripts\\generate_final_report.py . status build-summary\\final_execution_report.xlsx || (echo 1>> summary_failed.flag & exit /b 1)
                     ) else (
                         echo generate_final_report.py not found. Skipping final report generation.
                     )
-                    '''
+                    """
                 }
             }
         }
@@ -249,15 +250,15 @@ pipeline {
             when { expression { return params.SEND_FINAL_EMAIL } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat '''
-                    cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
                     if exist scripts\\send_execution_email.py (
                         python scripts\\send_execution_email.py || (echo 1> email_failed.flag & exit /b 1)
                     ) else (
                         echo send_execution_email.py not found. Skipping email step.
                     )
-                    '''
+                    """
                 }
             }
         }
@@ -265,7 +266,7 @@ pipeline {
         stage('Archive Reports & Artifacts') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
                     archiveArtifacts artifacts: 'reports/**, status/**, collected-artifacts/**, build-summary/**, .maestro/screenshots/**, ai-doctor/artifacts/**, detected_devices.txt, *.flag, *.failed', allowEmptyArchive: true
                 }
             }
@@ -275,6 +276,8 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 script {
+                    echo "Workspace (flags must live here): ${env.WORKSPACE}"
+
                     def hardFailureFlags = [
                         'pipeline_failed.flag',
                         'install_failed.flag',

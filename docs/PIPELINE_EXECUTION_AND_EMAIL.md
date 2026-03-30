@@ -10,7 +10,17 @@
 
 ## Critical: workspace path
 
-All batch steps use **`cd /d "${env.WORKSPACE}"`** on the device agent. A previously hardcoded path (or running scripts manually from the wrong directory) points at an **empty or wrong folder** → no flows, no `status/*.txt`, empty or missing Excel.
+All batch steps must use **`cd /d "${env.WORKSPACE}"`** on the device agent. If you **hardcode** a path (e.g. `C:\JenkinsAgent\workspace\Kodak-smile-automation`) while Jenkins’ real workspace is different (e.g. `...\Kodak-smile-automation@2`), then:
+
+- Failure flags like `nonprinting_failed.flag` are written **outside** the job workspace.
+- **`Finalize Build Result`** uses `fileExists('nonprinting_failed.flag')` on the **workspace root** → flag not found → build forced to **SUCCESS** even when Maestro failed (**fake green**).
+
+Also ensure **`run_suite_parallel_same_machine.bat`** is called with **six** arguments in order:  
+`SUITE`, `FLOW_DIR`, **empty include tag `""`**, `APP_PACKAGE`, `RETRY_FAILED`, `MAESTRO_CMD`. Passing `MAESTRO_CMD` as the third argument puts it in **`INCLUDE_TAG`** and leaves **`MAESTRO_CMD` empty**.
+
+## Critical: `catchError(buildResult: 'SUCCESS')`
+
+If a stage uses **`catchError(buildResult: 'SUCCESS', ...)`**, Jenkins can keep the **overall build green** when the stage fails, unless **`Finalize Build Result`** finds the right `*.flag` files in **`env.WORKSPACE`**. Prefer **`catchError(buildResult: 'FAILURE', ...)`** for test stages so failures show as red immediately.
 
 ## Critical: Maestro CLI
 
