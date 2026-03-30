@@ -13,3 +13,4 @@ temp-runners/
 ai-doctor/.env
 __pycache__/
 *.pyc
+*.zip
