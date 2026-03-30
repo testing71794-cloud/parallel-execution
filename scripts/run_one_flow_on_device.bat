@@ -1,105 +1,33 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal enabledelayedexpansion
 
-set "SUITE=%~1"
-set "FLOW_PATH=%~2"
-set "FLOW_NAME=%~3"
-set "DEVICE_ID=%~4"
-set "APP_ID=%~5"
-set "CLEAR_STATE=%~6"
-set "INCLUDE_TAG=%~7"
-set "MAESTRO_CMD=%~8"
+REM ===== FORCE JAVA =====
+set "JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-25.0.2.10-hotspot"
+set "PATH=%JAVA_HOME%\bin;%PATH%"
 
-if /I "%INCLUDE_TAG%"=="__EMPTY__" set "INCLUDE_TAG="
-if /I "%MAESTRO_CMD%"=="__EMPTY__" set "MAESTRO_CMD="
+echo =====================================
+echo JAVA DEBUG
+echo =====================================
+echo JAVA_HOME=%JAVA_HOME%
+where java
+java -version
+where maestro
+maestro --version
+echo =====================================
 
-set "SCRIPT_DIR=%~dp0"
-for %%I in ("%SCRIPT_DIR%..") do set "REPO_ROOT=%%~fI"
-
-if defined ANDROID_HOME if exist "%ANDROID_HOME%\platform-tools" set "PATH=%ANDROID_HOME%\platform-tools;%PATH%"
+REM ===== ORIGINAL LOGIC CONTINUES =====
+set SUITE=%1
+set FLOW_PATH=%2
+set FLOW_NAME=%3
+set DEVICE_ID=%4
+set APP_ID=%5
 
 if "%SUITE%"=="" exit /b 1
 if "%FLOW_PATH%"=="" exit /b 1
 if "%FLOW_NAME%"=="" exit /b 1
 if "%DEVICE_ID%"=="" exit /b 1
-if not exist "%FLOW_PATH%" (
-    echo ERROR: Flow file not found: %FLOW_PATH%
-    exit /b 1
-)
 
-if "%MAESTRO_CMD%"=="" set "MAESTRO_CMD=maestro"
+echo Running %FLOW_NAME% on device %DEVICE_ID%
 
-if not exist "%REPO_ROOT%\reports" mkdir "%REPO_ROOT%\reports"
-if not exist "%REPO_ROOT%\reports\%SUITE%" mkdir "%REPO_ROOT%\reports\%SUITE%"
-if not exist "%REPO_ROOT%\reports\%SUITE%\logs" mkdir "%REPO_ROOT%\reports\%SUITE%\logs"
-if not exist "%REPO_ROOT%\reports\%SUITE%\results" mkdir "%REPO_ROOT%\reports\%SUITE%\results"
-if not exist "%REPO_ROOT%\status" mkdir "%REPO_ROOT%\status"
-
-set "LOG_FILE=%REPO_ROOT%\reports\%SUITE%\logs\%FLOW_NAME%_%DEVICE_ID%.log"
-set "RESULT_CSV=%REPO_ROOT%\reports\%SUITE%\results\%FLOW_NAME%_%DEVICE_ID%.csv"
-set "STATUS_FILE=%REPO_ROOT%\status\%SUITE%__%FLOW_NAME%__%DEVICE_ID%.txt"
-
-if exist "%RESULT_CSV%" del /f /q "%RESULT_CSV%"
-if exist "%STATUS_FILE%" del /f /q "%STATUS_FILE%"
-
-> "%RESULT_CSV%" echo suite,flow_name,device_id,status,exit_code,log_file
-
-(
-    echo suite=%SUITE%
-    echo flow=%FLOW_NAME%
-    echo device=%DEVICE_ID%
-    echo status=RUNNING
-    echo exit_code=
-    echo log=%LOG_FILE%
-) > "%STATUS_FILE%"
-
-> "%LOG_FILE%" (
-    echo =====================================
-    echo RUN ONE FLOW ON DEVICE
-    echo =====================================
-    echo Suite      : %SUITE%
-    echo Flow       : %FLOW_NAME%
-    echo Device     : %DEVICE_ID%
-    echo Flow path  : %FLOW_PATH%
-    echo App ID     : %APP_ID%
-    echo ClearState : %CLEAR_STATE%
-    echo IncludeTag : %INCLUDE_TAG%
-    echo Maestro    : %MAESTRO_CMD%
-    echo =====================================
-)
-
-set "RC=0"
-REM Official CLI: global --device before test — https://docs.maestro.dev/maestro-cli/maestro-cli-commands-and-options
-if exist "%REPO_ROOT%\config.yaml" (
-    call "%MAESTRO_CMD%" --device "%DEVICE_ID%" test "%FLOW_PATH%" --config "%REPO_ROOT%\config.yaml" >> "%LOG_FILE%" 2>&1
-) else (
-    call "%MAESTRO_CMD%" --device "%DEVICE_ID%" test "%FLOW_PATH%" >> "%LOG_FILE%" 2>&1
-)
-set "RC=%ERRORLEVEL%"
-
-if "%RC%"=="0" (
-    set "STATUS=PASS"
-) else (
-    set "STATUS=FAIL"
-)
-
->> "%RESULT_CSV%" echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,%STATUS%,%RC%,%LOG_FILE%
-(
-    echo suite=%SUITE%
-    echo flow=%FLOW_NAME%
-    echo device=%DEVICE_ID%
-    echo status=%STATUS%
-    echo exit_code=%RC%
-    echo log=%LOG_FILE%
-) > "%STATUS_FILE%"
-
-echo Device=%DEVICE_ID% Flow=%FLOW_NAME% Result=%STATUS% ExitCode=%RC%
-
-if not "%RC%"=="0" (
-    echo.
-    echo ----- Maestro log tail ^(device %DEVICE_ID% flow %FLOW_NAME%^): %LOG_FILE% -----
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Content -LiteralPath '%LOG_FILE%' -Tail 60 -ErrorAction SilentlyContinue"
-    echo ----- end log tail -----
-)
-
-exit /b %RC%
+maestro --device "%DEVICE_ID%" test "%FLOW_PATH%"
+exit /b %ERRORLEVEL%
