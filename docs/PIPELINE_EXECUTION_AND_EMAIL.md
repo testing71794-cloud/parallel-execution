@@ -48,6 +48,8 @@ Wrong order can prevent runs from targeting devices correctly. Optional `--confi
 
 ## Flows still do not run
 
+- **Spaces in paths:** The non-printing folder is named `Non printing flows` (space). The PowerShell runner **quotes** every argument passed to `cmd.exe` so the full path reaches `run_one_flow_on_device.bat`. If you see `Flow file not found: ...\Non` only, an older script without quoting was used — update the repo.
+
 - **ADB / devices:** Precheck and list stages require at least one `adb devices` **device**.
 - **Maestro on PATH or `MAESTRO_CMD`:** Job parameter **MAESTRO_CMD** can point to `maestro.cmd` if the agent user differs from the install user.
 - **`ANDROID_HOME`:** Set on the agent so `scripts\run_suite_parallel_same_machine.bat` and `run_one_flow_on_device.bat` can prepend `platform-tools` to `PATH` (Maestro uses adb).

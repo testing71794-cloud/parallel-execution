@@ -21,6 +21,13 @@ function Write-Section([string]$Text) {
     Write-Host "====================================="
 }
 
+# cmd.exe splits the command line on spaces unless args are quoted; paths like
+# "Non printing flows\flow1.yaml" must be one argv or %~2 in the batch becomes "C:\...\Non" only.
+function Escape-CmdArg([string]$s) {
+    if ($null -eq $s) { return '""' }
+    return '"' + ($s.Replace('"', '""')) + '"'
+}
+
 $RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
 $FlowRoot = Join-Path $RepoRoot $FlowDir
 $ScriptsDir = Join-Path $RepoRoot "scripts"
@@ -98,15 +105,17 @@ foreach ($flow in $flowFiles) {
     foreach ($device in $devices) {
         $p = Start-Process -FilePath "cmd.exe" `
             -ArgumentList @(
-                '/c', 'call', $RunnerBat,
-                $Suite,
-                $flowPath,
-                $flowName,
-                $device,
-                $AppId,
-                $ClearState,
-                $IncludeTagArg,
-                $MaestroCmdArg
+                '/c',
+                'call',
+                (Escape-CmdArg $RunnerBat),
+                (Escape-CmdArg $Suite),
+                (Escape-CmdArg $flowPath),
+                (Escape-CmdArg $flowName),
+                (Escape-CmdArg $device),
+                (Escape-CmdArg $AppId),
+                (Escape-CmdArg $ClearState),
+                (Escape-CmdArg $IncludeTagArg),
+                (Escape-CmdArg $MaestroCmdArg)
             ) `
             -WorkingDirectory $RepoRoot `
             -PassThru `
@@ -123,8 +132,9 @@ foreach ($flow in $flowFiles) {
             Write-Host "ERROR waiting for process: $_"
             $code = 1
         }
-        Write-Host ("Device {0} -> ExitCode {1}" -f $info.Device, $code)
-        if ([int]$code -ne 0) {
+        $codeDisp = if ($null -ne $code) { $code } else { "null" }
+        Write-Host ("Device {0} -> ExitCode {1}" -f $info.Device, $codeDisp)
+        if ($null -eq $code -or [int]$code -ne 0) {
             $flowFailed = $true
             $overallFailed = $true
         }
