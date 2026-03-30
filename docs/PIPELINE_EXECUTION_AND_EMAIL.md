@@ -3,7 +3,7 @@
 ## How a successful run works
 
 1. **Checkout** is unstashed on the Windows agent; every `cd` uses **`${env.WORKSPACE}`** for that job (never a hardcoded path).
-2. **Execute Non Printing / Printing** runs `scripts\run_suite_parallel_same_machine.bat`, which calls PowerShell to run each flow on every device via `scripts\run_one_flow_on_device.bat`.
+2. **Execute Non Printing / Printing** runs `scripts\run_suite_parallel_same_machine.bat`. For **each** YAML in order (`flow1`, `flow2`, …), Maestro runs that **same** flow on **all connected devices at once**; when **every** device has finished that flow, the next flow starts the same way (parallel per flow, sequential across flows).
 3. Maestro writes logs under `reports\<suite>\logs\`; each run updates `status\<suite>__<flow>__<device>.txt`.
 4. **Generate Excel** runs `python scripts\generate_excel_report.py status reports\<suite>_summary <suite>` → `reports\<suite>_summary\summary.xlsx` (and CSVs).
 5. **Send Final Email** runs only if the job parameter **`SEND_FINAL_EMAIL`** is **enabled** and SMTP env vars are set on the agent (see below).

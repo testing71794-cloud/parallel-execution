@@ -10,6 +10,9 @@ set "CLEAR_STATE=%~6"
 set "INCLUDE_TAG=%~7"
 set "MAESTRO_CMD=%~8"
 
+if /I "%INCLUDE_TAG%"=="__EMPTY__" set "INCLUDE_TAG="
+if /I "%MAESTRO_CMD%"=="__EMPTY__" set "MAESTRO_CMD="
+
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "REPO_ROOT=%%~fI"
 

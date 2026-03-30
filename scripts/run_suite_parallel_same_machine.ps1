@@ -1,3 +1,7 @@
+# Execution order: flow1.yaml on EVERY device at the same time -> wait until all finish ->
+# flow2.yaml on every device at the same time -> ... (sorted by file name).
+# Non-printing and printing suites both use this script via run_suite_parallel_same_machine.bat
+
 param(
     [Parameter(Mandatory=$true)][string]$RepoRoot,
     [Parameter(Mandatory=$true)][string]$Suite,
@@ -76,11 +80,17 @@ if (-not $flowFiles -or $flowFiles.Count -eq 0) {
 
 $overallFailed = $false
 
+# Start-Process -ArgumentList cannot contain null or empty strings on Windows PowerShell 5.x
+# (Jenkins passes "" for optional INCLUDE_TAG / MAESTRO_CMD). Use a sentinel the bat strips.
+$IncludeTagArg = if ([string]::IsNullOrWhiteSpace($IncludeTag)) { "__EMPTY__" } else { $IncludeTag }
+$MaestroCmdArg = if ([string]::IsNullOrWhiteSpace($MaestroCmd)) { "__EMPTY__" } else { $MaestroCmd }
+
 foreach ($flow in $flowFiles) {
     $flowName = $flow.BaseName
     $flowPath = $flow.FullName
 
     Write-Section "Running $flowName on all devices"
+    Write-Host "Pattern: this flow runs on ALL $($devices.Count) device(s) in parallel; the next flow starts only after every device finishes this one."
 
     # Start-Job breaks adb/Maestro on many Jenkins agents (no inherited PATH/session).
     # Parallel real processes inherit this session's environment.
@@ -95,8 +105,8 @@ foreach ($flow in $flowFiles) {
                 $device,
                 $AppId,
                 $ClearState,
-                $IncludeTag,
-                $MaestroCmd
+                $IncludeTagArg,
+                $MaestroCmdArg
             ) `
             -WorkingDirectory $RepoRoot `
             -PassThru `
