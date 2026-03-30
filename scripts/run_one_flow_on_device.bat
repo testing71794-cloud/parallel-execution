@@ -20,13 +20,31 @@ if "%SUITE%"=="" exit /b 10
 if "%FLOW_PATH%"=="" exit /b 11
 if "%DEVICE_ID%"=="" exit /b 12
 if "%APP_ID%"=="" exit /b 13
-if "%MAESTRO_CMD%"=="" set "MAESTRO_CMD=maestro"
 
+REM Force exact Java and Maestro paths
+set "JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-25.0.2.10-hotspot"
+set "MAESTRO_BIN=C:\maestro\bin\maestro.bat"
+
+if not exist "%JAVA_HOME%\bin\java.exe" exit /b 14
+if not exist "%MAESTRO_BIN%" exit /b 15
+
+REM Clean Java environment that can break launcher behavior
+set "CLASSPATH="
+set "JAVA_TOOL_OPTIONS="
+set "_JAVA_OPTIONS="
+set "JDK_JAVA_OPTIONS="
+
+REM Put exact Java and Maestro first in PATH
+set "PATH=%JAVA_HOME%\bin;C:\maestro\bin;%PATH%"
+
+REM Resolve repo root
 set "REPO_ROOT=%~dp0.."
 for %%I in ("%REPO_ROOT%") do set "REPO_ROOT=%%~fI"
 
+REM Extract flow name
 for %%I in ("%FLOW_PATH%") do set "FLOW_NAME=%%~nI"
 
+REM Directories
 set "LOG_DIR=%REPO_ROOT%\reports\%SUITE%\logs"
 set "RESULT_DIR=%REPO_ROOT%\reports\%SUITE%\results"
 set "STATUS_DIR=%REPO_ROOT%\status"
@@ -43,99 +61,46 @@ set "STATUS_FILE=%STATUS_DIR%\%SUITE%__%FLOW_NAME%__%DEVICE_ID%.txt"
 echo =====================================
 echo RUN ONE FLOW ON DEVICE
 echo =====================================
-echo Timestamp   : %date% %time%
-echo Suite       : %SUITE%
-echo Flow path   : %FLOW_PATH%
-echo Flow name   : %FLOW_NAME%
-echo Device      : %DEVICE_ID%
-echo App id      : %APP_ID%
-echo Clear state : %CLEAR_STATE%
-echo Maestro cmd : %MAESTRO_CMD%
-echo Repo root   : %REPO_ROOT%
-echo Log file    : %LOG_FILE%
-echo Result file : %RESULT_FILE%
-echo Status file : %STATUS_FILE%
+echo Timestamp        : %date% %time%
+echo Suite            : %SUITE%
+echo Flow path        : %FLOW_PATH%
+echo Flow name        : %FLOW_NAME%
+echo Device           : %DEVICE_ID%
+echo App id           : %APP_ID%
+echo Clear state      : %CLEAR_STATE%
+echo JAVA_HOME        : %JAVA_HOME%
+echo MAESTRO_BIN      : %MAESTRO_BIN%
+echo CLASSPATH        : [%CLASSPATH%]
+echo JAVA_TOOL_OPTIONS: [%JAVA_TOOL_OPTIONS%]
+echo _JAVA_OPTIONS    : [%_JAVA_OPTIONS%]
+echo JDK_JAVA_OPTIONS : [%JDK_JAVA_OPTIONS%]
 echo =====================================
 ) > "%LOG_FILE%"
 
-REM Pre-create artifacts so parent runner can always inspect them even if child process crashes.
-> "%STATUS_FILE%" (
-    echo suite=%SUITE%
-    echo flow=%FLOW_NAME%
-    echo device=%DEVICE_ID%
-    echo app_id=%APP_ID%
-    echo clear_state=%CLEAR_STATE%
-    echo maestro_cmd=%MAESTRO_CMD%
-    echo status=STARTED
-    echo exit_code=
-    echo reason=RUNNING
-)
-
-> "%RESULT_FILE%" (
-    echo suite,flow,device,status,exit_code,reason,log_file
-    echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,STARTED,,RUNNING,"%LOG_FILE%"
-)
+where java >> "%LOG_FILE%" 2>&1
+java -version >> "%LOG_FILE%" 2>&1
+where maestro >> "%LOG_FILE%" 2>&1
+where maestro.bat >> "%LOG_FILE%" 2>&1
+echo. >> "%LOG_FILE%"
 
 if not exist "%FLOW_PATH%" (
     echo ERROR: Flow file not found: %FLOW_PATH%>> "%LOG_FILE%"
-    > "%STATUS_FILE%" (
-        echo suite=%SUITE%
-        echo flow=%FLOW_NAME%
-        echo device=%DEVICE_ID%
-        echo app_id=%APP_ID%
-        echo clear_state=%CLEAR_STATE%
-        echo maestro_cmd=%MAESTRO_CMD%
-        echo status=FAIL
-        echo exit_code=20
-        echo reason=FLOW_NOT_FOUND
-    )
-    > "%RESULT_FILE%" (
-        echo suite,flow,device,status,exit_code,reason,log_file
-        echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,FAIL,20,FLOW_NOT_FOUND,"%LOG_FILE%"
-    )
-    exit /b 20
+    set "RUN_EXIT=20"
+    goto :write_result
 )
 
 where adb >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
     echo ERROR: adb not found in PATH>> "%LOG_FILE%"
-    > "%STATUS_FILE%" (
-        echo suite=%SUITE%
-        echo flow=%FLOW_NAME%
-        echo device=%DEVICE_ID%
-        echo app_id=%APP_ID%
-        echo clear_state=%CLEAR_STATE%
-        echo maestro_cmd=%MAESTRO_CMD%
-        echo status=FAIL
-        echo exit_code=21
-        echo reason=ADB_NOT_FOUND
-    )
-    > "%RESULT_FILE%" (
-        echo suite,flow,device,status,exit_code,reason,log_file
-        echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,FAIL,21,ADB_NOT_FOUND,"%LOG_FILE%"
-    )
-    exit /b 21
+    set "RUN_EXIT=21"
+    goto :write_result
 )
 
 adb -s "%DEVICE_ID%" get-state >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo ERROR: Device is not reachable via adb: %DEVICE_ID%>> "%LOG_FILE%"
-    > "%STATUS_FILE%" (
-        echo suite=%SUITE%
-        echo flow=%FLOW_NAME%
-        echo device=%DEVICE_ID%
-        echo app_id=%APP_ID%
-        echo clear_state=%CLEAR_STATE%
-        echo maestro_cmd=%MAESTRO_CMD%
-        echo status=FAIL
-        echo exit_code=22
-        echo reason=DEVICE_NOT_READY
-    )
-    > "%RESULT_FILE%" (
-        echo suite,flow,device,status,exit_code,reason,log_file
-        echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,FAIL,22,DEVICE_NOT_READY,"%LOG_FILE%"
-    )
-    exit /b 22
+    echo ERROR: Device not ready: %DEVICE_ID%>> "%LOG_FILE%"
+    set "RUN_EXIT=22"
+    goto :write_result
 )
 
 if /I "%CLEAR_STATE%"=="true" (
@@ -145,12 +110,13 @@ if /I "%CLEAR_STATE%"=="true" (
 )
 
 echo Starting Maestro test...>> "%LOG_FILE%"
-echo Command: %MAESTRO_CMD% test "%FLOW_PATH%" --device "%DEVICE_ID%">> "%LOG_FILE%"
+echo Command: call "%MAESTRO_BIN%" test "%FLOW_PATH%" --device "%DEVICE_ID%">> "%LOG_FILE%"
+echo. >> "%LOG_FILE%"
 
-REM Run maestro in a nested cmd so a native crash does not kill this parent batch unexpectedly.
-cmd /d /c ""%MAESTRO_CMD%" test "%FLOW_PATH%" --device "%DEVICE_ID%" >> "%LOG_FILE%" 2>&1"
+call "%MAESTRO_BIN%" test "%FLOW_PATH%" --device "%DEVICE_ID%" >> "%LOG_FILE%" 2>&1
 set "RUN_EXIT=%ERRORLEVEL%"
 
+:write_result
 if "%RUN_EXIT%"=="0" (
     set "STATUS_VALUE=PASS"
     set "REASON=OK"
@@ -159,15 +125,10 @@ if "%RUN_EXIT%"=="0" (
     set "REASON=MAESTRO_FAILED"
 )
 
-if "%RUN_EXIT%"=="-1073741819" set "REASON=ACCESS_VIOLATION_CRASH"
-
 > "%STATUS_FILE%" (
     echo suite=%SUITE%
     echo flow=%FLOW_NAME%
     echo device=%DEVICE_ID%
-    echo app_id=%APP_ID%
-    echo clear_state=%CLEAR_STATE%
-    echo maestro_cmd=%MAESTRO_CMD%
     echo status=%STATUS_VALUE%
     echo exit_code=%RUN_EXIT%
     echo reason=%REASON%
@@ -178,5 +139,6 @@ if "%RUN_EXIT%"=="-1073741819" set "REASON=ACCESS_VIOLATION_CRASH"
     echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,%STATUS_VALUE%,%RUN_EXIT%,%REASON%,"%LOG_FILE%"
 )
 
+echo. >> "%LOG_FILE%"
 echo Final exit code: %RUN_EXIT%>> "%LOG_FILE%"
 exit /b %RUN_EXIT%

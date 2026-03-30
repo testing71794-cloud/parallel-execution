@@ -8,7 +8,7 @@ pipeline {
             description: 'devices = your PC with USB phones'
         )
         string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'App package id for Maestro/app launch checks')
-        string(name: 'MAESTRO_CMD', defaultValue: 'maestro', description: 'Maestro command to use')
+        string(name: 'MAESTRO_CMD', defaultValue: 'maestro.bat', description: 'Maestro command to use')
         string(name: 'JAVA_HOME_OVERRIDE', defaultValue: '', description: 'Optional JAVA_HOME override on device node')
         booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run non-printing flows')
         booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run printing flows')
@@ -16,6 +16,7 @@ pipeline {
         booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send final summary email')
         booleanParam(name: 'CLEAR_STATE', defaultValue: true, description: 'Reserved for flow runner; do not map RETRY here')
         booleanParam(name: 'RETRY_FAILED', defaultValue: false, description: 'Reserved for future retry logic only')
+
     }
 
     options {

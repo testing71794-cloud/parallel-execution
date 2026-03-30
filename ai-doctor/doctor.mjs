@@ -9,7 +9,7 @@ import { fileURLToPath } from "url";
 import { triggerWebhook } from "./utils/webhook.mjs";
 import { retryTest } from "./utils/retry.mjs";
 import { sendFailureEmail, isEmailConfigured } from "./utils/email.mjs";
-import { analyzeFailure, buildCursorReport } from "./analyzers/cursorAnalyzer.mjs";
+import * as cursorAnalyzer from "./analyzers/cursorAnalyzer.mjs";
 import { callCursorAI } from "./clients/cursorApi.mjs";
 
 // AI mode: CURSOR_API (Cloud Agents) > ATP rules > Ollama
@@ -77,6 +77,29 @@ function getMaestroCmd(){
   if(CONFIG.maestroBin) return CONFIG.maestroBin;
   const p=path.join(os.homedir(),".maestro","bin","maestro");
   return fs.existsSync(p)? p : "maestro";
+}
+
+function getAnalyzeFailureFn() {
+  const fn =
+    cursorAnalyzer.analyzeFailure ||
+    cursorAnalyzer.default?.analyzeFailure ||
+    cursorAnalyzer.default;
+
+  if (typeof fn !== "function") {
+    throw new Error("cursorAnalyzer.mjs does not export analyzeFailure");
+  }
+  return fn;
+}
+
+function getBuildCursorReportFn() {
+  const fn =
+    cursorAnalyzer.buildCursorReport ||
+    cursorAnalyzer.default?.buildCursorReport;
+
+  if (typeof fn !== "function") {
+    throw new Error("cursorAnalyzer.mjs does not export buildCursorReport");
+  }
+  return fn;
 }
 
 function parseJUnitXml(xmlText){
@@ -473,7 +496,12 @@ async function main(){
         };
       } catch(e){
         console.log("❌ Cursor API failed:", e?.message||e, "- falling back to ATP rules");
-        const cursorResult=analyzeFailure(f.name, `${f.failMessage||""}\n${f.failText||""}`.trim(), failingYaml);
+        const analyzeFailureFn = getAnalyzeFailureFn();
+        const cursorResult = analyzeFailureFn(
+          f.name,
+          `${f.failMessage || ""}\n${f.failText || ""}`.trim(),
+          failingYaml
+        );
         analysis={
           failure_summary:cursorResult.rootCause,
           root_causes:[{cause:cursorResult.rootCause, confidence:cursorResult.confidence, evidence:[cursorResult.suggestedFix]}],
@@ -486,7 +514,12 @@ async function main(){
         };
       }
     } else if(USE_CURSOR_AI){
-      const cursorResult=analyzeFailure(f.name, `${f.failMessage||""}\n${f.failText||""}`.trim(), failingYaml);
+      const analyzeFailureFn = getAnalyzeFailureFn();
+      const cursorResult = analyzeFailureFn(
+        f.name,
+        `${f.failMessage || ""}\n${f.failText || ""}`.trim(),
+        failingYaml
+      );
       analysis={
         failure_summary:cursorResult.rootCause,
         root_causes:[{cause:cursorResult.rootCause, confidence:cursorResult.confidence, evidence:[cursorResult.suggestedFix]}],
@@ -558,7 +591,8 @@ async function main(){
 
   if((USE_CURSOR_AI || USE_CURSOR_API) && runFailures.length>0){
     const cursorResult={failuresCount:failures.length, retryRecommended:runFailures.some(r=>r.retryRecommended), resultsByFlow:runFailures.map(r=>({flowName:r.testName, failureMessage:r.failureMessage||r.summary, rootCause:r.summary, suggestedFix:(r.fixes||[])[0]?.change||r.summary, retryRecommended:r.retryRecommended, screenshots:[]}))};
-    const cursorReport=buildCursorReport(cursorResult);
+    const buildCursorReportFn = getBuildCursorReportFn();
+    const cursorReport = buildCursorReportFn(cursorResult);
     const cursorPath=path.join(CONFIG.runsDir,"cursor-report.md");
     writeText(cursorPath, cursorReport);
     console.log("📄 Cursor report:", cursorPath);
