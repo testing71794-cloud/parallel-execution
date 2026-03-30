@@ -64,21 +64,21 @@ pipeline {
                     if exist build-summary rmdir /s /q build-summary
                     if exist .maestro rmdir /s /q .maestro
                     if exist temp-runners rmdir /s /q temp-runners
-                    if exist ai-doctor\artifacts rmdir /s /q ai-doctor\artifacts
+                    if exist ai-doctor/artifacts rmdir /s /q ai-doctor/artifacts
                     del /q detected_devices.txt 2>nul
                     del /q *.flag 2>nul
                     del /q *.failed 2>nul
 
                     python -m pip install --upgrade pip || (echo 1> install_failed.flag & exit /b 1)
-                    python -m pip install -r scripts\requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
+                    python -m pip install -r scripts/requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
 
                     if exist package.json (
                         call npm ci || call npm install || (echo 1> install_failed.flag & exit /b 1)
                     )
 
-                    if exist ai-doctor\package.json (
+                    if exist ai-doctor/package.json (
                         cd ai-doctor
-                        call npm ci || call npm install || (echo 1> ..\install_failed.flag & exit /b 1)
+                        call npm ci || call npm install || (echo 1> ..\\install_failed.flag & exit /b 1)
                         cd ..
                     )
                     """
@@ -98,7 +98,7 @@ pipeline {
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
-                            call scripts\precheck_environment.bat "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" || (echo 1> precheck_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                            call scripts/precheck_environment.bat "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" || (echo 1> precheck_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                             """
                         }
                     }
@@ -112,7 +112,7 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    call scripts\list_devices.bat || (echo 1> device_detection_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    call scripts/list_devices.bat || (echo 1> device_detection_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     """
                 }
             }
@@ -131,7 +131,7 @@ pipeline {
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
-                            call scripts\run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                            call scripts/run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                             """
                         }
                     }
@@ -146,9 +146,9 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    if not exist status\nonprinting__*.txt (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                    if not exist reports\nonprinting\results\*.csv (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                    if not exist reports\nonprinting\logs\*.log (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist status\\nonprinting__*.txt (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist reports\\nonprinting\\results\\*.csv (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist reports\\nonprinting\\logs\\*.log (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     """
                 }
             }
@@ -161,7 +161,7 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    python scripts\generate_excel_report.py status reports\nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    python scripts/generate_excel_report.py status reports/nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     """
                 }
             }
@@ -180,7 +180,7 @@ pipeline {
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
-                            call scripts\run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                            call scripts/run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                             """
                         }
                     }
@@ -195,9 +195,9 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    if not exist status\printing__*.txt (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                    if not exist reports\printing\results\*.csv (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                    if not exist reports\printing\logs\*.log (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist status\\printing__*.txt (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist reports\\printing\\results\\*.csv (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist reports\\printing\\logs\\*.log (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     """
                 }
             }
@@ -210,7 +210,7 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    python scripts\generate_excel_report.py status reports\printing_summary printing || (echo 1> printing_report_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    python scripts/generate_excel_report.py status reports/printing_summary printing || (echo 1> printing_report_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     """
                 }
             }
@@ -225,7 +225,7 @@ pipeline {
                         catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
                             bat """
                             cd /d "${env.WORKSPACE}"
-                            call scripts\run_ai_analysis.bat || (echo 1> ai_failed.flag & exit /b 1)
+                            call scripts/run_ai_analysis.bat || (echo 1> ai_failed.flag & exit /b 1)
                             """
                         }
                     } else {
@@ -241,9 +241,9 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    python scripts\generate_build_summary.py status build-summary || (echo 1> summary_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                    if exist scripts\generate_final_report.py (
-                        python scripts\generate_final_report.py . status build-summary\final_execution_report.xlsx || (echo 1>> summary_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    python scripts/generate_build_summary.py status build-summary || (echo 1> summary_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if exist scripts/generate_final_report.py (
+                        python scripts/generate_final_report.py . status build-summary/final_execution_report.xlsx || (echo 1>> summary_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                     ) else (
                         echo generate_final_report.py not found. Skipping final report generation.
                     )
@@ -259,8 +259,8 @@ pipeline {
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    if exist scripts\send_execution_email.py (
-                        python scripts\send_execution_email.py || (echo 1> email_failed.flag & exit /b 1)
+                    if exist scripts/send_execution_email.py (
+                        python scripts/send_execution_email.py || (echo 1> email_failed.flag & exit /b 1)
                     ) else (
                         echo send_execution_email.py not found. Skipping email step.
                     )
