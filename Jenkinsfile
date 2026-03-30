@@ -93,11 +93,15 @@ pipeline {
                     script {
                         def envList = []
                         if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "JAVA_HOME_OVERRIDE=${params.JAVA_HOME_OVERRIDE}"
+                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
+                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
                         }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
+                            echo JAVA_HOME=%JAVA_HOME%
+                            where java
+                            java -version
                             call scripts/precheck_environment.bat "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" || (echo 1> precheck_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                             """
                         }
@@ -126,11 +130,15 @@ pipeline {
                     script {
                         def envList = []
                         if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "JAVA_HOME_OVERRIDE=${params.JAVA_HOME_OVERRIDE}"
+                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
+                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
                         }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
+                            echo JAVA_HOME=%JAVA_HOME%
+                            where java
+                            java -version
                             call scripts/run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                             """
                         }
@@ -175,11 +183,15 @@ pipeline {
                     script {
                         def envList = []
                         if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "JAVA_HOME_OVERRIDE=${params.JAVA_HOME_OVERRIDE}"
+                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
+                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
                         }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
+                            echo JAVA_HOME=%JAVA_HOME%
+                            where java
+                            java -version
                             call scripts/run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                             """
                         }
