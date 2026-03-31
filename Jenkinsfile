@@ -266,21 +266,32 @@ pipeline {
         }
 
         stage('Send Final Email') {
-            when { expression { return params.SEND_FINAL_EMAIL } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    if exist scripts/send_execution_email.py (
-                        python scripts/send_execution_email.py || (echo 1> email_failed.flag & exit /b 1)
-                    ) else (
-                        echo send_execution_email.py not found. Skipping email step.
-                    )
-                    """
-                }
+    when { expression { return params.SEND_FINAL_EMAIL } }
+    agent { label params.DEVICES_AGENT }
+    steps {
+        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+            withEnv([
+                'SMTP_SERVER=smtp.gmail.com',
+                'SMTP_PORT=587',
+                'SMTP_USER=kodaksmilechina@gmail.com',
+                'SENDER_EMAIL=kodaksmilechina@gmail.com',
+                'SMTP_PASS=gabq yztc ztmt vvhm',
+                'SENDER_PASSWORD=gabq yztc ztmt vvhm',
+                'MAIL_TO=kodaksmilechina@gmail.com',
+                'RECEIVER_EMAIL=kodaksmilechina@gmail.com',
+                'PYTHONIOENCODING=utf-8'
+            ]) {
+                bat '''
+                cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
+                python scripts\\send_execution_email.py || (
+                    echo 1>email_failed.flag
+                    exit /b 1
+                )
+                '''
             }
         }
+    }
+}
 
         stage('Archive Reports & Artifacts') {
             agent { label params.DEVICES_AGENT }
