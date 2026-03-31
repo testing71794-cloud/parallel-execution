@@ -20,10 +20,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.join(__dirname, "..");
 
+
+function resolveExistingDir(candidates){
+  for (const candidate of candidates.filter(Boolean)) {
+    const resolved = path.resolve(candidate);
+    if (fs.existsSync(resolved)) return resolved;
+  }
+  return path.resolve(candidates.filter(Boolean)[0] || path.join(projectRoot, "Non printing flows"));
+}
+
+const resolvedFlowDir = resolveExistingDir([
+  process.env.TESTS_DIR,
+  process.env.FLOWS_DIR,
+  path.join(projectRoot, "Non printing flows"),
+  path.join(projectRoot, "Printing Flow"),
+  path.join(projectRoot, "flows"),
+  path.join(projectRoot, "tests"),
+]);
+
 const CONFIG = {
   appId: process.env.APP_ID || "com.kodaksmile",
-  testsDir: path.resolve(process.env.TESTS_DIR || path.join(projectRoot, "tests")),
-  flowsDir: path.resolve(process.env.FLOWS_DIR || path.join(projectRoot, "flows")),
+  testsDir: resolvedFlowDir,
+  flowsDir: resolvedFlowDir,
   maestroBin: process.env.MAESTRO_BIN || null,
   adbBin: process.env.ADB_BIN || "adb",
 
@@ -380,7 +398,7 @@ function writePatchFiles(failureDir, signature, fixes){
 
 async function main(){
   ensureDir(CONFIG.runsDir);
-  if(!exists(CONFIG.testsDir)){ console.error("❌ tests folder not found:", CONFIG.testsDir); process.exit(2); }
+  if(!exists(CONFIG.testsDir)){ console.error("❌ flow folder not found:", CONFIG.testsDir); process.exit(2); }
 
   const runId=`run-${nowStamp()}`;
   const runDir=path.join(CONFIG.runsDir, runId);
