@@ -169,10 +169,11 @@ def main() -> int:
                 server.send_message(msg)
         else:
             with smtplib.SMTP(smtp_server, smtp_port) as server:
-                if not truthy_env("SMTP_USE_TLS", default="1"):
-                    pass
-                else:
-                    server.starttls(context=ssl.create_default_context())
+                server.ehlo()
+                if truthy_env("SMTP_USE_TLS", default="1"):
+                    context = ssl._create_unverified_context()  # ✅ FIX HERE
+                    server.starttls(context=context)
+                    server.ehlo()
                 server.login(smtp_user, smtp_pass)
                 server.send_message(msg)
     except Exception as exc:
