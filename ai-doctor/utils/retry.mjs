@@ -13,9 +13,25 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..", "..");
 
 // actual maestro tests folder
-const testsDir =
-  process.env.MAESTRO_TEST_DIR ||
-  path.join(projectRoot, "tests");
+function resolveFlowDir() {
+  const candidates = [
+    process.env.MAESTRO_TEST_DIR,
+    process.env.TESTS_DIR,
+    process.env.FLOWS_DIR,
+    path.join(projectRoot, "Non printing flows"),
+    path.join(projectRoot, "Printing Flow"),
+    path.join(projectRoot, "flows"),
+    path.join(projectRoot, "tests"),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  return path.join(projectRoot, "Non printing flows");
+}
+
+const testsDir = resolveFlowDir();
 
 /* ---------------- MAESTRO PATH ---------------- */
 
@@ -40,7 +56,7 @@ export async function retryTest() {
   const maestro = getMaestroCmd();
 
   if (!fs.existsSync(testsDir)) {
-    console.error("❌ Retry aborted: tests directory not found:");
+    console.error("❌ Retry aborted: flow directory not found:");
     console.error(testsDir);
     return false; // prevent crash
   }

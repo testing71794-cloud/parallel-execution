@@ -25,20 +25,26 @@ name: Flow3 - Login + Onboarding + Home
       - waitForAnimationToEnd
 # Enter email
 - tapOn: "Email"
-- inputText: "Atomation46@yopmail.com"
+- inputText: "Automation47@yopmail.com"
 - runFlow:
     when:
       visible: "No, thanks"
     commands:
       - tapOn: "No, thanks"
       - waitForAnimationToEnd
+- runFlow:
+    when:
+      notVisible: "Automation47@yopmail.com"
+    commands:
+      - tapOn: "Email"
+      - inputText: "Automation47@yopmail.com"
 # Enter wrong password + verify error
 - tapOn: "Password"
 - inputText: "WrongPass123"
 - hideKeyboard:
     optional: true
 - tapOn: "Login"
-
+- waitForAnimationToEnd
 - runFlow:
     when:
       visible: "You have entered an invalid email id or password"
