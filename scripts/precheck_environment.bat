@@ -11,4 +11,4 @@ echo =====================================
 echo Checking Maestro...
 where maestro
 where maestro.bat
-maestro --version
+maestro --version || exit /b 1
