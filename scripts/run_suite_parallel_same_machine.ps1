@@ -95,7 +95,10 @@ function Run-ShardAllBatch(
     )
     Set-Content -LiteralPath $batchLog -Value $header -Encoding UTF8
 
-    & cmd.exe /c "$MaestroCmd $argsString" *> $batchLog
+    # Use cmd redirection directly so Java warnings on stderr are captured in log,
+    # not treated by PowerShell as a terminating NativeCommandError.
+    $cmdLine = "$MaestroCmd $argsString >> " + (Quote-Arg $batchLog) + " 2>>&1"
+    cmd.exe /d /c $cmdLine
     $exitCode = $LASTEXITCODE
 
     $status = if ($exitCode -eq 0) { "PASS" } else { "FAIL" }
