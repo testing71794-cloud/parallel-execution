@@ -114,7 +114,7 @@ function Read-DeviceIds([string]$RepoRoot) {
     return $devices | Select-Object -Unique
 }
 
-function Run-FlowBatch([string]$RepoRoot,[string]$Suite,[System.IO.FileInfo]$Flow,[string[]]$Devices,[string]$AppId,[string]$ClearState,[string]$MaestroCmdArg,[string]$IncludeTagArg) {
+function Run-FlowBatch([string]$RepoRoot,[string]$Suite,[System.IO.FileInfo]$Flow,[string[]]$Devices,[string]$AppId,[string]$ClearState,[string]$MaestroCmdArg,[string]$IncludeTagArg,[string]$Label="Running") {
     $ScriptsDir = Join-Path $RepoRoot "scripts"
     $RunnerBat = Join-Path $ScriptsDir "run_one_flow_on_device.bat"
     $StatusDir = Join-Path $RepoRoot "status"
@@ -125,7 +125,8 @@ function Run-FlowBatch([string]$RepoRoot,[string]$Suite,[System.IO.FileInfo]$Flo
     $flowName = $Flow.BaseName
     $flowPath = $Flow.FullName
 
-    Write-Section "Running $flowName on all devices"
+    Write-Section "$Label $flowName on devices"
+    foreach ($d in $Devices) { Write-Host " - $d" }
 
     $procInfos = @()
     foreach ($device in $Devices) {
@@ -147,7 +148,7 @@ function Run-FlowBatch([string]$RepoRoot,[string]$Suite,[System.IO.FileInfo]$Flo
         $resultFile = Join-Path $ResultsDir ("{0}_{1}.csv" -f $safeFlow, $safeDevice)
         $logFile = Join-Path $LogsDir ("{0}_{1}.log" -f $safeFlow, $safeDevice)
 
-        if ($info.FailedToStart) {
+        if ($info.PSObject.Properties.Name -contains 'FailedToStart' -and $info.FailedToStart) {
             $results += [pscustomobject]@{
                 Device = $info.Device; Flow = $info.Flow; FlowPath = $info.FlowPath
                 ExitCode = -1; ArtifactsOk = $false; LogFile = $logFile; Passed = $false
@@ -224,23 +225,24 @@ $overallFailed = $false
 $retryRows = @()
 
 foreach ($flow in $flowFiles) {
-    $attempt1 = Run-FlowBatch -RepoRoot $RepoRoot -Suite $Suite -Flow $flow -Devices $devices -AppId $AppId -ClearState $ClearState -MaestroCmdArg $MaestroCmdArg -IncludeTagArg $IncludeTagArg
+    $attempt1 = Run-FlowBatch -RepoRoot $RepoRoot -Suite $Suite -Flow $flow -Devices $devices -AppId $AppId -ClearState $ClearState -MaestroCmdArg $MaestroCmdArg -IncludeTagArg $IncludeTagArg -Label "Running"
     $failed = @($attempt1 | Where-Object { -not $_.Passed })
 
     if ($failed.Count -gt 0 -and $RetryCount -gt 0) {
-        Write-Section "Retrying failed pairs for $($flow.BaseName)"
-        foreach ($row in $failed) {
-            Write-Host ("Retry -> Flow {0} on Device {1}" -f $row.Flow, $row.Device)
-            $retryResult = Run-FlowBatch -RepoRoot $RepoRoot -Suite $Suite -Flow $flow -Devices @($row.Device) -AppId $AppId -ClearState $ClearState -MaestroCmdArg $MaestroCmdArg -IncludeTagArg $IncludeTagArg
-            $retryRows += $retryResult | ForEach-Object {
-                [pscustomobject]@{
-                    flow = $_.Flow
-                    device = $_.Device
-                    retry_exit_code = $_.ExitCode
-                    retry_artifacts_ok = $_.ArtifactsOk
-                    retry_passed = $_.Passed
-                    log_file = $_.LogFile
-                }
+        $failedDevices = @($failed | Select-Object -ExpandProperty Device -Unique)
+        Write-Section "Retrying failed devices for $($flow.BaseName)"
+        foreach ($d in $failedDevices) { Write-Host " - $d" }
+
+        $retryResult = Run-FlowBatch -RepoRoot $RepoRoot -Suite $Suite -Flow $flow -Devices $failedDevices -AppId $AppId -ClearState $ClearState -MaestroCmdArg $MaestroCmdArg -IncludeTagArg $IncludeTagArg -Label "Retrying"
+
+        $retryRows += $retryResult | ForEach-Object {
+            [pscustomobject]@{
+                flow = $_.Flow
+                device = $_.Device
+                retry_exit_code = $_.ExitCode
+                retry_artifacts_ok = $_.ArtifactsOk
+                retry_passed = $_.Passed
+                log_file = $_.LogFile
             }
         }
     }
