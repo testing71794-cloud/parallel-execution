@@ -31,6 +31,8 @@ if not exist "%PS1%" (
     exit /b 30
 )
 
+call "%REPO_ROOT%\scripts\set_maestro_java.bat" || exit /b 1
+
 echo =====================================
 echo RUN SUITE SAME MACHINE PARALLEL
 echo =====================================

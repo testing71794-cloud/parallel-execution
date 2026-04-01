@@ -5,7 +5,8 @@ param(
     [string]$IncludeTag = "",
     [string]$AppId = "",
     [string]$ClearState = "true",
-    [string]$MaestroCmd = ""
+    [string]$MaestroCmd = "",
+    [int]$RetryCount = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,9 +62,7 @@ function Start-RunnerProcess([string]$WorkingDir, [string]$Arguments) {
 }
 
 function Get-ProcessExitCodeSafe([System.Diagnostics.Process]$p) {
-    if (-not $p.HasExited) {
-        $p.WaitForExit()
-    }
+    if (-not $p.HasExited) { $p.WaitForExit() }
     try { $p.Refresh() | Out-Null } catch {}
     $ec = $p.ExitCode
     if ($null -ne $ec) { return [int]$ec }
@@ -89,28 +88,109 @@ function Test-ExecutionArtifacts([string]$StatusFile, [string]$ResultFile, [stri
     return $true
 }
 
+function Read-DeviceIds([string]$RepoRoot) {
+    $devices = @()
+    $detectedFile = Join-Path $RepoRoot "detected_devices.txt"
+    if (Test-Path -LiteralPath $detectedFile) {
+        $lines = Get-Content -LiteralPath $detectedFile -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -and $_ -notmatch '^(List of devices attached|Devices detected:|Device list saved to:)' }
+        foreach ($line in $lines) {
+            if ($line -match '^\S+$') { $devices += $line }
+        }
+    }
+    if ($devices.Count -gt 0) { return $devices | Select-Object -Unique }
+
+    $adbOutput = & adb devices
+    if ($LASTEXITCODE -ne 0) {
+        throw "adb devices failed"
+    }
+
+    foreach ($line in $adbOutput) {
+        if ($line -match '^(?<id>\S+)\s+device$') {
+            $devices += $matches['id']
+        }
+    }
+    return $devices | Select-Object -Unique
+}
+
+function Run-FlowBatch([string]$RepoRoot,[string]$Suite,[System.IO.FileInfo]$Flow,[string[]]$Devices,[string]$AppId,[string]$ClearState,[string]$MaestroCmdArg,[string]$IncludeTagArg) {
+    $ScriptsDir = Join-Path $RepoRoot "scripts"
+    $RunnerBat = Join-Path $ScriptsDir "run_one_flow_on_device.bat"
+    $StatusDir = Join-Path $RepoRoot "status"
+    $ReportsDir = Join-Path $RepoRoot ("reports\" + $Suite)
+    $LogsDir = Join-Path $ReportsDir "logs"
+    $ResultsDir = Join-Path $ReportsDir "results"
+
+    $flowName = $Flow.BaseName
+    $flowPath = $Flow.FullName
+
+    Write-Section "Running $flowName on all devices"
+
+    $procInfos = @()
+    foreach ($device in $Devices) {
+        $cmdLine = Build-RunnerCmdLine $RunnerBat $Suite $flowPath $device $AppId $ClearState $MaestroCmdArg $IncludeTagArg
+        try {
+            $p = Start-RunnerProcess -WorkingDir $RepoRoot -Arguments $cmdLine
+            $procInfos += [pscustomobject]@{ Process = $p; Device = $device; Flow = $flowName; FlowPath = $flowPath }
+        } catch {
+            Write-Host "ERROR starting process for ${device}: $_"
+            $procInfos += [pscustomobject]@{ Process = $null; Device = $device; Flow = $flowName; FlowPath = $flowPath; FailedToStart = $true }
+        }
+    }
+
+    $results = @()
+    foreach ($info in $procInfos) {
+        $safeFlow = $info.Flow.Replace(' ', '_')
+        $safeDevice = $info.Device.Replace(' ', '_')
+        $statusFile = Join-Path $StatusDir ("{0}__{1}__{2}.txt" -f $Suite, $safeFlow, $safeDevice)
+        $resultFile = Join-Path $ResultsDir ("{0}_{1}.csv" -f $safeFlow, $safeDevice)
+        $logFile = Join-Path $LogsDir ("{0}_{1}.log" -f $safeFlow, $safeDevice)
+
+        if ($info.FailedToStart) {
+            $results += [pscustomobject]@{
+                Device = $info.Device; Flow = $info.Flow; FlowPath = $info.FlowPath
+                ExitCode = -1; ArtifactsOk = $false; LogFile = $logFile; Passed = $false
+            }
+            continue
+        }
+
+        try {
+            $code = Get-ProcessExitCodeSafe $info.Process
+        } catch {
+            Write-Host "ERROR waiting for process $($info.Device): $_"
+            $code = -1
+        }
+
+        $artifactsOk = Test-ExecutionArtifacts -StatusFile $statusFile -ResultFile $resultFile -LogFile $logFile
+        Write-Host ("Device {0} -> ExitCode {1} -> ArtifactsOk {2} -> Log {3}" -f $info.Device, $code, $artifactsOk, $logFile)
+
+        $results += [pscustomobject]@{
+            Device = $info.Device; Flow = $info.Flow; FlowPath = $info.FlowPath
+            ExitCode = $code; ArtifactsOk = $artifactsOk; LogFile = $logFile
+            Passed = (($code -eq 0) -and $artifactsOk)
+        }
+
+        try { $info.Process.Dispose() } catch {}
+    }
+    return $results
+}
+
 $RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
 $FlowRoot = Join-Path $RepoRoot $FlowDir
-$ScriptsDir = Join-Path $RepoRoot "scripts"
-$RunnerBat = Join-Path $ScriptsDir "run_one_flow_on_device.bat"
 $ReportsDir = Join-Path $RepoRoot ("reports\" + $Suite)
 $LogsDir = Join-Path $ReportsDir "logs"
 $ResultsDir = Join-Path $ReportsDir "results"
-$StatusDir = Join-Path $RepoRoot "status"
 $MasterCsv = Join-Path $ReportsDir "all_results.csv"
 $DeviceSummaryCsv = Join-Path $ReportsDir "device_summary.csv"
+$RetryCsv = Join-Path $ReportsDir "retry_summary.csv"
 
 Write-Section "RUN SUITE SAME MACHINE PARALLEL"
 Write-Host "Repo root: $RepoRoot"
 Write-Host "Flow root: $FlowRoot"
-Write-Host "Runner bat: $RunnerBat"
 Write-Host "Maestro cmd: $MaestroCmd"
 Write-Host "Include tag: $IncludeTag"
-
-if (-not (Test-Path -LiteralPath $RunnerBat)) {
-    Write-Host "ERROR: Runner file not found: $RunnerBat"
-    exit 1
-}
+Write-Host "Retry count: $RetryCount"
 
 if (-not (Test-Path -LiteralPath $FlowRoot)) {
     Write-Host "ERROR: Flow directory not found: $FlowRoot"
@@ -120,26 +200,11 @@ if (-not (Test-Path -LiteralPath $FlowRoot)) {
 New-Item -ItemType Directory -Force -Path $ReportsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ResultsDir | Out-Null
-New-Item -ItemType Directory -Force -Path $StatusDir | Out-Null
 
-$adbOutput = & adb devices
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: adb devices failed"
-    exit 1
-}
-
-$devices = @()
-foreach ($line in $adbOutput) {
-    if ($line -match '^(?<id>\S+)\s+device$') {
-        $devices += $matches['id']
-    }
-}
-
+$devices = Read-DeviceIds -RepoRoot $RepoRoot
 Write-Host ""
 Write-Host "Devices found: $($devices.Count)"
-foreach ($d in $devices) {
-    Write-Host " - $d"
-}
+foreach ($d in $devices) { Write-Host " - $d" }
 
 if ($devices.Count -eq 0) {
     Write-Host "ERROR: No connected devices found"
@@ -152,58 +217,52 @@ if (-not $flowFiles -or $flowFiles.Count -eq 0) {
     exit 1
 }
 
-$overallFailed = $false
 $IncludeTagArg = if ([string]::IsNullOrWhiteSpace($IncludeTag)) { "__EMPTY__" } else { $IncludeTag }
 $MaestroCmdArg = if ([string]::IsNullOrWhiteSpace($MaestroCmd)) { "maestro" } else { $MaestroCmd }
 
+$overallFailed = $false
+$retryRows = @()
+
 foreach ($flow in $flowFiles) {
-    $flowName = $flow.BaseName
-    $flowPath = $flow.FullName
+    $attempt1 = Run-FlowBatch -RepoRoot $RepoRoot -Suite $Suite -Flow $flow -Devices $devices -AppId $AppId -ClearState $ClearState -MaestroCmdArg $MaestroCmdArg -IncludeTagArg $IncludeTagArg
+    $failed = @($attempt1 | Where-Object { -not $_.Passed })
 
-    Write-Section "Running $flowName on all devices"
+    if ($failed.Count -gt 0 -and $RetryCount -gt 0) {
+        Write-Section "Retrying failed pairs for $($flow.BaseName)"
+        foreach ($row in $failed) {
+            Write-Host ("Retry -> Flow {0} on Device {1}" -f $row.Flow, $row.Device)
+            $retryResult = Run-FlowBatch -RepoRoot $RepoRoot -Suite $Suite -Flow $flow -Devices @($row.Device) -AppId $AppId -ClearState $ClearState -MaestroCmdArg $MaestroCmdArg -IncludeTagArg $IncludeTagArg
+            $retryRows += $retryResult | ForEach-Object {
+                [pscustomobject]@{
+                    flow = $_.Flow
+                    device = $_.Device
+                    retry_exit_code = $_.ExitCode
+                    retry_artifacts_ok = $_.ArtifactsOk
+                    retry_passed = $_.Passed
+                    log_file = $_.LogFile
+                }
+            }
+        }
+    }
 
-    $flowFailed = $false
-    $procInfos = @()
+    $postRows = @()
     foreach ($device in $devices) {
-        $cmdLine = Build-RunnerCmdLine $RunnerBat $Suite $flowPath $device $AppId $ClearState $MaestroCmdArg $IncludeTagArg
-        try {
-            $p = Start-RunnerProcess -WorkingDir $RepoRoot -Arguments $cmdLine
-            $procInfos += [pscustomobject]@{ Process = $p; Device = $device; Flow = $flowName }
-        } catch {
-            Write-Host "ERROR starting process for ${device}: $_"
-            $overallFailed = $true
-            $flowFailed = $true
-        }
-    }
-
-    foreach ($info in $procInfos) {
-        try {
-            $code = Get-ProcessExitCodeSafe $info.Process
-        } catch {
-            Write-Host "ERROR waiting for process $($info.Device): $_"
-            $code = -1
-        }
-
-        $safeFlow = $info.Flow.Replace(' ', '_')
-        $safeDevice = $info.Device.Replace(' ', '_')
-        $statusFile = Join-Path $StatusDir ("{0}__{1}__{2}.txt" -f $Suite, $safeFlow, $safeDevice)
+        $safeFlow = $flow.BaseName.Replace(' ', '_')
+        $safeDevice = $device.Replace(' ', '_')
         $resultFile = Join-Path $ResultsDir ("{0}_{1}.csv" -f $safeFlow, $safeDevice)
-        $logFile = Join-Path $LogsDir ("{0}_{1}.log" -f $safeFlow, $safeDevice)
-
-        $artifactsOk = Test-ExecutionArtifacts -StatusFile $statusFile -ResultFile $resultFile -LogFile $logFile
-        Write-Host ("Device {0} -> ExitCode {1} -> ArtifactsOk {2} -> Log {3}" -f $info.Device, $code, $artifactsOk, $logFile)
-
-        if (($code -ne 0) -or (-not $artifactsOk)) {
-            $flowFailed = $true
-            $overallFailed = $true
+        if (Test-Path -LiteralPath $resultFile) {
+            try {
+                $postRows += Import-Csv -LiteralPath $resultFile
+            } catch {}
         }
-        try { $info.Process.Dispose() } catch {}
     }
 
+    $flowFailed = @($postRows | Where-Object { $_.status -ne 'PASS' }).Count -gt 0
     if ($flowFailed) {
-        Write-Host "Flow $flowName failed on one or more devices"
+        $overallFailed = $true
+        Write-Host "Flow $($flow.BaseName) failed on one or more devices after retry"
     } else {
-        Write-Host "Flow $flowName completed successfully on all devices"
+        Write-Host "Flow $($flow.BaseName) completed successfully on all devices"
     }
 }
 
@@ -223,12 +282,6 @@ foreach ($csv in $tempCsvs) {
     }
 }
 
-$statusFiles = @(Get-ChildItem -LiteralPath $StatusDir -Filter ("{0}__*.txt" -f $Suite) -File -ErrorAction SilentlyContinue)
-if (-not $statusFiles -or $statusFiles.Count -eq 0) {
-    Write-Host "ERROR: No status files were produced for suite $Suite"
-    exit 1
-}
-
 $rows = Import-Csv -LiteralPath $MasterCsv
 $summary = $rows |
     Group-Object device |
@@ -246,6 +299,11 @@ $summary = $rows |
     } | Sort-Object device
 
 $summary | Export-Csv -LiteralPath $DeviceSummaryCsv -NoTypeInformation
+
+if ($retryRows.Count -gt 0) {
+    $retryRows | Export-Csv -LiteralPath $RetryCsv -NoTypeInformation
+    Write-Host "Retry summary file: $RetryCsv"
+}
 
 Write-Host "Merged result file: $MasterCsv"
 Write-Host "Device summary file: $DeviceSummaryCsv"

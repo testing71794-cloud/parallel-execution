@@ -25,31 +25,25 @@ if "%APP_ID%"=="" exit /b 13
 if "%MAESTRO_CMD%"=="" set "MAESTRO_CMD=maestro"
 if "%INCLUDE_TAG%"=="__EMPTY__" set "INCLUDE_TAG="
 
-REM Clean Java environment that can break launcher behavior.
 set "CLASSPATH="
 set "JAVA_TOOL_OPTIONS="
 set "_JAVA_OPTIONS="
 set "JDK_JAVA_OPTIONS="
 
-REM Resolve repo root.
 set "REPO_ROOT=%~dp0.."
 for %%I in ("%REPO_ROOT%") do set "REPO_ROOT=%%~fI"
 
-REM Apply shared Java/Maestro selection.
 call "%REPO_ROOT%\scripts\set_maestro_java.bat"
 if errorlevel 1 exit /b 14
 
-REM Resolve Maestro path.
 if exist "%MAESTRO_HOME%\maestro.bat" (
     set "MAESTRO_BIN=%MAESTRO_HOME%\maestro.bat"
 ) else (
     set "MAESTRO_BIN=%MAESTRO_CMD%"
 )
 
-REM Extract flow name.
 for %%I in ("%FLOW_PATH%") do set "FLOW_NAME=%%~nI"
 
-REM Directories.
 set "REPORT_ROOT=%REPO_ROOT%\reports\%SUITE%"
 set "LOG_DIR=%REPORT_ROOT%\logs"
 set "RESULT_DIR=%REPORT_ROOT%\results"
@@ -60,9 +54,11 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 if not exist "%RESULT_DIR%" mkdir "%RESULT_DIR%"
 if not exist "%STATUS_DIR%" mkdir "%STATUS_DIR%"
 
-set "LOG_FILE=%LOG_DIR%\%FLOW_NAME%_%DEVICE_ID%.log"
-set "RESULT_FILE=%RESULT_DIR%\%FLOW_NAME%_%DEVICE_ID%.csv"
-set "STATUS_FILE=%STATUS_DIR%\%SUITE%__%FLOW_NAME%__%DEVICE_ID%.txt"
+set "SAFE_FLOW=%FLOW_NAME: =_%"
+set "SAFE_DEVICE=%DEVICE_ID: =_%"
+set "LOG_FILE=%LOG_DIR%\%SAFE_FLOW%_%SAFE_DEVICE%.log"
+set "RESULT_FILE=%RESULT_DIR%\%SAFE_FLOW%_%SAFE_DEVICE%.csv"
+set "STATUS_FILE=%STATUS_DIR%\%SUITE%__%SAFE_FLOW%__%SAFE_DEVICE%.txt"
 
 (
 echo =====================================

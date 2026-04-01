@@ -1,6 +1,8 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
+call "%~dp0set_maestro_java.bat" || exit /b 1
+
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "REPO_ROOT=%%~fI"
 set "OUT_FILE=%REPO_ROOT%\detected_devices.txt"
@@ -17,14 +19,14 @@ adb start-server >nul 2>&1 || (
 
 adb devices
 
-echo.> "%OUT_FILE%"
-set /a COUNT=0
+(
 for /f "skip=1 tokens=1,2" %%A in ('adb devices') do (
-    if /I "%%B"=="device" (
-        echo %%A>> "%OUT_FILE%"
-        set /a COUNT+=1
-    )
+    if /I "%%B"=="device" echo %%A
 )
+) > "%OUT_FILE%"
+
+set /a COUNT=0
+for /f %%A in (%OUT_FILE%) do set /a COUNT+=1
 
 echo.
 echo Devices detected: !COUNT!
