@@ -22,19 +22,27 @@ function Escape-CmdArg([string]$s) {
     return '"' + ($s.Replace('"', '""')) + '"'
 }
 
-function Build-RunnerCmdLine([string]$RunnerBat, [string]$Suite, [string]$FlowPath, [string]$FlowName, [string]$Device, [string]$AppId, [string]$ClearState, [string]$IncludeTagArg, [string]$MaestroCmdArg) {
+function Build-RunnerCmdLine(
+    [string]$RunnerBat,
+    [string]$Suite,
+    [string]$FlowPath,
+    [string]$Device,
+    [string]$AppId,
+    [string]$ClearState,
+    [string]$MaestroCmdArg,
+    [string]$IncludeTagArg
+) {
     $parts = @(
         "/c",
         "call",
         (Escape-CmdArg $RunnerBat),
         (Escape-CmdArg $Suite),
         (Escape-CmdArg $FlowPath),
-        (Escape-CmdArg $FlowName),
         (Escape-CmdArg $Device),
         (Escape-CmdArg $AppId),
         (Escape-CmdArg $ClearState),
-        (Escape-CmdArg $IncludeTagArg),
-        (Escape-CmdArg $MaestroCmdArg)
+        (Escape-CmdArg $MaestroCmdArg),
+        (Escape-CmdArg $IncludeTagArg)
     )
     return ($parts -join " ")
 }
@@ -90,12 +98,14 @@ $LogsDir = Join-Path $ReportsDir "logs"
 $ResultsDir = Join-Path $ReportsDir "results"
 $StatusDir = Join-Path $RepoRoot "status"
 $MasterCsv = Join-Path $ReportsDir "all_results.csv"
+$DeviceSummaryCsv = Join-Path $ReportsDir "device_summary.csv"
 
 Write-Section "RUN SUITE SAME MACHINE PARALLEL"
 Write-Host "Repo root: $RepoRoot"
 Write-Host "Flow root: $FlowRoot"
 Write-Host "Runner bat: $RunnerBat"
 Write-Host "Maestro cmd: $MaestroCmd"
+Write-Host "Include tag: $IncludeTag"
 
 if (-not (Test-Path -LiteralPath $RunnerBat)) {
     Write-Host "ERROR: Runner file not found: $RunnerBat"
@@ -144,7 +154,7 @@ if (-not $flowFiles -or $flowFiles.Count -eq 0) {
 
 $overallFailed = $false
 $IncludeTagArg = if ([string]::IsNullOrWhiteSpace($IncludeTag)) { "__EMPTY__" } else { $IncludeTag }
-$MaestroCmdArg = if ([string]::IsNullOrWhiteSpace($MaestroCmd)) { "__EMPTY__" } else { $MaestroCmd }
+$MaestroCmdArg = if ([string]::IsNullOrWhiteSpace($MaestroCmd)) { "maestro" } else { $MaestroCmd }
 
 foreach ($flow in $flowFiles) {
     $flowName = $flow.BaseName
@@ -155,7 +165,7 @@ foreach ($flow in $flowFiles) {
     $flowFailed = $false
     $procInfos = @()
     foreach ($device in $devices) {
-        $cmdLine = Build-RunnerCmdLine $RunnerBat $Suite $flowPath $flowName $device $AppId $ClearState $IncludeTagArg $MaestroCmdArg
+        $cmdLine = Build-RunnerCmdLine $RunnerBat $Suite $flowPath $device $AppId $ClearState $MaestroCmdArg $IncludeTagArg
         try {
             $p = Start-RunnerProcess -WorkingDir $RepoRoot -Arguments $cmdLine
             $procInfos += [pscustomobject]@{ Process = $p; Device = $device; Flow = $flowName }
@@ -181,7 +191,7 @@ foreach ($flow in $flowFiles) {
         $logFile = Join-Path $LogsDir ("{0}_{1}.log" -f $safeFlow, $safeDevice)
 
         $artifactsOk = Test-ExecutionArtifacts -StatusFile $statusFile -ResultFile $resultFile -LogFile $logFile
-        Write-Host ("Device {0} -> ExitCode {1} -> ArtifactsOk {2}" -f $info.Device, $code, $artifactsOk)
+        Write-Host ("Device {0} -> ExitCode {1} -> ArtifactsOk {2} -> Log {3}" -f $info.Device, $code, $artifactsOk, $logFile)
 
         if (($code -ne 0) -or (-not $artifactsOk)) {
             $flowFailed = $true
@@ -198,7 +208,7 @@ foreach ($flow in $flowFiles) {
 }
 
 Write-Section "Merging per-device result files"
-"suite,flow_name,device_id,status,exit_code,log_file" | Set-Content -Path $MasterCsv -Encoding Ascii
+"suite,flow,device,status,exit_code,reason,log_file" | Set-Content -Path $MasterCsv -Encoding Ascii
 $tempCsvs = Get-ChildItem -LiteralPath $ResultsDir -Filter *.csv -File | Sort-Object Name
 
 if (-not $tempCsvs -or $tempCsvs.Count -eq 0) {
@@ -219,5 +229,24 @@ if (-not $statusFiles -or $statusFiles.Count -eq 0) {
     exit 1
 }
 
+$rows = Import-Csv -LiteralPath $MasterCsv
+$summary = $rows |
+    Group-Object device |
+    ForEach-Object {
+        $deviceRows = $_.Group
+        $passCount = @($deviceRows | Where-Object { $_.status -eq 'PASS' }).Count
+        $failCount = @($deviceRows | Where-Object { $_.status -ne 'PASS' }).Count
+        [pscustomobject]@{
+            device = $_.Name
+            total_flows = $deviceRows.Count
+            passed = $passCount
+            failed = $failCount
+            overall_status = $(if ($failCount -gt 0) { 'FAIL' } else { 'PASS' })
+        }
+    } | Sort-Object device
+
+$summary | Export-Csv -LiteralPath $DeviceSummaryCsv -NoTypeInformation
+
 Write-Host "Merged result file: $MasterCsv"
+Write-Host "Device summary file: $DeviceSummaryCsv"
 if ($overallFailed) { exit 1 } else { exit 0 }
