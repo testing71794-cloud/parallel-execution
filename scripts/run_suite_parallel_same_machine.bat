@@ -1,25 +1,65 @@
 @echo off
-call "%~dp0set_maestro_java.bat"
+setlocal EnableExtensions
 
-set SUITE=%1
-set FLOW_DIR=%2
+REM Args:
+REM %1 = SUITE
+REM %2 = FLOW_DIR
+REM %3 = INCLUDE_TAG
+REM %4 = APP_ID
+REM %5 = CLEAR_STATE
+REM %6 = MAESTRO_CMD
 
-echo =====================================
-echo RUN SUITE SAME MACHINE
-echo =====================================
-echo Suite: %SUITE%
-echo Flow dir: %FLOW_DIR%
+set "SUITE=%~1"
+set "FLOW_DIR=%~2"
+set "INCLUDE_TAG=%~3"
+set "APP_ID=%~4"
+set "CLEAR_STATE=%~5"
+set "MAESTRO_CMD=%~6"
 
-for %%f in ("%FLOW_DIR%\*.yaml") do (
-    echo Running %%f
-    call "%~dp0run_one_flow_on_device.bat" "%%f" ""
-    if errorlevel 1 (
-        echo Failure in %%f
-        exit /b 1
-    )
+if "%SUITE%"=="" exit /b 10
+if "%FLOW_DIR%"=="" exit /b 11
+if "%APP_ID%"=="" exit /b 12
+if "%CLEAR_STATE%"=="" set "CLEAR_STATE=true"
+if "%MAESTRO_CMD%"=="" set "MAESTRO_CMD=maestro"
+
+set "REPO_ROOT=%~dp0.."
+for %%I in ("%REPO_ROOT%") do set "REPO_ROOT=%%~fI"
+set "PS1=%REPO_ROOT%\scripts\run_suite_parallel_same_machine.ps1"
+
+if not exist "%PS1%" (
+    echo ERROR: Parallel runner PowerShell file not found: %PS1%
+    exit /b 30
 )
 
 echo =====================================
-echo SUITE COMPLETED
+echo RUN SUITE SAME MACHINE PARALLEL
 echo =====================================
-exit /b 0
+echo.
+echo Suite: %SUITE%
+echo Flow dir: %FLOW_DIR%
+echo Include tag: %INCLUDE_TAG%
+echo App id: %APP_ID%
+echo Clear state: %CLEAR_STATE%
+echo Maestro cmd: %MAESTRO_CMD%
+echo Repo root: %REPO_ROOT%
+echo PS runner: %PS1%
+echo.
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS1%" ^
+  -RepoRoot "%REPO_ROOT%" ^
+  -Suite "%SUITE%" ^
+  -FlowDir "%FLOW_DIR%" ^
+  -IncludeTag "%INCLUDE_TAG%" ^
+  -AppId "%APP_ID%" ^
+  -ClearState "%CLEAR_STATE%" ^
+  -MaestroCmd "%MAESTRO_CMD%"
+
+set "FINAL_EXIT_CODE=%ERRORLEVEL%"
+if not defined FINAL_EXIT_CODE set "FINAL_EXIT_CODE=1"
+
+echo.
+echo =====================================
+echo FINAL RESULT FOR SUITE %SUITE% = %FINAL_EXIT_CODE%
+echo =====================================
+
+exit /b %FINAL_EXIT_CODE%
