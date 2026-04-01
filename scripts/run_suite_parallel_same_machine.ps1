@@ -32,20 +32,17 @@ function Read-DeviceIds([string]$RepoRoot) {
     if ($devices.Count -gt 0) { return $devices | Select-Object -Unique }
 
     $adbOutput = & adb devices
-    if ($LASTEXITCODE -ne 0) {
-        throw "adb devices failed"
-    }
+    if ($LASTEXITCODE -ne 0) { throw "adb devices failed" }
 
     foreach ($line in $adbOutput) {
-        if ($line -match '^(?<id>\S+)\s+device$') {
-            $devices += $matches['id']
-        }
+        if ($line -match '^(?<id>\S+)\s+device$') { $devices += $matches['id'] }
     }
     return $devices | Select-Object -Unique
 }
 
-function New-JoinedDeviceList([string[]]$Devices) {
-    return ($Devices -join ",")
+function Quote-Arg([string]$s) {
+    if ($null -eq $s) { return '""' }
+    return '"' + ($s -replace '"','""') + '"'
 }
 
 function Run-ShardAllBatch(
@@ -63,37 +60,20 @@ function Run-ShardAllBatch(
     $safeFlow = $flowName.Replace(' ', '_')
     $batchLog = Join-Path (Join-Path $ReportsDir "logs") ("{0}_{1}.log" -f $safeFlow, $Label.ToLower())
     $batchCsv = Join-Path (Join-Path $ReportsDir "results") ("{0}_{1}.csv" -f $safeFlow, $Label.ToLower())
-    $deviceList = New-JoinedDeviceList $Devices
+    $deviceList = ($Devices -join ",")
     $shardCount = $Devices.Count
 
     Write-Section "$Label $flowName on devices"
     foreach ($d in $Devices) { Write-Host " - $d" }
 
-    $argList = @("test")
-    if (-not [string]::IsNullOrWhiteSpace($deviceList)) {
-        $argList += @("--device", $deviceList)
-    }
-    $argList += @("--shard-all", "$shardCount")
+    $args = @("test","--device",$deviceList,"--shard-all",$shardCount.ToString())
     if (-not [string]::IsNullOrWhiteSpace($IncludeTag)) {
-        $argList += @("--include-tags", $IncludeTag)
+        $args += @("--include-tags",$IncludeTag)
     }
-    $argList += @($flowPath)
+    $args += @($flowPath)
 
-    $prettyCmd = "$MaestroCmd " + (($argList | ForEach-Object {
-        if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
-    }) -join " ")
-
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $MaestroCmd
-    foreach ($a in $argList) { [void]$psi.ArgumentList.Add($a) }
-    $psi.WorkingDirectory = $RepoRoot
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.CreateNoWindow = $true
-
-    $p = New-Object System.Diagnostics.Process
-    $p.StartInfo = $psi
+    $argsString = ($args | ForEach-Object { Quote-Arg $_ }) -join " "
+    $prettyCmd = "$MaestroCmd $argsString"
 
     New-Item -ItemType Directory -Force -Path (Join-Path $ReportsDir "logs") | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $ReportsDir "results") | Out-Null
@@ -115,14 +95,8 @@ function Run-ShardAllBatch(
     )
     Set-Content -LiteralPath $batchLog -Value $header -Encoding UTF8
 
-    [void]$p.Start()
-    $stdout = $p.StandardOutput.ReadToEnd()
-    $stderr = $p.StandardError.ReadToEnd()
-    $p.WaitForExit()
-    $exitCode = $p.ExitCode
-
-    if ($stdout) { Add-Content -LiteralPath $batchLog -Value $stdout }
-    if ($stderr) { Add-Content -LiteralPath $batchLog -Value $stderr }
+    & cmd.exe /c "$MaestroCmd $argsString" *> $batchLog
+    $exitCode = $LASTEXITCODE
 
     $status = if ($exitCode -eq 0) { "PASS" } else { "FAIL" }
     $reason = if ($exitCode -eq 0) { "OK" } else { "MAESTRO_BATCH_FAILED" }
@@ -135,13 +109,10 @@ function Run-ShardAllBatch(
 
     return [pscustomobject]@{
         Flow = $flowName
-        FlowPath = $flowPath
         Devices = $Devices
         ExitCode = $exitCode
         Status = $status
-        Reason = $reason
         LogFile = $batchLog
-        ResultFile = $batchCsv
     }
 }
 
@@ -161,10 +132,7 @@ Write-Host "Maestro cmd: $MaestroCmd"
 Write-Host "Include tag: $IncludeTag"
 Write-Host "Retry count: $RetryCount"
 
-if (-not (Test-Path -LiteralPath $FlowRoot)) {
-    Write-Host "ERROR: Flow directory not found: $FlowRoot"
-    exit 1
-}
+if (-not (Test-Path -LiteralPath $FlowRoot)) { Write-Host "ERROR: Flow directory not found: $FlowRoot"; exit 1 }
 
 New-Item -ItemType Directory -Force -Path $ReportsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
@@ -174,21 +142,12 @@ $devices = Read-DeviceIds -RepoRoot $RepoRoot
 Write-Host ""
 Write-Host "Devices found: $($devices.Count)"
 foreach ($d in $devices) { Write-Host " - $d" }
-
-if ($devices.Count -eq 0) {
-    Write-Host "ERROR: No connected devices found"
-    exit 1
-}
+if ($devices.Count -eq 0) { Write-Host "ERROR: No connected devices found"; exit 1 }
 
 $flowFiles = Get-ChildItem -LiteralPath $FlowRoot -Filter *.yaml -File | Sort-Object Name
-if (-not $flowFiles -or $flowFiles.Count -eq 0) {
-    Write-Host "ERROR: No yaml flows found in $FlowRoot"
-    exit 1
-}
+if (-not $flowFiles -or $flowFiles.Count -eq 0) { Write-Host "ERROR: No yaml flows found in $FlowRoot"; exit 1 }
 
-if ([string]::IsNullOrWhiteSpace($MaestroCmd)) {
-    $MaestroCmd = "maestro"
-}
+if ([string]::IsNullOrWhiteSpace($MaestroCmd)) { $MaestroCmd = "maestro" }
 
 $overallFailed = $false
 $retryRows = @()
@@ -229,17 +188,11 @@ foreach ($flow in $flowFiles) {
 Write-Section "Merging result files"
 "suite,flow,device,status,exit_code,reason,log_file" | Set-Content -Path $MasterCsv -Encoding Ascii
 $tempCsvs = Get-ChildItem -LiteralPath $ResultsDir -Filter *.csv -File | Sort-Object Name
-
-if (-not $tempCsvs -or $tempCsvs.Count -eq 0) {
-    Write-Host "ERROR: No result CSV files were produced for suite $Suite"
-    exit 1
-}
+if (-not $tempCsvs -or $tempCsvs.Count -eq 0) { Write-Host "ERROR: No result CSV files were produced for suite $Suite"; exit 1 }
 
 foreach ($csv in $tempCsvs) {
     $lines = Get-Content -LiteralPath $csv.FullName
-    if ($lines.Count -gt 1) {
-        $lines | Select-Object -Skip 1 | Add-Content -Path $MasterCsv
-    }
+    if ($lines.Count -gt 1) { $lines | Select-Object -Skip 1 | Add-Content -Path $MasterCsv }
 }
 
 $rows = Import-Csv -LiteralPath $MasterCsv
