@@ -34,24 +34,7 @@ const aiDoctorDir = note(__dirname);
 const projectRoot = path.resolve(aiDoctorDir, "..");
 
 // common paths
-function resolveFlowDir() {
-  const candidates = [
-    process.env.TESTS_DIR,
-    process.env.FLOWS_DIR,
-    path.join(projectRoot, "Non printing flows"),
-    path.join(projectRoot, "Printing Flow"),
-    path.join(projectRoot, "flows"),
-    path.join(projectRoot, "tests"),
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-
-  return path.join(projectRoot, "Non printing flows");
-}
-
-const testsDir = resolveFlowDir();
+const testsDir = path.join(projectRoot, "tests");
 const elementsLoadPath = findFirstExisting([
   path.join(projectRoot, "elements", "loadElements.yaml"),
   path.join(projectRoot, "elements", "loadElements.yml"),

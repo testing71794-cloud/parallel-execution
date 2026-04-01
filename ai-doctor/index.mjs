@@ -59,34 +59,16 @@ function safeWriteJson(filePath, obj) {
 let memory = safeReadJson(memoryPath, {});
 console.log("Memory loaded:", memoryPath, `(keys=${Object.keys(memory).length})`);
 
-
-function resolveFlowDir() {
-  const candidates = [
-    process.env.TESTS_DIR,
-    process.env.FLOWS_DIR,
-    path.join(projectRoot, "Non printing flows"),
-    path.join(projectRoot, "Printing Flow"),
-    path.join(projectRoot, "flows"),
-    path.join(projectRoot, "tests"),
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-
-  return path.join(projectRoot, "Non printing flows");
-}
-
 // ======================================================
 // USE EXISTING REPORT FROM JENKINS PIPELINE
 // ======================================================
-const testsDir = resolveFlowDir();
+const testsDir = path.join(projectRoot, "flows");
 const stdoutLog = path.join(artifactDir, "maestro_stdout.log");
 const stderrLog = path.join(artifactDir, "maestro_stderr.log");
 const testOutputDir = path.join(artifactDir, "test-output");
 
 if (!fs.existsSync(testsDir)) {
-  console.error(`Flow folder not found: ${testsDir}`);
+  console.error(`Tests folder not found: ${testsDir}`);
   process.exit(2);
 }
 
