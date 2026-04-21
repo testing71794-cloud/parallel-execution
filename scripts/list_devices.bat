@@ -14,6 +14,8 @@ echo =========================
 del /q "%OUT_FILE%" 2>nul
 adb start-server >nul 2>&1 || (
     echo ERROR: unable to start adb
+    echo Set Jenkins parameter ANDROID_HOME to your SDK root ^(e.g. ...\AppData\Local\Android\Sdk^) so platform-tools is on PATH.
+    where adb 2>nul
     exit /b 1
 )
 

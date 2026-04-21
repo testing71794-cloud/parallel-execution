@@ -10,6 +10,7 @@ pipeline {
         string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'App package id for Maestro/app launch checks')
         string(name: 'MAESTRO_CMD', defaultValue: 'maestro.bat', description: 'Maestro launcher (e.g. maestro.bat). Use a full path if the agent runs as Local System — USERPROFILE is systemprofile, not your user.')
         string(name: 'MAESTRO_HOME', defaultValue: 'C:\\Users\\HP\\maestro\\maestro\\bin', description: 'Folder containing maestro.bat. Required when the agent runs as Local System (USERPROFILE is systemprofile). Change if Maestro is installed elsewhere.')
+        string(name: 'ANDROID_HOME', defaultValue: 'C:\\Users\\HP\\AppData\\Local\\Android\\Sdk', description: 'Android SDK root (must contain platform-tools\\adb.exe). Required for Local System — user adb is not on PATH. Change if your SDK is elsewhere.')
         string(name: 'JAVA_HOME_OVERRIDE', defaultValue: '', description: 'Optional JDK for Maestro on device node (sets MAESTRO_JAVA_HOME). Leave empty to use Eclipse Adoptium JDK 25 bundled path in set_maestro_java.bat.')
         booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run non-printing flows')
         booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run printing flows')
@@ -102,11 +103,15 @@ pipeline {
                         if (params.MAESTRO_HOME?.trim()) {
                             envList << "MAESTRO_HOME=${params.MAESTRO_HOME}"
                         }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                        }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
                             echo JAVA_HOME=%JAVA_HOME%
                             echo MAESTRO_HOME=%MAESTRO_HOME%
+                            echo ANDROID_HOME=%ANDROID_HOME%
                             where java
                             java -version
                             call scripts/precheck_environment.bat "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" || (echo 1> precheck_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
@@ -131,9 +136,13 @@ pipeline {
                         if (params.MAESTRO_HOME?.trim()) {
                             envList << "MAESTRO_HOME=${params.MAESTRO_HOME}"
                         }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                        }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
+                            echo ANDROID_HOME=%ANDROID_HOME%
                             call scripts/list_devices.bat || (echo 1> device_detection_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                             """
                         }
@@ -157,11 +166,15 @@ pipeline {
                         if (params.MAESTRO_HOME?.trim()) {
                             envList << "MAESTRO_HOME=${params.MAESTRO_HOME}"
                         }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                        }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
                             echo JAVA_HOME=%JAVA_HOME%
                             echo MAESTRO_HOME=%MAESTRO_HOME%
+                            echo ANDROID_HOME=%ANDROID_HOME%
                             where java
                             java -version
                             call scripts/run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
@@ -215,11 +228,15 @@ pipeline {
                         if (params.MAESTRO_HOME?.trim()) {
                             envList << "MAESTRO_HOME=${params.MAESTRO_HOME}"
                         }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                        }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
                             echo JAVA_HOME=%JAVA_HOME%
                             echo MAESTRO_HOME=%MAESTRO_HOME%
+                            echo ANDROID_HOME=%ANDROID_HOME%
                             where java
                             java -version
                             call scripts/run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)

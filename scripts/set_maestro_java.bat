@@ -64,10 +64,12 @@ endlocal & exit /b 1
 :maestro_ok
 set "PATH=%JAVA_HOME%\bin;%MAESTRO_HOME%;%PATH%"
 
-REM --- ADB (align with Kodak-smile-automation: echo ADB_HOME=... before precheck) ---
+REM --- ADB: Jenkins Local System has no user PATH — set ANDROID_HOME in the job or rely on fallbacks below ---
 set "ADB_HOME="
 if defined ANDROID_HOME if exist "%ANDROID_HOME%\platform-tools\adb.exe" set "ADB_HOME=%ANDROID_HOME%\platform-tools"
 if not defined ADB_HOME if defined ANDROID_SDK_ROOT if exist "%ANDROID_SDK_ROOT%\platform-tools\adb.exe" set "ADB_HOME=%ANDROID_SDK_ROOT%\platform-tools"
+if not defined ADB_HOME if exist "%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe" set "ADB_HOME=%LOCALAPPDATA%\Android\Sdk\platform-tools"
+if not defined ADB_HOME if exist "%USERPROFILE%\AppData\Local\Android\Sdk\platform-tools\adb.exe" set "ADB_HOME=%USERPROFILE%\AppData\Local\Android\Sdk\platform-tools"
 if not defined ADB_HOME (
   for /f "delims=" %%W in ('where adb 2^>nul') do (
     for %%P in ("%%~dpW.") do set "ADB_HOME=%%~fP"
