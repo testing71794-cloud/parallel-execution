@@ -33,11 +33,13 @@ set "JDK_JAVA_OPTIONS="
 set "REPO_ROOT=%~dp0.."
 for %%I in ("%REPO_ROOT%") do set "REPO_ROOT=%%~fI"
 
-call "%REPO_ROOT%\scripts\set_maestro_java.bat"
+call "%REPO_ROOT%\scripts\set_maestro_java.bat" "%MAESTRO_CMD%"
 if errorlevel 1 exit /b 14
 
 if exist "%MAESTRO_HOME%\maestro.bat" (
     set "MAESTRO_BIN=%MAESTRO_HOME%\maestro.bat"
+) else if exist "%MAESTRO_HOME%\maestro.cmd" (
+    set "MAESTRO_BIN=%MAESTRO_HOME%\maestro.cmd"
 ) else (
     set "MAESTRO_BIN=%MAESTRO_CMD%"
 )
