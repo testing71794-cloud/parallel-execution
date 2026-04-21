@@ -4,6 +4,11 @@ setlocal
 set "SCRIPT_DIR=%~dp0"
 call "%SCRIPT_DIR%set_maestro_java.bat" || exit /b 1
 
+set "JAVA_HOME=C:\Users\HP\.jdks\jbr-17.0.8"
+set "MAESTRO_HOME=C:\Users\HP\maestro\maestro\bin"
+set "ADB_HOME=C:\Users\HP\AppData\Local\Android\Sdk\platform-tools"
+set "PATH=%JAVA_HOME%\bin;%MAESTRO_HOME%;%ADB_HOME%;%PATH%"
+
 echo =====================================
 echo PRECHECK JAVA
 echo =====================================
