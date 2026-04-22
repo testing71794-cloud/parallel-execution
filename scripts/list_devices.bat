@@ -12,6 +12,7 @@ echo Connected Android devices
 echo =========================
 
 del /q "%OUT_FILE%" 2>nul
+
 adb start-server >nul 2>&1 || (
     echo ERROR: unable to start adb
     echo Set Jenkins parameter ANDROID_HOME to your SDK root ^(e.g. ...\AppData\Local\Android\Sdk^) so platform-tools is on PATH.
@@ -28,7 +29,9 @@ for /f "skip=1 tokens=1,2" %%A in ('adb devices') do (
 ) > "%OUT_FILE%"
 
 set /a COUNT=0
-for /f %%A in (%OUT_FILE%) do set /a COUNT+=1
+
+REM FIXED LINE (quotes added)
+for /f %%A in ("%OUT_FILE%") do set /a COUNT+=1
 
 echo.
 echo Devices detected: !COUNT!
