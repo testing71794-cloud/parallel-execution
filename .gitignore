@@ -1,14 +1,17 @@
 node_modules/
 ai-doctor/node_modules/
-reports/
-status/
+# CI artifacts at repo root only (demo_intelligence_workspace/ keeps its own status+logs)
+/reports/
+/status/
 collected-artifacts/
-build-summary/
+/build-summary/
+demo_intelligence_workspace/build-summary/
 .maestro/
 temp-runners/
 *.flag
 *.failed
 *.log
+!demo_intelligence_workspace/**/*.log
 .env
 ai-doctor/.env
 __pycache__/

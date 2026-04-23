@@ -1,0 +1,6 @@
+suite=nonprinting
+flow=flow2
+device=DEVICE001
+status=FAIL
+exit_code=1
+log=reports/nonprinting/logs/flow2_nonprinting.log

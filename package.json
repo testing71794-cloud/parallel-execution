@@ -6,7 +6,9 @@
   "main": "index.mjs",
   "scripts": {
     "start": "node index.mjs",
-    "doctor": "bash ./doctor.sh"
+    "doctor": "bash ./doctor.sh",
+    "doctor:junit": "node ai-doctor/index.mjs",
+    "doctor:legacy-rerun-maestro": "bash ./scripts/deprecated_doctor_rerun_maestro.sh"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
