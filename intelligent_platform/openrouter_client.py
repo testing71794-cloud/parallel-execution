@@ -23,7 +23,7 @@ class OpenRouterHTTPError(RuntimeError):
         self.code = code
         self.body = body
 
-# Explicit model IDs (no provider auto-selection) — free-tier primary + reliable fallback
+# Default model IDs (env overrides: intelligent_platform.config.openrouter_model_*)
 MODEL_PRIMARY = "openrouter/free"
 MODEL_FALLBACK = "meta-llama/llama-3.3-70b-instruct:free"
 

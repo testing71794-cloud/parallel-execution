@@ -45,7 +45,10 @@ def generate_report(
         "Cluster ID",
         "Confidence",
         "Test issue?",
-        "Source",
+        "Log/Artifact source",
+        "AI Status",
+        "Model Used",
+        "Analysis Source",
     ]
     for c, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=c, value=h)
@@ -64,6 +67,9 @@ def generate_report(
         ws.cell(row=ri, column=9, value=row.get("confidence", ""))
         ws.cell(row=ri, column=10, value="yes" if row.get("is_test_issue") else "no")
         ws.cell(row=ri, column=11, value=row.get("source", ""))
+        ws.cell(row=ri, column=12, value=row.get("ai_status", ""))
+        ws.cell(row=ri, column=13, value=row.get("model_used", ""))
+        ws.cell(row=ri, column=14, value=row.get("analysis_source", ""))
 
     ws2 = wb.create_sheet("Clusters")
     ws2.append(["cluster_id", "root_issue", "count", "affected_tests"])

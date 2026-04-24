@@ -114,6 +114,76 @@ if /I "%CLEAR_STATE%"=="true" (
     echo Clear-state exit code: !errorlevel!>> "%LOG_FILE%"
 )
 
+set "SIGNUP_RETRY_USED=0"
+if /I not "%FLOW_NAME%"=="flow1b" goto :run_maestro_default
+rem ---- flow1b block (see end of file for :run_maestro_default) ----
+
+rem ---- flow1b: unique email per device + optional duplicate-user retry (parallel-safe JSON per device) ----
+set "SIGNUP_BAT=%TEMP%\kodak_signup_!SAFE_DEVICE!_!RANDOM!.bat"
+python "%REPO_ROOT%\scripts\generate_signup_user.py" --device "%DEVICE_ID%" --repo "%REPO_ROOT%" --json-basename "%SAFE_DEVICE%" --write-bat "!SIGNUP_BAT!"
+if errorlevel 1 (
+    echo ERROR: generate_signup_user.py failed>> "%LOG_FILE%"
+    set "RUN_EXIT=30"
+    set "STATUS_VALUE=FAIL"
+    set "REASON=SIGNUP_USER_GEN_FAILED"
+    goto :write_result
+)
+call "!SIGNUP_BAT!"
+set "KODAK_SIGNUP_JSON=%REPO_ROOT%\reports\signup_users\%SAFE_DEVICE%_signup_user.json"
+echo.>> "%LOG_FILE%"
+echo === Signup user (flow1b) ===>> "%LOG_FILE%"
+echo KODAK_SIGNUP_EMAIL=!EMAIL!>> "%LOG_FILE%"
+echo KODAK_SIGNUP_RUN_ID=!SIGNUP_RUN_ID!>> "%LOG_FILE%"
+echo KODAK_SIGNUP_ATTEMPT=!SIGNUP_ATTEMPT!>> "%LOG_FILE%"
+if defined KODAK_SIGNUP_JSON echo KODAK_SIGNUP_JSON=!KODAK_SIGNUP_JSON!>> "%LOG_FILE%"
+
+set "MAESTRO_ARGS=test -e EMAIL=!EMAIL! -e FULL_NAME=!FULL_NAME! -e PASSWORD=!PASSWORD!"
+set "MAESTRO_ARGS=!MAESTRO_ARGS! "%FLOW_PATH%""
+set "MAESTRO_ARGS=!MAESTRO_ARGS! --device "%DEVICE_ID%""
+if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
+
+echo Starting Maestro test (flow1b)...>> "%LOG_FILE%"
+echo Command: call "%MAESTRO_BIN%" !MAESTRO_ARGS!>> "%LOG_FILE%"
+echo. >> "%LOG_FILE%"
+call "%MAESTRO_BIN%" !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
+set "RUN_EXIT=%ERRORLEVEL%"
+if "!RUN_EXIT!"=="0" goto :after_flow1b_maestro
+
+python "%REPO_ROOT%\scripts\check_signup_duplicate_log.py" "%LOG_FILE%" 1>>"%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    set "STATUS_VALUE=FAIL"
+    set "REASON=MAESTRO_FAILED"
+    goto :after_flow1b_maestro
+)
+echo Duplicate-like signup error detected; regenerating user and retrying once...>> "%LOG_FILE%"
+python "%REPO_ROOT%\scripts\generate_signup_user.py" --device "%DEVICE_ID%" --repo "%REPO_ROOT%" --json-basename "%SAFE_DEVICE%" --retry --write-bat "!SIGNUP_BAT!"
+if errorlevel 1 (
+    set "STATUS_VALUE=FAIL"
+    set "REASON=SIGNUP_RETRY_GEN_FAILED"
+    set "RUN_EXIT=31"
+    goto :write_result
+)
+call "!SIGNUP_BAT!"
+set "SIGNUP_RETRY_USED=1"
+echo KODAK_SIGNUP_EMAIL_RETRY=!EMAIL!>> "%LOG_FILE%"
+echo.>> "%LOG_FILE%"
+echo === Maestro retry (flow1b) ===>> "%LOG_FILE%"
+set "MAESTRO_ARGS=test -e EMAIL=!EMAIL! -e FULL_NAME=!FULL_NAME! -e PASSWORD=!PASSWORD!"
+set "MAESTRO_ARGS=!MAESTRO_ARGS! "%FLOW_PATH%""
+set "MAESTRO_ARGS=!MAESTRO_ARGS! --device "%DEVICE_ID%""
+if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
+call "%MAESTRO_BIN%" !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
+set "RUN_EXIT=%ERRORLEVEL%"
+if "!RUN_EXIT!"=="0" (
+    set "STATUS_VALUE=FLAKY"
+    set "REASON=SIGNUP_DUPLICATE_RETRY"
+) else (
+    set "STATUS_VALUE=FAIL"
+    set "REASON=MAESTRO_FAILED"
+)
+goto :after_flow1b_maestro
+
+:run_maestro_default
 set "MAESTRO_ARGS=test "%FLOW_PATH%" --device "%DEVICE_ID%""
 if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=%MAESTRO_ARGS% --include-tags "%INCLUDE_TAG%""
 
@@ -127,6 +197,8 @@ if not "%RUN_EXIT%"=="0" (
     set "STATUS_VALUE=FAIL"
     set "REASON=MAESTRO_FAILED"
 )
+
+:after_flow1b_maestro
 
 :write_result
 if not defined DEVICE_NAME (
@@ -145,8 +217,14 @@ if not defined DEVICE_NAME set "DEVICE_NAME=%DEVICE_ID%"
     echo log_file=%LOG_FILE%
     echo first_log_path=%LOG_FILE%
     echo log_path=%LOG_FILE%
-    echo retry_count=0
+    echo retry_count=!SIGNUP_RETRY_USED!
     echo timestamp=%date% %time%
+)
+if /I "%FLOW_NAME%"=="flow1b" if defined EMAIL (
+    >>"%STATUS_FILE%" echo signup_email=!EMAIL!
+    >>"%STATUS_FILE%" echo signup_run_id=!SIGNUP_RUN_ID!
+    >>"%STATUS_FILE%" echo signup_duplicate_retry_used=!SIGNUP_RETRY_USED!
+    if defined KODAK_SIGNUP_JSON >>"%STATUS_FILE%" echo kodak_signup_json_path=!KODAK_SIGNUP_JSON!
 )
 
 > "%RESULT_FILE%" (

@@ -38,6 +38,8 @@ COLS = [
     "Device Name",
     "Device ID",
     "Status",
+    "AI Status",
+    "Model Used",
     "Exit Code",
     "Retry Count",
     "Failure Step",
@@ -158,6 +160,12 @@ def _rows_to_raw_dicts(
                 "Device Name": dname,
                 "Device ID": did,
                 "Status": st,
+                "AI Status": str(
+                    an.get("ai_status") or "NOT_CHECKED"
+                )[:40],
+                "Model Used": str(
+                    an.get("model_used") or "—"
+                )[:120],
                 "Exit Code": str(ec),
                 "Retry Count": (row.get("retry_count") or "0")[:8],
                 "Failure Step": (an.get("failure_step") or "")[:2000],
@@ -166,7 +174,10 @@ def _rows_to_raw_dicts(
                 "Root Cause Category": (an.get("root_cause_category") or "—")[:120],
                 "Suggested Fix": (an.get("suggested_fix") or "—")[:2000],
                 "AI Confidence": float(an.get("ai_confidence", 0.65) or 0.65),
-                "Analysis Source": (an.get("analysis_source") or "Rule-based")[:60],
+                "Analysis Source": (
+                    an.get("analysis_source")
+                    or "Rule-based fallback"
+                )[:60],
                 "Log Path": logp,
                 "Screenshot Path": _SCREEN_DEFAULT,
                 "Timestamp": (row.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))[

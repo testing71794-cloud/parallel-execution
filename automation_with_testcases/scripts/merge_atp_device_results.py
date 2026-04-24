@@ -29,6 +29,8 @@ COLS = [
     "Device Name",
     "Device ID",
     "Status",
+    "AI Status",
+    "Model Used",
     "Exit Code",
     "Retry Count",
     "Failure Step",
@@ -91,6 +93,7 @@ def load_rows() -> list[dict]:
             use_openrouter=use_or and st == "FAIL",
         )
         if st == "PASS":
+            _ai = str(an.get("ai_status", "NOT_CHECKED") or "NOT_CHECKED")
             an = {
                 "failure_step": "",
                 "error_message": "",
@@ -99,6 +102,8 @@ def load_rows() -> list[dict]:
                 "suggested_fix": "—",
                 "ai_confidence": 1.0,
                 "analysis_source": "N/A",
+                "ai_status": _ai,
+                "model_used": "—",
             }
         out.append(
             {
@@ -107,6 +112,8 @@ def load_rows() -> list[dict]:
                 "Device Name": dname,
                 "Device ID": did,
                 "Status": st,
+                "AI Status": str(an.get("ai_status", "NOT_CHECKED") or "NOT_CHECKED")[:40],
+                "Model Used": str(an.get("model_used", "—") or "—")[:120],
                 "Exit Code": str(ecn),
                 "Retry Count": "0",
                 "Failure Step": (an.get("failure_step", "") or "")[:2000],
@@ -136,6 +143,8 @@ def load_rows() -> list[dict]:
                 "Device Name": "",
                 "Device ID": "",
                 "Status": "FAIL",
+                "AI Status": str(an.get("ai_status", "NOT_CHECKED") or "NOT_CHECKED")[:40],
+                "Model Used": str(an.get("model_used", "rules") or "rules")[:120],
                 "Exit Code": "1",
                 "Retry Count": "0",
                 "Failure Step": an.get("failure_step", "No ATP results"),

@@ -116,9 +116,18 @@ def run_pipeline(workspace: Path | None = None) -> dict[str, Any]:
                 "confidence": float(ai.get("confidence", 0.0)),
                 "suggestion": ai.get("suggestion", ""),
                 "is_test_issue": bool(ai.get("is_test_issue", True)),
+                "analysis_source": ai.get("analysis_source", "Rule-based fallback"),
+                "source_label": ai.get("source_label", "Rule-based fallback"),
+                "model_used": ai.get("model_used", "rules"),
+                "ai_status": ai.get("ai_status", "UNKNOWN"),
             }
             analyzed.append(merged)
-            logger.info("Analyzed: %s", merged.get("test_name", "")[:80])
+            logger.info(
+                "Analyzed: %s (source=%s, model=%s)",
+                merged.get("test_name", "")[:80],
+                merged.get("analysis_source", ""),
+                merged.get("model_used", ""),
+            )
         except Exception as e:
             logger.exception("Per-failure analysis error (continuing): %s", e)
             analyzed.append(
@@ -129,6 +138,10 @@ def run_pipeline(workspace: Path | None = None) -> dict[str, Any]:
                     "confidence": 0.0,
                     "suggestion": "Inspect raw log; re-run with INTELLIGENT_PLATFORM_DEBUG=1",
                     "is_test_issue": True,
+                    "analysis_source": "Rule-based fallback",
+                    "source_label": "Rule-based fallback",
+                    "model_used": "rules",
+                    "ai_status": "UNKNOWN",
                 }
             )
 

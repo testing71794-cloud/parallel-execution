@@ -1,3 +1,14 @@
+// Bind Jenkins Secret text → OPENROUTER_API_KEY for Python / Maestro (optional).
+def withOpenRouterCredentials = { String credsId, Closure action ->
+    if (credsId != null && credsId.toString().trim()) {
+        withCredentials([string(credentialsId: credsId.toString().trim(), variable: 'OPENROUTER_API_KEY')]) {
+            action()
+        }
+    } else {
+        action()
+    }
+}
+
 pipeline {
     agent none
 
@@ -27,6 +38,11 @@ pipeline {
             name: 'RUN_AUTOMATION_WITH_TESTCASES',
             defaultValue: false,
             description: 'Alias: same as RUN_ATP_SUITE. Either true → ATP runs once; does not replace non/printing.'
+        )
+        string(
+            name: 'OPENROUTER_CREDENTIALS_ID',
+            defaultValue: '',
+            description: 'Jenkins "Secret text" credential ID. Injects into OPENROUTER_API_KEY for Maestro signup AI, test_ai_connection, Excel AI, and AI analysis. Create a Secret text credential with your OpenRouter key, then put its ID here. Leave empty to use env already set on the agent.'
         )
     }
 
@@ -161,12 +177,14 @@ pipeline {
                         }
                         if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
                         if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
-                        withEnv(envList) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            where java
-                            call scripts/run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag)
-                            """
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                where java
+                                call scripts/run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag)
+                                """
+                            }
                         }
                     }
                 }
@@ -194,11 +212,15 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    if not exist build-summary mkdir build-summary
-                    python scripts/generate_excel_report.py status reports/nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag)
-                    """
+                    script {
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            bat """
+                            cd /d "${env.WORKSPACE}"
+                            if not exist build-summary mkdir build-summary
+                            python scripts/generate_excel_report.py status reports/nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag)
+                            """
+                        }
+                    }
                 }
             }
         }
@@ -217,12 +239,14 @@ pipeline {
                         }
                         if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
                         if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
-                        withEnv(envList) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            where java
-                            call scripts/run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag)
-                            """
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                where java
+                                call scripts/run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag)
+                                """
+                            }
                         }
                     }
                 }
@@ -250,11 +274,15 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    if not exist build-summary mkdir build-summary
-                    python scripts/generate_excel_report.py status reports/printing_summary printing || (echo 1> printing_report_failed.flag)
-                    """
+                    script {
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            bat """
+                            cd /d "${env.WORKSPACE}"
+                            if not exist build-summary mkdir build-summary
+                            python scripts/generate_excel_report.py status reports/printing_summary printing || (echo 1> printing_report_failed.flag)
+                            """
+                        }
+                    }
                 }
             }
         }
@@ -264,12 +292,16 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    if not exist build-summary mkdir build-summary
-                    python scripts/test_ai_connection.py
-                    if exist build-summary\\ai_status.txt ( type build-summary\\ai_status.txt ) else ( echo No ai_status.txt )
-                    """
+                    script {
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            bat """
+                            cd /d "${env.WORKSPACE}"
+                            if not exist build-summary mkdir build-summary
+                            python scripts/test_ai_connection.py
+                            if exist build-summary\\ai_status.txt ( type build-summary\\ai_status.txt ) else ( echo No ai_status.txt )
+                            """
+                        }
+                    }
                 }
             }
         }
@@ -279,12 +311,16 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    if not exist build-summary mkdir build-summary
-                    if not exist build-summary\\ai_status.txt echo AI_STATUS=FILE_MISSING > build-summary\\ai_status.txt
-                    call scripts/run_ai_analysis.bat || (echo 1> ai_failed.flag)
-                    """
+                    script {
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            bat """
+                            cd /d "${env.WORKSPACE}"
+                            if not exist build-summary mkdir build-summary
+                            if not exist build-summary\\ai_status.txt echo AI_STATUS=FILE_MISSING > build-summary\\ai_status.txt
+                            call scripts/run_ai_analysis.bat || (echo 1> ai_failed.flag)
+                            """
+                        }
+                    }
                 }
             }
         }
@@ -308,16 +344,18 @@ pipeline {
                         } else {
                             envList << "MAESTRO_CMD=maestro.bat"
                         }
-                        withEnv(envList) {
-                            bat """
-                            cd /d "${env.WORKSPACE}" && if not exist build-summary mkdir build-summary
-                            if not exist "automation_with_testcases\\scripts\\run_automation_with_testcases.bat" (
-                                echo ERROR: run_automation_with_testcases.bat missing
-                                (echo 1) >atp_failed.flag
-                                exit /b 0
-                            )
-                            call "automation_with_testcases\\scripts\\run_automation_with_testcases.bat" || ( (echo 1) >atp_failed.flag & exit /b 0)
-                            """
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}" && if not exist build-summary mkdir build-summary
+                                if not exist "automation_with_testcases\\scripts\\run_automation_with_testcases.bat" (
+                                    echo ERROR: run_automation_with_testcases.bat missing
+                                    (echo 1) >atp_failed.flag
+                                    exit /b 0
+                                )
+                                call "automation_with_testcases\\scripts\\run_automation_with_testcases.bat" || ( (echo 1) >atp_failed.flag & exit /b 0)
+                                """
+                            }
                         }
                     }
                 }

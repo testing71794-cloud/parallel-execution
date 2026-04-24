@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 
@@ -20,15 +21,58 @@ DEBUG_MODE: bool = _truthy("INTELLIGENT_PLATFORM_DEBUG", "0")
 # Transport retries per model (each of primary / fallback)
 AI_MAX_RETRIES: int = max(0, min(2, int(os.environ.get("AI_MAX_RETRIES", "2"))))
 
-# OpenRouter (explicit models in openrouter_client — no auto-routing)
-OPENROUTER_API_KEY: str = (
-    os.environ.get("OPENROUTER_API_KEY", "")
-    or os.environ.get("OpenRouterAPI", "")
-    or os.environ.get("OPENROUTER_KEY", "")
-).strip()
+# OpenRouter — read OpenRouterAPI first (project default env name; never log the value)
+# Key is re-read from os.environ on every access (Jenkins withCredentials, late env).
+_OPENROUTER_KEY_CANDIDATES: tuple[str, ...] = (
+    "OpenRouterAPI",
+    "OPENROUTER_API_KEY",
+    "OPENROUTER_KEY",
+)
+
+
+def openrouter_api_key() -> str:
+    m = sys.modules[__name__]
+    p = m.__dict__.get("OPENROUTER_API_KEY")
+    if isinstance(p, str) and p.strip():
+        return p.strip()
+    for _k in _OPENROUTER_KEY_CANDIDATES:
+        v = (os.environ.get(_k) or "").strip()
+        if v:
+            return v
+    return ""
+
+
 OPENROUTER_BASE_URL: str = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 OPENROUTER_HTTP_REFERER: str = os.environ.get("OPENROUTER_HTTP_REFERER", "").strip()
 OPENROUTER_APP_TITLE: str = os.environ.get("OPENROUTER_APP_TITLE", "Kodak Intelligent Platform").strip()
+
+# OpenRouter model IDs (override with OPENROUTER_MODEL_*; fallback_2 default is "rules" = not an API call)
+_DEFAULT_MODEL_PRIMARY: str = "openrouter/free"
+_DEFAULT_MODEL_FB1: str = "meta-llama/llama-3.3-70b-instruct:free"
+_DEFAULT_MODEL_FB2: str = "rules"
+
+
+def openrouter_model_primary() -> str:
+    s = (os.environ.get("OPENROUTER_MODEL_PRIMARY", "") or _DEFAULT_MODEL_PRIMARY).strip()
+    return s or _DEFAULT_MODEL_PRIMARY
+
+
+def openrouter_model_fallback_1() -> str:
+    s = (os.environ.get("OPENROUTER_MODEL_FALLBACK_1", "") or _DEFAULT_MODEL_FB1).strip()
+    return s or _DEFAULT_MODEL_FB1
+
+
+def openrouter_model_fallback_2() -> str:
+    s = (os.environ.get("OPENROUTER_MODEL_FALLBACK_2", "") or _DEFAULT_MODEL_FB2).strip()
+    return s or _DEFAULT_MODEL_FB2
+
+
+def openrouter_key_env_name_used() -> str:
+    return next((k for k in _OPENROUTER_KEY_CANDIDATES if (os.environ.get(k) or "").strip()), "")
+
+
+def openrouter_key_present() -> bool:
+    return bool(openrouter_api_key())
 
 # Optional: direct OpenAI (other tooling); intelligent_platform uses OpenRouter when key is set
 OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -37,7 +81,7 @@ OPENAI_BASE_URL: str = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com
 
 
 def openrouter_configured() -> bool:
-    return bool(OPENROUTER_API_KEY)
+    return openrouter_key_present()
 
 
 def ai_health_marks_unavailable() -> bool:

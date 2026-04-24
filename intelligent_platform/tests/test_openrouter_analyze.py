@@ -65,9 +65,13 @@ class TestOpenRouterAnalysis(unittest.TestCase):
             return json.dumps(expected)
 
         with patch("intelligent_platform.ai_failure_analyzer.call_openrouter", side_effect=fake_call):
-            with patch("intelligent_platform.ai_failure_analyzer.config.openrouter_configured", return_value=True):
-                with patch("intelligent_platform.ai_failure_analyzer.config.OPENROUTER_API_KEY", "sk-test"):
-                    out = analyze_failure(failure)
+            with patch(
+                "intelligent_platform.ai_failure_analyzer.config.ai_health_marks_unavailable",
+                return_value=False,
+            ):
+                with patch("intelligent_platform.ai_failure_analyzer.config.openrouter_configured", return_value=True):
+                    with patch("intelligent_platform.ai_failure_analyzer.config.openrouter_api_key", return_value="sk-test"):
+                        out = analyze_failure(failure)
 
         self.assertEqual(out["category"], "locator")
         self.assertIn("Login button", out["root_cause"])
@@ -95,9 +99,13 @@ class TestOpenRouterAnalysis(unittest.TestCase):
 
         f = {"error_message": "assertion failed on label X", "test_name": "t1"}
         with patch("intelligent_platform.ai_failure_analyzer.call_openrouter", side_effect=side_effect):
-            with patch("intelligent_platform.ai_failure_analyzer.config.openrouter_configured", return_value=True):
-                with patch("intelligent_platform.ai_failure_analyzer.config.OPENROUTER_API_KEY", "k"):
-                    out = analyze_failure(f)
+            with patch(
+                "intelligent_platform.ai_failure_analyzer.config.ai_health_marks_unavailable",
+                return_value=False,
+            ):
+                with patch("intelligent_platform.ai_failure_analyzer.config.openrouter_configured", return_value=True):
+                    with patch("intelligent_platform.ai_failure_analyzer.config.openrouter_api_key", return_value="k"):
+                        out = analyze_failure(f)
         self.assertIn(MODEL_PRIMARY, calls)
         self.assertIn(MODEL_FALLBACK, calls)
         self.assertEqual(out["category"], "assertion")

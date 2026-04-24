@@ -1,5 +1,5 @@
 """
-AI failure analysis — OpenRouter (DeepSeek V3.2 primary, Llama 3.3 70B fallback), strict JSON, rule fallback.
+AI failure analysis — OpenRouter (configurable primary + fallbacks), strict JSON, rule fallback.
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ logger = logging.getLogger("intelligent_platform.ai")
 
 _SYSTEM_STRICT_JSON = "You are a precise and strict JSON generator."
 
-# Full prompt (failure payload injected as JSON; example uses escaped braces in .format)
 _ANALYSIS_USER_PROMPT = """You are an expert mobile QA automation debugger.
 
 Your job is to analyze a FAILED test case and determine the REAL root cause.
@@ -102,7 +101,6 @@ def _coerce_result(parsed: dict[str, Any]) -> dict[str, Any]:
 
 
 def _analysis_usable(d: dict[str, Any]) -> bool:
-    """True if model output is a real classification (not total parse fallback)."""
     if str(d.get("category", "")).lower() == "unknown":
         return False
     if not str(d.get("root_cause", "")).strip():
@@ -113,16 +111,38 @@ def _analysis_usable(d: dict[str, Any]) -> bool:
     return True
 
 
-def _try_openrouter_model(
+def _is_api_model_id(s: str) -> bool:
+    t = (s or "").strip()
+    if not t or t.lower() == "rules":
+        return False
+    return "/" in t
+
+
+def _iter_api_models() -> list[str]:
+    out: list[str] = []
+    for m in (
+        config.openrouter_model_primary(),
+        config.openrouter_model_fallback_1(),
+        config.openrouter_model_fallback_2(),
+    ):
+        if _is_api_model_id(m) and m not in out:
+            out.append(m)
+    return out
+
+
+def _call_model_with_policy(
     failure: dict[str, Any], model: str, api_key: str
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, str | None]:
+    """
+    Returns (coerced_result, signal). signal: None = success, '401' = stop all OpenRouter,
+    '400' = bad request / invalid model (try next), 'exhausted' = try next after retries.
+    """
     user_prompt = _build_user_prompt(failure)
     messages = [
         {"role": "system", "content": _SYSTEM_STRICT_JSON},
         {"role": "user", "content": user_prompt},
     ]
-    last: Exception | None = None
-    for attempt in range(3):
+    for attempt in range(2):
         try:
             text = call_openrouter(
                 messages,
@@ -136,28 +156,72 @@ def _try_openrouter_model(
                 "OpenRouter success model=%s (truncated): %s", model, text[:600]
             )
             parsed = safe_json_parse(text)
-            return _coerce_result(parsed)
+            return _coerce_result(parsed), None
         except OpenRouterHTTPError as e:
-            last = e
             code = e.code or 0
             logger.warning("OpenRouter model=%s HTTP %s: %s", model, code, e)
+            if code == 401:
+                logger.error(
+                    "OpenRouter API key is invalid or missing (HTTP 401) — use rule-based fallback"
+                )
+                return None, "401"
             if code == 400:
                 # Invalid model / bad request — do not retry the same model
-                break
-            if code == 429 and attempt < 2:
-                time.sleep(2.0 * (attempt + 1))
+                return None, "400"
+            if code == 429 and attempt == 0:
+                time.sleep(2.0)
                 continue
-            break
+            if code == 429:
+                return None, "exhausted"
+            if 500 <= code < 600 and attempt == 0:
+                time.sleep(1.5)
+                continue
+            if 500 <= code < 600:
+                return None, "exhausted"
+            if attempt == 0:
+                time.sleep(1.0)
+                continue
+            return None, "exhausted"
         except Exception as e:
-            last = e
             logger.warning("OpenRouter model=%s attempt %s failed: %s", model, attempt + 1, e)
-            if attempt < 2:
-                time.sleep(1.5 * (attempt + 1))
-            else:
-                break
-    if last:
-        logger.error("Model %s failed: %s", model, last)
-    return None
+            if attempt == 0:
+                time.sleep(1.2)
+                continue
+            return None, "exhausted"
+    return None, "exhausted"
+
+
+def _read_global_ai_status() -> str:
+    p = config.workspace_root() / "build-summary" / "ai_status.txt"
+    if not p.is_file():
+        return "NOT_CHECKED"
+    try:
+        for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.strip().upper().startswith("AI_STATUS="):
+                return line.split("=", 1)[1].strip() or "UNKNOWN"
+    except OSError:
+        pass
+    return "UNKNOWN"
+
+
+def _mark_openrouter(
+    d: dict[str, Any], *, model_used: str, global_status: str
+) -> dict[str, Any]:
+    o = {**d}
+    o["source_label"] = "OpenRouter"
+    o["model_used"] = model_used
+    o["analysis_source"] = "OpenRouter"
+    o["ai_status"] = global_status
+    return o
+
+
+def _mark_rules(d: dict[str, Any], *, global_status: str) -> dict[str, Any]:
+    o = {**d}
+    o["source_label"] = "Rule-based fallback"
+    o["model_used"] = "rules"
+    o["analysis_source"] = "Rule-based fallback"
+    o["ai_status"] = global_status
+    return o
 
 
 # Rule-based patterns (final fallback; aligned with prior ATP rules)
@@ -256,37 +320,48 @@ def _rule_analyze(failure: dict[str, Any], note: str | None = None) -> dict[str,
 
 def analyze_failure(failure: dict[str, Any]) -> dict[str, Any]:
     """
-    OpenRouter → primary → explicit fallback (Llama) → ATP rules.
+    OpenRouter → each configured API model in order (primary, fallback, …) → rules.
     """
+    global_s = _read_global_ai_status()
+    logger.info(
+        "OpenRouter key present: %s | build AI_STATUS file: %s | models to try: %s",
+        "yes" if config.openrouter_key_present() else "no",
+        global_s,
+        _iter_api_models(),
+    )
+
     if config.ai_health_marks_unavailable():
         logger.info("AI health check: UNAVAILABLE — rule-based analyzer")
-        return _rule_analyze(failure, note="ai_status.txt: UNAVAILABLE")
+        d = _rule_analyze(failure, note="ai_status.txt: UNAVAILABLE")
+        return _mark_rules(d, global_status=global_s)
+
     if not config.openrouter_configured():
-        logger.info("OPENROUTER_API_KEY not set — rule-based analyzer")
-        return _rule_analyze(failure)
+        logger.info("OpenRouter API key not set (use OpenRouterAPI) — rule-based analyzer")
+        d = _rule_analyze(failure, note="no API key in env (OpenRouterAPI / OPENROUTER_API_KEY)")
+        return _mark_rules(d, global_status=global_s)
 
-    key = config.OPENROUTER_API_KEY
-    r1 = _try_openrouter_model(failure, MODEL_PRIMARY, key)
-    if r1 and _analysis_usable(r1):
-        logger.info(
-            "AI analysis result (primary %s): category=%s conf=%.2f",
-            MODEL_PRIMARY,
-            r1["category"],
-            r1["confidence"],
-        )
-        return r1
+    key = config.openrouter_api_key()
+    for model in _iter_api_models():
+        logger.info("OpenRouter: trying model=%s", model)
+        r, sig = _call_model_with_policy(failure, model, key)
+        if sig == "401":
+            d = _rule_analyze(
+                failure, note="OpenRouter HTTP 401 — key invalid or missing; rule-based"
+            )
+            return _mark_rules(d, global_status=global_s)
+        if r and _analysis_usable(r):
+            logger.info(
+                "AI analysis (OpenRouter) model=%s: category=%s conf=%.2f",
+                model,
+                r["category"],
+                r["confidence"],
+            )
+            return _mark_openrouter(r, model_used=model, global_status=global_s)
+        logger.warning("Model %s not usable (sig=%s) — next fallback or rules", model, sig)
 
-    logger.warning("Primary model unusable or failed — trying explicit fallback: %s", MODEL_FALLBACK)
-    r2 = _try_openrouter_model(failure, MODEL_FALLBACK, key)
-    if r2 and _analysis_usable(r2):
-        logger.info(
-            "AI analysis result (fallback %s): category=%s conf=%.2f",
-            MODEL_FALLBACK,
-            r2["category"],
-            r2["confidence"],
-        )
-        return r2
-
-    note = f"OpenRouter: primary={MODEL_PRIMARY} fallback={MODEL_FALLBACK} unavailable or unusable"
+    note = (
+        f"OpenRouter: all models { _iter_api_models() } failed or returned unusable output"
+    )
     logger.error("%s — using rules", note)
-    return _rule_analyze(failure, note=note)
+    d = _rule_analyze(failure, note=note)
+    return _mark_rules(d, global_status=global_s)
