@@ -19,7 +19,7 @@ from intelligent_platform.openrouter_client import MODEL_PRIMARY as OPR
 
 class TestOpenRouterAnalysis(unittest.TestCase):
     def test_model_constants_explicit(self) -> None:
-        self.assertEqual(OPR, "deepseek/deepseek-chat-v3.2")
+        self.assertEqual(OPR, "openrouter/free")
         self.assertEqual(OFB, "meta-llama/llama-3.3-70b-instruct:free")
         self.assertEqual(MODEL_PRIMARY, OPR)
         self.assertEqual(MODEL_FALLBACK, OFB)

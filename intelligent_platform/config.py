@@ -21,7 +21,11 @@ DEBUG_MODE: bool = _truthy("INTELLIGENT_PLATFORM_DEBUG", "0")
 AI_MAX_RETRIES: int = max(0, min(2, int(os.environ.get("AI_MAX_RETRIES", "2"))))
 
 # OpenRouter (explicit models in openrouter_client — no auto-routing)
-OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", os.environ.get("OPENROUTER_KEY", "")).strip()
+OPENROUTER_API_KEY: str = (
+    os.environ.get("OPENROUTER_API_KEY", "")
+    or os.environ.get("OpenRouterAPI", "")
+    or os.environ.get("OPENROUTER_KEY", "")
+).strip()
 OPENROUTER_BASE_URL: str = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 OPENROUTER_HTTP_REFERER: str = os.environ.get("OPENROUTER_HTTP_REFERER", "").strip()
 OPENROUTER_APP_TITLE: str = os.environ.get("OPENROUTER_APP_TITLE", "Kodak Intelligent Platform").strip()
@@ -34,6 +38,17 @@ OPENAI_BASE_URL: str = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com
 
 def openrouter_configured() -> bool:
     return bool(OPENROUTER_API_KEY)
+
+
+def ai_health_marks_unavailable() -> bool:
+    """If build-summary/ai_status.txt says UNAVAILABLE, skip OpenRouter in analyzers."""
+    p = workspace_root() / "build-summary" / "ai_status.txt"
+    if not p.is_file():
+        return False
+    try:
+        return "AI_STATUS=UNAVAILABLE" in p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
 
 # Email: orchestrator does not send mail; set to skip writing failed_summary for email pickup
 SKIP_EMAIL_ARTIFACTS: bool = _truthy("INTELLIGENT_PLATFORM_SKIP_EMAIL", "0")

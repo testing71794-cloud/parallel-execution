@@ -14,8 +14,17 @@ from typing import Any
 
 logger = logging.getLogger("intelligent_platform.openrouter")
 
-# Explicit model IDs (no provider auto-selection)
-MODEL_PRIMARY = "deepseek/deepseek-chat-v3.2"
+
+class OpenRouterHTTPError(RuntimeError):
+    """HTTP error from OpenRouter; .code is HTTP status if known."""
+
+    def __init__(self, message: str, *, code: int | None = None, body: str = ""):
+        super().__init__(message)
+        self.code = code
+        self.body = body
+
+# Explicit model IDs (no provider auto-selection) — free-tier primary + reliable fallback
+MODEL_PRIMARY = "openrouter/free"
 MODEL_FALLBACK = "meta-llama/llama-3.3-70b-instruct:free"
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
@@ -66,7 +75,11 @@ def call_openrouter(
             err_body = e.read().decode("utf-8", errors="replace")[:2000]
         except Exception:
             pass
-        raise RuntimeError(f"OpenRouter HTTP {e.code}: {err_body or e.reason}") from e
+        raise OpenRouterHTTPError(
+            f"OpenRouter HTTP {e.code}: {err_body or e.reason}",
+            code=e.code,
+            body=err_body,
+        ) from e
     except (urllib.error.URLError, socket.timeout, OSError) as e:
         raise RuntimeError(f"OpenRouter network error: {e}") from e
 

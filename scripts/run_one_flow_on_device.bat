@@ -129,14 +129,24 @@ if not "%RUN_EXIT%"=="0" (
 )
 
 :write_result
+if not defined DEVICE_NAME (
+  for /f "delims=" %%N in ('python "%REPO_ROOT%\scripts\resolve_device_name.py" "%DEVICE_ID%" 2^>nul') do set "DEVICE_NAME=%%N"
+)
+if not defined DEVICE_NAME set "DEVICE_NAME=%DEVICE_ID%"
 > "%STATUS_FILE%" (
     echo suite=%SUITE%
     echo flow=%FLOW_NAME%
     echo device=%DEVICE_ID%
+    echo device_id=%DEVICE_ID%
+    echo device_name=%DEVICE_NAME%
     echo status=%STATUS_VALUE%
     echo exit_code=%RUN_EXIT%
     echo reason=%REASON%
     echo log_file=%LOG_FILE%
+    echo first_log_path=%LOG_FILE%
+    echo log_path=%LOG_FILE%
+    echo retry_count=0
+    echo timestamp=%date% %time%
 )
 
 > "%RESULT_FILE%" (

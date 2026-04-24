@@ -1,0 +1,25 @@
+appId: com.kodaksmile
+name: Signup Flow
+env:
+  FULL_NAME: ${FULL_NAME}
+  EMAIL: ${EMAIL}
+  PASSWORD: ${PASSWORD}
+---
+- waitForAnimationToEnd
+
+- assertVisible: "Sign Up"
+
+- tapOn: "Full Name"
+- inputText: ${FULL_NAME}
+
+- tapOn: "Email"
+- inputText: ${EMAIL}
+
+- tapOn: "Password"
+- inputText: ${PASSWORD}
+
+- hideKeyboard:
+    optional: true
+
+- tapOn: "Create Account"
+- waitForAnimationToEnd

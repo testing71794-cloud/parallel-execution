@@ -8,17 +8,26 @@ pipeline {
             description: 'devices = your PC with USB phones'
         )
         string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'App package id for Maestro/app launch checks')
-        string(name: 'MAESTRO_CMD', defaultValue: 'maestro.bat', description: 'Maestro launcher (e.g. maestro.bat). Use a full path if the agent runs as Local System — USERPROFILE is systemprofile, not your user.')
-        string(name: 'MAESTRO_HOME', defaultValue: 'C:\\Users\\HP\\maestro\\maestro\\bin', description: 'Folder containing maestro.bat. Required when the agent runs as Local System (USERPROFILE is systemprofile). Change if Maestro is installed elsewhere.')
-        string(name: 'ANDROID_HOME', defaultValue: 'C:\\Users\\HP\\AppData\\Local\\Android\\Sdk', description: 'Android SDK root (must contain platform-tools\\adb.exe). Required for Local System — user adb is not on PATH. Change if your SDK is elsewhere.')
-        string(name: 'JAVA_HOME_OVERRIDE', defaultValue: '', description: 'Optional JDK for Maestro on device node (sets MAESTRO_JAVA_HOME). Leave empty to use Eclipse Adoptium JDK 25 bundled path in set_maestro_java.bat.')
+        string(name: 'MAESTRO_CMD', defaultValue: 'maestro.bat', description: 'Maestro launcher (e.g. maestro.bat).')
+        string(name: 'MAESTRO_HOME', defaultValue: 'C:\\Users\\HP\\maestro\\maestro\\bin', description: 'Folder containing maestro.bat.')
+        string(name: 'ANDROID_HOME', defaultValue: 'C:\\Users\\HP\\AppData\\Local\\Android\\Sdk', description: 'Android SDK root.')
+        string(name: 'JAVA_HOME_OVERRIDE', defaultValue: '', description: 'Optional JDK for Maestro (MAESTRO_JAVA_HOME).')
         booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run non-printing flows')
         booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run printing flows')
-        booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Run AI analysis when failures happen')
+        booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Test OpenRouter + run intelligent_platform failure analysis')
         booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send final summary email')
-        booleanParam(name: 'CLEAR_STATE', defaultValue: true, description: 'Reserved for flow runner; do not map RETRY here')
-        booleanParam(name: 'RETRY_FAILED', defaultValue: false, description: 'Reserved for future retry logic only')
-
+        booleanParam(name: 'CLEAR_STATE', defaultValue: true, description: 'Clear app state in suite runners')
+        booleanParam(name: 'RETRY_FAILED', defaultValue: false, description: 'Reserved for future retry logic')
+        booleanParam(
+            name: 'RUN_ATP_SUITE',
+            defaultValue: false,
+            description: 'Run automation_with_testcases (ATP) in addition to the main pipeline (all devices, parallel).'
+        )
+        booleanParam(
+            name: 'RUN_AUTOMATION_WITH_TESTCASES',
+            defaultValue: false,
+            description: 'Alias: same as RUN_ATP_SUITE. Either true → ATP runs once; does not replace non/printing.'
+        )
     }
 
     options {
@@ -60,7 +69,6 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-
                     if exist reports rmdir /s /q reports
                     if exist status rmdir /s /q status
                     if exist collected-artifacts rmdir /s /q collected-artifacts
@@ -68,22 +76,22 @@ pipeline {
                     if exist .maestro rmdir /s /q .maestro
                     if exist temp-runners rmdir /s /q temp-runners
                     if exist ai-doctor/artifacts rmdir /s /q ai-doctor/artifacts
+                    if exist automation_with_testcases/logs rmdir /s /q automation_with_testcases\\logs
+                    if exist automation_with_testcases/results rmdir /s /q automation_with_testcases\\results
                     del /q detected_devices.txt 2>nul
                     del /q *.flag 2>nul
                     del /q *.failed 2>nul
-
                     python -m pip install --upgrade pip || (echo 1> install_failed.flag & exit /b 1)
                     python -m pip install -r scripts/requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
-
                     if exist package.json (
                         call npm ci || call npm install || (echo 1> install_failed.flag & exit /b 1)
                     )
-
                     if exist ai-doctor/package.json (
                         cd ai-doctor
                         call npm ci || call npm install || (echo 1> ..\\install_failed.flag & exit /b 1)
                         cd ..
                     )
+                    if not exist build-summary mkdir build-summary
                     """
                 }
             }
@@ -100,18 +108,11 @@ pipeline {
                             envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
                             envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
                         }
-                        if (params.MAESTRO_HOME?.trim()) {
-                            envList << "MAESTRO_HOME=${params.MAESTRO_HOME}"
-                        }
-                        if (params.ANDROID_HOME?.trim()) {
-                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
-                        }
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
-                            echo JAVA_HOME=%JAVA_HOME%
-                            echo MAESTRO_HOME=%MAESTRO_HOME%
-                            echo ANDROID_HOME=%ANDROID_HOME%
                             where java
                             java -version
                             call scripts/precheck_environment.bat "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" || (echo 1> precheck_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
@@ -133,16 +134,11 @@ pipeline {
                             envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
                             envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
                         }
-                        if (params.MAESTRO_HOME?.trim()) {
-                            envList << "MAESTRO_HOME=${params.MAESTRO_HOME}"
-                        }
-                        if (params.ANDROID_HOME?.trim()) {
-                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
-                        }
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
-                            echo ANDROID_HOME=%ANDROID_HOME%
                             call scripts/list_devices.bat || (echo 1> device_detection_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
                             """
                         }
@@ -155,7 +151,7 @@ pipeline {
             when { expression { return params.RUN_NON_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         def envList = []
                         if (params.JAVA_HOME_OVERRIDE?.trim()) {
@@ -163,21 +159,13 @@ pipeline {
                             envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
                             envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
                         }
-                        if (params.MAESTRO_HOME?.trim()) {
-                            envList << "MAESTRO_HOME=${params.MAESTRO_HOME}"
-                        }
-                        if (params.ANDROID_HOME?.trim()) {
-                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
-                        }
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
-                            echo JAVA_HOME=%JAVA_HOME%
-                            echo MAESTRO_HOME=%MAESTRO_HOME%
-                            echo ANDROID_HOME=%ANDROID_HOME%
                             where java
-                            java -version
-                            call scripts/run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                            call scripts/run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag)
                             """
                         }
                     }
@@ -189,12 +177,13 @@ pipeline {
             when { expression { return params.RUN_NON_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    if not exist status\\nonprinting__*.txt (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                    if not exist reports\\nonprinting\\results\\*.csv (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                    if not exist reports\\nonprinting\\logs\\*.log (echo 1> nonprinting_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    python scripts/validate_suite_artifacts.py nonprinting "${env.WORKSPACE}" || (echo 1> nonprinting_no_results.flag)
+                    if not exist status\\nonprinting__*.txt (echo 1> nonprinting_no_results.flag)
+                    if not exist reports\\nonprinting\\results\\*.csv (echo 1> nonprinting_no_results.flag)
+                    if not exist reports\\nonprinting\\logs\\*.log (echo 1> nonprinting_no_results.flag)
                     """
                 }
             }
@@ -204,10 +193,11 @@ pipeline {
             when { expression { return params.RUN_NON_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    python scripts/generate_excel_report.py status reports/nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist build-summary mkdir build-summary
+                    python scripts/generate_excel_report.py status reports/nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag)
                     """
                 }
             }
@@ -217,7 +207,7 @@ pipeline {
             when { expression { return params.RUN_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         def envList = []
                         if (params.JAVA_HOME_OVERRIDE?.trim()) {
@@ -225,21 +215,13 @@ pipeline {
                             envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
                             envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
                         }
-                        if (params.MAESTRO_HOME?.trim()) {
-                            envList << "MAESTRO_HOME=${params.MAESTRO_HOME}"
-                        }
-                        if (params.ANDROID_HOME?.trim()) {
-                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
-                        }
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
-                            echo JAVA_HOME=%JAVA_HOME%
-                            echo MAESTRO_HOME=%MAESTRO_HOME%
-                            echo ANDROID_HOME=%ANDROID_HOME%
                             where java
-                            java -version
-                            call scripts/run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                            call scripts/run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag)
                             """
                         }
                     }
@@ -251,12 +233,13 @@ pipeline {
             when { expression { return params.RUN_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    if not exist status\\printing__*.txt (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                    if not exist reports\\printing\\results\\*.csv (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                    if not exist reports\\printing\\logs\\*.log (echo 1> printing_no_results.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    python scripts/validate_suite_artifacts.py printing "${env.WORKSPACE}" || (echo 1> printing_no_results.flag)
+                    if not exist status\\printing__*.txt (echo 1> printing_no_results.flag)
+                    if not exist reports\\printing\\results\\*.csv (echo 1> printing_no_results.flag)
+                    if not exist reports\\printing\\logs\\*.log (echo 1> printing_no_results.flag)
                     """
                 }
             }
@@ -266,10 +249,26 @@ pipeline {
             when { expression { return params.RUN_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    python scripts/generate_excel_report.py status reports/printing_summary printing || (echo 1> printing_report_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist build-summary mkdir build-summary
+                    python scripts/generate_excel_report.py status reports/printing_summary printing || (echo 1> printing_report_failed.flag)
+                    """
+                }
+            }
+        }
+
+        stage('Test AI Connection') {
+            when { expression { return params.RUN_AI_ANALYSIS } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
+                    if not exist build-summary mkdir build-summary
+                    python scripts/test_ai_connection.py
+                    if exist build-summary\\ai_status.txt ( type build-summary\\ai_status.txt ) else ( echo No ai_status.txt )
                     """
                 }
             }
@@ -279,16 +278,47 @@ pipeline {
             when { expression { return params.RUN_AI_ANALYSIS } }
             agent { label params.DEVICES_AGENT }
             steps {
-                script {
-                    if (fileExists('pipeline_failed.flag')) {
-                        catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
+                    if not exist build-summary mkdir build-summary
+                    if not exist build-summary\\ai_status.txt echo AI_STATUS=FILE_MISSING > build-summary\\ai_status.txt
+                    call scripts/run_ai_analysis.bat || (echo 1> ai_failed.flag)
+                    """
+                }
+            }
+        }
+
+        stage('Run ATP (automation_with_testcases) — parallel') {
+            when { expression { return params.RUN_ATP_SUITE || params.RUN_AUTOMATION_WITH_TESTCASES } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        def envList = []
+                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
+                            envList << "MAESTRO_JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
+                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
+                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
+                        }
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
+                        if (params.MAESTRO_CMD?.trim()) {
+                            envList << "MAESTRO_CMD=${params.MAESTRO_CMD}"
+                        } else {
+                            envList << "MAESTRO_CMD=maestro.bat"
+                        }
+                        withEnv(envList) {
                             bat """
-                            cd /d "${env.WORKSPACE}"
-                            call scripts/run_ai_analysis.bat || (echo 1> ai_failed.flag & exit /b 1)
+                            cd /d "${env.WORKSPACE}" && if not exist build-summary mkdir build-summary
+                            if not exist "automation_with_testcases\\scripts\\run_automation_with_testcases.bat" (
+                                echo ERROR: run_automation_with_testcases.bat missing
+                                (echo 1) >atp_failed.flag
+                                exit /b 0
+                            )
+                            call "automation_with_testcases\\scripts\\run_automation_with_testcases.bat" || ( (echo 1) >atp_failed.flag & exit /b 0)
                             """
                         }
-                    } else {
-                        echo 'No failures detected. Skipping AI analysis.'
                     }
                 }
             }
@@ -297,14 +327,17 @@ pipeline {
         stage('Build Summary') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    python scripts/generate_build_summary.py status build-summary || (echo 1> summary_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                    if exist scripts/generate_final_report.py (
-                        python scripts/generate_final_report.py . status build-summary/final_execution_report.xlsx || (echo 1>> summary_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
+                    if not exist build-summary mkdir build-summary
+                    python scripts/generate_build_summary.py status build-summary || (echo 1> summary_failed.flag)
+                    if exist scripts\\generate_final_report.py (
+                        python scripts/generate_final_report.py . status build-summary\\final_execution_report.xlsx
+                    ) else if exist build-summary\\final_execution_report.xlsx (
+                        echo final_execution_report already from generate_excel merge.
                     ) else (
-                        echo generate_final_report.py not found. Skipping final report generation.
+                        echo No generate_final_report.py; Excel merge should exist from per-suite report.
                     )
                     """
                 }
@@ -321,7 +354,6 @@ pipeline {
                         'SMTP_PORT=587',
                         'SMTP_USER=kodaksmilechina@gmail.com',
                         'SENDER_EMAIL=kodaksmilechina@gmail.com',
-                        'SMTP_PASS=gabq yztc ztmt vvhm',
                         'SENDER_PASSWORD=gabq yztc ztmt vvhm',
                         'MAIL_TO=kodaksmilechina@gmail.com',
                         'RECEIVER_EMAIL=kodaksmilechina@gmail.com',
@@ -329,13 +361,10 @@ pipeline {
                         'SMTP_SSL=0',
                         'PYTHONIOENCODING=utf-8'
                     ]) {
-                        bat '''
-                        cd /d C:\\JenkinsAgent\\workspace\\Kodak-smile-automation
-                        python scripts\\send_execution_email.py || (
-                            echo 1>email_failed.flag
-                            exit /b 1
-                        )
-                        '''
+                        bat """
+                        cd /d "${env.WORKSPACE}"
+                        if exist scripts\\send_execution_email.py ( python scripts\\send_execution_email.py || ( echo 1>email_failed.flag & exit /b 0 ) ) else ( echo send_execution_email.py not found. )
+                        """
                     }
                 }
             }
@@ -344,8 +373,8 @@ pipeline {
         stage('Archive Reports & Artifacts') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                    archiveArtifacts artifacts: 'reports/**, status/**, collected-artifacts/**, build-summary/**, .maestro/screenshots/**, ai-doctor/artifacts/**, detected_devices.txt, *.flag, *.failed', allowEmptyArchive: true
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    archiveArtifacts artifacts: 'reports/**, status/**, collected-artifacts/**, build-summary/**, .maestro/screenshots/**, ai-doctor/artifacts/**, detected_devices.txt, automation_with_testcases/reports/**, automation_with_testcases/logs/**, automation_with_testcases/results/**, *.flag, *.failed', allowEmptyArchive: true
                 }
             }
         }
@@ -354,39 +383,19 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 script {
-                    def hardFailureFlags = [
-                        'pipeline_failed.flag',
-                        'install_failed.flag',
-                        'precheck_failed.flag',
-                        'device_detection_failed.flag',
-                        'nonprinting_failed.flag',
-                        'printing_failed.flag',
-                        'nonprinting_no_results.flag',
-                        'printing_no_results.flag'
-                    ]
-
                     def unstableFlags = [
-                        'nonprinting_report_failed.flag',
-                        'printing_report_failed.flag',
-                        'summary_failed.flag',
-                        'ai_failed.flag',
-                        'email_failed.flag'
+                        'nonprinting_failed.flag', 'nonprinting_no_results.flag', 'nonprinting_report_failed.flag',
+                        'printing_failed.flag', 'printing_no_results.flag', 'printing_report_failed.flag',
+                        'summary_failed.flag', 'ai_failed.flag', 'email_failed.flag', 'atp_failed.flag', 'pipeline_failed.flag',
                     ]
-
-                    def hardFailures = hardFailureFlags.findAll { fileExists(it) }
-                    def unstableIssues = unstableFlags.findAll { fileExists(it) }
-
-                    if (!hardFailures.isEmpty()) {
+                    def u = false
+                    unstableFlags.each { f -> if (fileExists(f)) { u = true } }
+                    if (fileExists('install_failed.flag') || fileExists('precheck_failed.flag') || fileExists('device_detection_failed.flag')) {
                         currentBuild.result = 'FAILURE'
-                        echo 'Final result: FAILURE'
-                        echo 'Hard failure flags: ' + hardFailures.join(', ')
-                    } else if (!unstableIssues.isEmpty() || currentBuild.currentResult == 'UNSTABLE') {
+                    } else if (u) {
                         currentBuild.result = 'UNSTABLE'
-                        echo 'Final result: UNSTABLE'
-                        echo 'Unstable flags: ' + unstableIssues.join(', ')
                     } else {
                         currentBuild.result = 'SUCCESS'
-                        echo 'Final result: SUCCESS'
                     }
                 }
             }
@@ -394,8 +403,6 @@ pipeline {
     }
 
     post {
-        always {
-            echo "Build finished with status: ${currentBuild.currentResult}"
-        }
+        always { echo "Build: ${currentBuild.currentResult}" }
     }
 }

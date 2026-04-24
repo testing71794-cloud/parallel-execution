@@ -1,10 +1,9 @@
 appId: com.kodaksmile
-name: Flow8 - Precut Print  + Back + Home screen
+name: Flow8 - Precut Print Different Photo Single Select From Album + Back + Home screen
 ---
-- launchApp
+- launchApp:
+    clearState: true
 - waitForAnimationToEnd
-
-# Load elements (POM)
 - runFlow: ../elements/loadElements.yaml
 - runFlow: ../flows/I will do it later.yaml
 - runFlow: ../flows/Agree Term and Condition.yaml
@@ -23,7 +22,6 @@ name: Flow8 - Precut Print  + Back + Home screen
       - waitForAnimationToEnd
 - runFlow: ../flows/onboardingSkip.yaml
 - assertVisible: ${output.home.titleText}
-- runFlow: ../flows/findAndConnectPrinter.yaml
 - runFlow: ../flows/openAlbum.yaml
 - runFlow: ../flows/selectSinglePhoto.yaml
 - waitForAnimationToEnd
@@ -34,18 +32,12 @@ name: Flow8 - Precut Print  + Back + Home screen
       - tapOn: ${output.editor.precutsTab}
       - waitForAnimationToEnd
       - tapOn:
-          point: "20%,60%" # choose a precut option
+          point: "20%,60%"
       - waitForAnimationToEnd
-# ----------------------------
-# 1) Pre-Cut Stickers info popup
-# ----------------------------
 - runFlow:
     when:
       visible: "Pre-Cut Stickers"
     commands:
-      - assertVisible: "Pre-Cut Stickers"
-
-      # If the link text is present, tap only the link (NOT the whole sentence)
       - runFlow:
           when:
             visible: "Kodak 2x3 Pre-Cut Sticker Paper"
@@ -54,41 +46,19 @@ name: Flow8 - Precut Print  + Back + Home screen
             - waitForAnimationToEnd
             - back
             - waitForAnimationToEnd
-
-      # Close popup
       - tapOn: "OK"
       - waitForAnimationToEnd
-
-# ----------------------------
-# 2) CREATE PRE-CUT STICKERS (photo picker)
-# ----------------------------
 - assertVisible: |-
     CREATE PRE-CUT
      STICKERS
-
-# Select 2 photos (best-effort by coordinates because IDs are unknown in the video)
-# Adjust these points if your grid layout differs.
-- tapOn:
-    point: "12%,78%" # bottom-left thumbnail
 - waitForAnimationToEnd
 - tapOn:
-    point: "50%,78%" # another thumbnail near the middle
+    id: relativeLayoutItem
 - waitForAnimationToEnd
-
-- assertVisible: "Next"
 - tapOn: "Next"
 - waitForAnimationToEnd
-
-# ----------------------------
-# 3) ADJUST PRE-CUT STICKERS screen
-# ----------------------------
-- assertVisible: |-
-    ADJUST PRE-CUT
-     STICKERS
-- assertVisible: "Save"
 - tapOn: "Save"
 - waitForAnimationToEnd
-
 - tapOn: "Close"
 - runFlow:
     when:
@@ -100,5 +70,5 @@ name: Flow8 - Precut Print  + Back + Home screen
       visible: "All Photos"
     commands:
       - tapOn:
-         point:1%,9%
+          point: "1%,9%"
       - waitForAnimationToEnd

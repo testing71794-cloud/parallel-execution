@@ -15,6 +15,7 @@ from .json_safety import safe_json_parse
 from .openrouter_client import (
     MODEL_FALLBACK,
     MODEL_PRIMARY,
+    OpenRouterHTTPError,
     call_openrouter,
 )
 
@@ -120,9 +121,8 @@ def _try_openrouter_model(
         {"role": "system", "content": _SYSTEM_STRICT_JSON},
         {"role": "user", "content": user_prompt},
     ]
-    attempts = 1 + max(0, min(2, config.AI_MAX_RETRIES))
     last: Exception | None = None
-    for attempt in range(attempts):
+    for attempt in range(3):
         try:
             text = call_openrouter(
                 messages,
@@ -137,15 +137,26 @@ def _try_openrouter_model(
             )
             parsed = safe_json_parse(text)
             return _coerce_result(parsed)
+        except OpenRouterHTTPError as e:
+            last = e
+            code = e.code or 0
+            logger.warning("OpenRouter model=%s HTTP %s: %s", model, code, e)
+            if code == 400:
+                # Invalid model / bad request — do not retry the same model
+                break
+            if code == 429 and attempt < 2:
+                time.sleep(2.0 * (attempt + 1))
+                continue
+            break
         except Exception as e:
             last = e
-            logger.warning(
-                "OpenRouter model=%s attempt %s failed: %s", model, attempt + 1, e
-            )
-            if attempt + 1 < attempts:
+            logger.warning("OpenRouter model=%s attempt %s failed: %s", model, attempt + 1, e)
+            if attempt < 2:
                 time.sleep(1.5 * (attempt + 1))
+            else:
+                break
     if last:
-        logger.error("Model %s exhausted: %s", model, last)
+        logger.error("Model %s failed: %s", model, last)
     return None
 
 
@@ -245,8 +256,11 @@ def _rule_analyze(failure: dict[str, Any], note: str | None = None) -> dict[str,
 
 def analyze_failure(failure: dict[str, Any]) -> dict[str, Any]:
     """
-    OpenRouter → primary (DeepSeek) → explicit fallback (Llama) → ATP rules.
+    OpenRouter → primary → explicit fallback (Llama) → ATP rules.
     """
+    if config.ai_health_marks_unavailable():
+        logger.info("AI health check: UNAVAILABLE — rule-based analyzer")
+        return _rule_analyze(failure, note="ai_status.txt: UNAVAILABLE")
     if not config.openrouter_configured():
         logger.info("OPENROUTER_API_KEY not set — rule-based analyzer")
         return _rule_analyze(failure)

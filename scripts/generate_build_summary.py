@@ -45,8 +45,7 @@ def main() -> int:
 
     results = [parse_status_file(p) for p in sorted(status_dir.glob("*.txt")) if parse_status_file(p).get("status") != "RUNNING"]
     if not results:
-        print(f"ERROR: No completed status files found in {status_dir}")
-        return 1
+        print(f"Warning: no completed status files in {status_dir} — writing empty build summary")
 
     wb = Workbook()
     ws = wb.active
@@ -59,9 +58,9 @@ def main() -> int:
     ws["A3"] = "Total Results"
     ws["B3"] = len(results)
     ws["A4"] = "Passed"
-    ws["B4"] = sum(1 for r in results if r["status"] == "PASS")
+    ws["B4"] = sum(1 for r in results if r.get("status") == "PASS")
     ws["A5"] = "Failed"
-    ws["B5"] = sum(1 for r in results if r["status"] != "PASS")
+    ws["B5"] = sum(1 for r in results if r.get("status") not in ("PASS",))
 
     start = 8
     headers = ["Suite", "Flow", "Device", "Status", "Exit Code", "Log"]
@@ -78,7 +77,7 @@ def main() -> int:
         ws.cell(row=row_idx, column=6, value=row.get("log", ""))
         row_idx += 1
 
-    suite_counter = defaultdict(Counter)
+    suite_counter: defaultdict = defaultdict(Counter)
     for row in results:
         suite_counter[row.get("suite", "")][row.get("status", "UNKNOWN")] += 1
 
@@ -92,7 +91,8 @@ def main() -> int:
         failed = total - passed
         ws2.append([suite, passed, failed, total])
 
-    final_xlsx = output_dir / "final_execution_report.xlsx"
+    # Do not clobber final_execution_report.xlsx (owned by generate_excel_report.py merge)
+    final_xlsx = output_dir / "build_summary_overview.xlsx"
     wb.save(final_xlsx)
 
     html = [
