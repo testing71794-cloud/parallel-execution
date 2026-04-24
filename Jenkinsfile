@@ -1,7 +1,27 @@
+// Strip common mistake: parameter value "OPENROUTER_CREDENTIALS_ID = OPENROUTER_API_KEY" (Jenkins would look up that full string as credential ID).
+def normalizeOpenRouterCredsId = { Object raw ->
+    if (raw == null) {
+        return ''
+    }
+    def s = raw.toString().trim()
+    if (!s) {
+        return ''
+    }
+    if (s.contains('=')) {
+        def parts = s.split('=', 2)
+        if (parts.length == 2) {
+            s = parts[1].trim()
+        }
+    }
+    s = s.replaceAll('(?i)^OPENROUTER_CREDENTIALS_ID\\s*', '').trim()
+    return s
+}
+
 // Bind Jenkins Secret text → OPENROUTER_API_KEY for Python / Maestro (optional).
 def withOpenRouterCredentials = { String credsId, Closure action ->
-    if (credsId != null && credsId.toString().trim()) {
-        withCredentials([string(credentialsId: credsId.toString().trim(), variable: 'OPENROUTER_API_KEY')]) {
+    def id = normalizeOpenRouterCredsId(credsId)
+    if (id) {
+        withCredentials([string(credentialsId: id, variable: 'OPENROUTER_API_KEY')]) {
             action()
         }
     } else {
@@ -29,20 +49,10 @@ pipeline {
         booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send final summary email')
         booleanParam(name: 'CLEAR_STATE', defaultValue: true, description: 'Clear app state in suite runners')
         booleanParam(name: 'RETRY_FAILED', defaultValue: false, description: 'Reserved for future retry logic')
-        booleanParam(
-            name: 'RUN_ATP_SUITE',
-            defaultValue: false,
-            description: 'Run automation_with_testcases (ATP) in addition to the main pipeline (all devices, parallel).'
-        )
-        booleanParam(
-            name: 'RUN_AUTOMATION_WITH_TESTCASES',
-            defaultValue: false,
-            description: 'Alias: same as RUN_ATP_SUITE. Either true → ATP runs once; does not replace non/printing.'
-        )
         string(
             name: 'OPENROUTER_CREDENTIALS_ID',
-            defaultValue: '',
-            description: 'Jenkins "Secret text" credential ID. Injects into OPENROUTER_API_KEY for Maestro signup AI, test_ai_connection, Excel AI, and AI analysis. Create a Secret text credential with your OpenRouter key, then put its ID here. Leave empty to use env already set on the agent.'
+            defaultValue: 'OPENROUTER_API_KEY',
+            description: 'Jenkins "Secret text" credential ID only (e.g. OPENROUTER_API_KEY). Injects as OPENROUTER_API_KEY. Do not paste the whole parameter line. Leave empty to use env already set on the agent.'
         )
     }
 
@@ -325,43 +335,6 @@ pipeline {
             }
         }
 
-        stage('Run ATP (automation_with_testcases) — parallel') {
-            when { expression { return params.RUN_ATP_SUITE || params.RUN_AUTOMATION_WITH_TESTCASES } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        def envList = []
-                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "MAESTRO_JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
-                        }
-                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
-                        if (params.MAESTRO_CMD?.trim()) {
-                            envList << "MAESTRO_CMD=${params.MAESTRO_CMD}"
-                        } else {
-                            envList << "MAESTRO_CMD=maestro.bat"
-                        }
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            withEnv(envList) {
-                                bat """
-                                cd /d "${env.WORKSPACE}" && if not exist build-summary mkdir build-summary
-                                if not exist "automation_with_testcases\\scripts\\run_automation_with_testcases.bat" (
-                                    echo ERROR: run_automation_with_testcases.bat missing
-                                    (echo 1) >atp_failed.flag
-                                    exit /b 0
-                                )
-                                call "automation_with_testcases\\scripts\\run_automation_with_testcases.bat" || ( (echo 1) >atp_failed.flag & exit /b 0)
-                                """
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         stage('Build Summary') {
             agent { label params.DEVICES_AGENT }
             steps {
@@ -424,7 +397,7 @@ pipeline {
                     def unstableFlags = [
                         'nonprinting_failed.flag', 'nonprinting_no_results.flag', 'nonprinting_report_failed.flag',
                         'printing_failed.flag', 'printing_no_results.flag', 'printing_report_failed.flag',
-                        'summary_failed.flag', 'ai_failed.flag', 'email_failed.flag', 'atp_failed.flag', 'pipeline_failed.flag',
+                        'summary_failed.flag', 'ai_failed.flag', 'email_failed.flag', 'pipeline_failed.flag',
                     ]
                     def u = false
                     unstableFlags.each { f -> if (fileExists(f)) { u = true } }

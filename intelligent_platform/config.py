@@ -37,14 +37,16 @@ def openrouter_api_key() -> str:
         return p.strip()
     for _k in _OPENROUTER_KEY_CANDIDATES:
         v = (os.environ.get(_k) or "").strip()
+        v = v.strip('"').strip("'")
         if v:
             return v
     return ""
 
 
 OPENROUTER_BASE_URL: str = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
-OPENROUTER_HTTP_REFERER: str = os.environ.get("OPENROUTER_HTTP_REFERER", "").strip()
-OPENROUTER_APP_TITLE: str = os.environ.get("OPENROUTER_APP_TITLE", "Kodak Intelligent Platform").strip()
+# OpenRouter expects a site URL for free-tier routing; empty referer can yield empty model output.
+OPENROUTER_HTTP_REFERER: str = (os.environ.get("OPENROUTER_HTTP_REFERER", "") or "http://localhost").strip()
+OPENROUTER_APP_TITLE: str = (os.environ.get("OPENROUTER_APP_TITLE", "") or "Kodak Smile Automation").strip()
 
 # OpenRouter model IDs (override with OPENROUTER_MODEL_*; fallback_2 default is "rules" = not an API call)
 _DEFAULT_MODEL_PRIMARY: str = "openrouter/free"

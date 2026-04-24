@@ -369,10 +369,12 @@ def build_workbook(
 
 def _ai_use_openrouter() -> bool:
     p = REPO / "build-summary" / "ai_status.txt"
-    if p.is_file() and "AI_STATUS=AVAILABLE" in p.read_text(
-        encoding="utf-8", errors="ignore"
-    ):
-        return True
+    if p.is_file():
+        text = p.read_text(encoding="utf-8", errors="ignore")
+        if "AI_STATUS=UNAVAILABLE" in text:
+            return False
+        if "AI_STATUS=AVAILABLE" in text:
+            return True
     return os.environ.get("EXCEL_AI_OPENROUTER", "0").lower() in ("1", "true", "yes")
 
 
