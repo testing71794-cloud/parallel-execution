@@ -20,7 +20,9 @@ if str(REPO) not in sys.path:
 
 from mailout.send_email import (  # noqa: E402
     build_email_html,
+    build_summary_display_pairs,
     read_execution_table_rows,
+    read_summary_sheet_key_values,
     resolve_final_excel_path,
 )
 
@@ -44,7 +46,10 @@ def main() -> int:
         out.parent.mkdir(parents=True, exist_ok=True)
 
     gen = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    html = build_email_html(rows, gen, err)
+    sheet_kv = read_summary_sheet_key_values(xlsx) if xlsx.is_file() else {}
+    summary_pairs = build_summary_display_pairs(sheet_kv, rows, gen)
+    att = ["final_execution_report.xlsx", "execution_logs.zip (execution logs)"]
+    html = build_email_html(rows, gen, err, att, summary_pairs)
     out.write_text(html, encoding="utf-8")
     print(f"Wrote: {out}")
     print("Open in browser: file:///" + str(out).replace("\\", "/"))

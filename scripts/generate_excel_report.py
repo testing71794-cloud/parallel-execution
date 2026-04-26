@@ -45,6 +45,7 @@ COLS = [
     "Failure Step",
     "Error Message",
     "AI Failure Summary",
+    "AI Analyses",
     "Root Cause Category",
     "Suggested Fix",
     "AI Confidence",
@@ -171,6 +172,7 @@ def _rows_to_raw_dicts(
                 "Failure Step": (an.get("failure_step") or "")[:2000],
                 "Error Message": (an.get("error_message") or "")[:2000],
                 "AI Failure Summary": (an.get("ai_failure_summary") or "—")[:2000],
+                "AI Analyses": (an.get("ai_failure_summary") or "—")[:2000],
                 "Root Cause Category": (an.get("root_cause_category") or "—")[:120],
                 "Suggested Fix": (an.get("suggested_fix") or "—")[:2000],
                 "AI Confidence": float(an.get("ai_confidence", 0.65) or 0.65),
@@ -236,9 +238,12 @@ def _merge_build_summary(
                         continue
                     if su not in by_suites:
                         by_suites[su] = []
-                    by_suites[su].append(
-                        {c: d.get(c, "") for c in COLS}
-                    )
+                    rowd: dict = {c: d.get(c, "") for c in COLS}
+                    if (not str(rowd.get("AI Analyses", "")).strip()) and str(
+                        rowd.get("AI Failure Summary", "")
+                    ).strip():
+                        rowd["AI Analyses"] = rowd.get("AI Failure Summary", "")
+                    by_suites[su].append(rowd)
         except Exception as exc:
             print(f"Note: could not merge prior final_execution_report.xlsx: {exc}")
     all_rows: list[dict] = []

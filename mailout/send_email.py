@@ -1,6 +1,14 @@
 """
-Send final_execution_report.xlsx after parallel orchestration completes.
-Uses same env conventions as scripts/send_execution_email.py where possible.
+Send final_execution_report.xlsx after parallel orchestration completes (HTML + attachments).
+
+Default (matches common Jenkins / Gmail flow): two attachments
+  1) final_execution_report.xlsx
+  2) execution_logs.zip (existing, or auto-built from reports/**/*.log)
+
+Optional AI files (intelligent_platform): set ORCH_EMAIL_ATTACH_AI=1, then
+  + ai_intelligence_report.xlsx, intelligence_result.json when present.
+
+Env ORCH_AI_INTELLIGENCE_XLSX / AI_INTELLIGENCE_REPORT_XLSX can override the AI Excel path.
 """
 from __future__ import annotations
 
@@ -9,6 +17,7 @@ import logging
 import os
 import smtplib
 import ssl
+import zipfile
 from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
@@ -59,7 +68,7 @@ def resolve_final_excel_path(root: Path) -> Path | None:
 
 
 def resolve_execution_logs_zip(excel_path: Path, root: Path | None) -> Path | None:
-    """Attach build-summary/execution_logs.zip (or next to the Excel) when present."""
+    """Use existing build-summary/execution_logs.zip (or next to the Excel) when present."""
     candidates: list[Path] = [excel_path.parent / "execution_logs.zip"]
     if root is not None:
         r = root.resolve()
@@ -79,6 +88,99 @@ def resolve_execution_logs_zip(excel_path: Path, root: Path | None) -> Path | No
             logger.info("Found execution logs zip: %s", rp)
             return rp
     return None
+
+
+def _collect_log_files_for_zip(root: Path) -> list[Path]:
+    """
+    All *.log under reports/ and status/ (orchestrator + Maestro logs) for execution_logs.zip.
+    """
+    r = root.resolve()
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for sub in ("reports", "status", "collected-artifacts"):
+        d = r / sub
+        if not d.is_dir():
+            continue
+        for p in d.rglob("*.log"):
+            if p.is_file():
+                k = p.resolve()
+                if k not in seen:
+                    seen.add(k)
+                    out.append(p)
+    return sorted(out, key=lambda p: str(p))
+
+
+def build_execution_logs_zip(root: Path) -> Path | None:
+    """
+    Create build-summary/execution_logs.zip from reports/**/*.log when any logs exist.
+    """
+    r = root.resolve()
+    log_files = _collect_log_files_for_zip(r)
+    if not log_files:
+        return None
+    out_dir = r / "build-summary"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    zpath = out_dir / "execution_logs.zip"
+    with zipfile.ZipFile(zpath, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for p in log_files:
+            try:
+                arc = p.relative_to(r)
+            except ValueError:
+                arc = p.name
+            zf.write(p, arcname=str(arc).replace("\\", "/"))
+    logger.info("Created %s with %d log file(s)", zpath, len(log_files))
+    return zpath
+
+
+def resolve_or_build_execution_logs_zip(excel_path: Path, root: Path | None) -> Path | None:
+    """Prefer an existing execution_logs.zip; otherwise zip all reports/**/*.log if any."""
+    z = resolve_execution_logs_zip(excel_path, root)
+    if z is not None:
+        return z
+    if root is None:
+        return None
+    return build_execution_logs_zip(root)
+
+
+def resolve_ai_intelligence_artifacts(root: Path) -> list[Path]:
+    """
+    intelligent_platform outputs (when present):
+    - ai_intelligence_report.xlsx (AI Analyses workbook)
+    - intelligence_result.json (full pipeline result)
+    """
+    r = root.resolve()
+    out: list[Path] = []
+    seen: set[Path] = set()
+
+    def _add(p: Path) -> None:
+        if not p.is_file():
+            return
+        key = p.resolve()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(p)
+
+    for env_name in ("ORCH_AI_INTELLIGENCE_XLSX", "AI_INTELLIGENCE_REPORT_XLSX"):
+        raw = os.getenv(env_name, "").strip()
+        if not raw:
+            continue
+        p = Path(raw)
+        if not p.is_absolute():
+            p = (r / p).resolve()
+        if p.is_file():
+            _add(p)
+            break
+
+    if not any(p.suffix.lower() == ".xlsx" for p in out):
+        _add(r / "build-summary" / "ai_intelligence_report.xlsx")
+    if not any(p.suffix.lower() == ".xlsx" for p in out):
+        alts = [p for p in r.rglob("ai_intelligence_report.xlsx") if p.is_file()]
+        if alts:
+            _add(min(alts, key=lambda p: (len(p.parts), str(p))))
+
+    _add(r / "build-summary" / "intelligence_result.json")
+    return out
 
 
 def _select_data_sheet(wb) -> object | None:
@@ -110,8 +212,8 @@ def read_execution_table_rows(
     excel_path: Path,
 ) -> tuple[list[dict[str, str]], str | None]:
     """
-    Return rows for Suite, Flow, Device, Status, Exit Code from the workbook
-    and an optional error/warning message.
+    Return row dicts: suite, flow, device, status, exit_code, ai_analyses; plus an optional error.
+    AI text comes from columns named AI Analyses, AI Failure Summary, or as a fallback AI Status.
     """
     path = excel_path.resolve()
     wb = load_workbook(path, read_only=True, data_only=True)
@@ -132,6 +234,12 @@ def read_execution_table_rows(
         i_did = _col_index(headers, "Device ID", "Device Id", "Udid", "UDID")
         i_status = _col_index(headers, "Status")
         i_exit = _col_index(headers, "Exit Code", "Exit code")
+        i_ai = _col_index(
+            headers,
+            "AI Analyses",
+            "AI Failure Summary",
+            "AI Status",
+        )
 
         if i_status is None:
             return [], "No 'Status' column in execution data."
@@ -158,6 +266,9 @@ def read_execution_table_rows(
             ex = _cell(i_exit)
             if ex == "":
                 ex = "0"
+            ai = _cell(i_ai)
+            if st == "PASS" and (not ai or ai in ("—", "N/A", "NOT_CHECKED")):
+                ai = "N/A"
 
             out.append(
                 {
@@ -166,11 +277,143 @@ def read_execution_table_rows(
                     "device": device,
                     "status": st,
                     "exit_code": ex,
+                    "ai_analyses": ai,
                 }
             )
         return out, None
     finally:
         wb.close()
+
+
+def read_summary_sheet_key_values(excel_path: Path) -> dict[str, str]:
+    """Key/value pairs from the 'Summary' sheet (column A = label, B = value), like the Excel preview."""
+    out: dict[str, str] = {}
+    path = excel_path.resolve()
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        if "Summary" not in wb.sheetnames:
+            return out
+        ws = wb["Summary"]
+        for r in range(1, 20):
+            k = ws.cell(r, 1).value
+            v = ws.cell(r, 2).value
+            if k is None or str(k).strip() == "":
+                continue
+            key = str(k).strip()
+            if not key:
+                continue
+            val = "" if v is None else str(v).strip()
+            if r == 1 and not val and "kodak" in key.lower() and "smile" in key.lower():
+                continue
+            out[key] = val
+    finally:
+        wb.close()
+    return out
+
+
+def compute_summary_from_rows(table_rows: list[dict[str, str]]) -> dict[str, str]:
+    """When there is no Summary sheet, match merged-report semantics from Raw rows."""
+    t = len(table_rows)
+    passed = 0
+    flaky = 0
+    for r in table_rows:
+        st = (r.get("status") or "").upper()
+        if st == "PASS":
+            passed += 1
+        elif st == "FLAKY":
+            flaky += 1
+    non_pass = t - passed
+    return {
+        "Total rows": str(t),
+        "Passed": str(passed),
+        "Flaky": str(flaky),
+        "Failed (non-PASS)": str(non_pass - flaky),
+    }
+
+
+def build_summary_display_pairs(
+    sheet_kv: dict[str, str], table_rows: list[dict[str, str]], generated_on: str
+) -> list[tuple[str, str]]:
+    """
+    Build ordered (label, value) lines for the email, matching the Excel Summary sheet
+    (Total / Passed / Failed) like the Gmail xlsx thumbnail.
+    """
+    if sheet_kv:
+        rows_out: list[tuple[str, str]] = []
+        if "Total rows" in sheet_kv:
+            rows_out.append(("Total tests", sheet_kv["Total rows"]))
+        elif "Total" in sheet_kv:
+            rows_out.append(("Total tests", sheet_kv["Total"]))
+
+        if "Passed" in sheet_kv:
+            rows_out.append(("Passed", sheet_kv["Passed"]))
+
+        fk = "Failed (non-PASS, excl. flaky count below)"
+        if fk in sheet_kv:
+            rows_out.append(("Failed", sheet_kv[fk]))
+        elif "Failed" in sheet_kv and fk not in sheet_kv:
+            rows_out.append(("Failed", sheet_kv["Failed"]))
+
+        if "Flaky" in sheet_kv and sheet_kv["Flaky"] not in ("0", ""):
+            rows_out.append(("Flaky", sheet_kv["Flaky"]))
+
+        if "Generated" in sheet_kv and str(sheet_kv["Generated"]).strip():
+            rows_out.append(("Generated on", sheet_kv["Generated"]))
+        else:
+            rows_out.append(("Generated on", generated_on))
+        return rows_out
+
+    comp = compute_summary_from_rows(table_rows)
+    rows_out = [
+        ("Total tests", comp.get("Total rows", "0")),
+        ("Passed", comp.get("Passed", "0")),
+        ("Failed", comp.get("Failed (non-PASS)", "0")),
+    ]
+    if int(comp.get("Flaky", "0") or "0") > 0:
+        rows_out.append(("Flaky", comp.get("Flaky", "0")))
+    rows_out.append(("Generated on", generated_on))
+    return rows_out
+
+
+def _summary_stats_html(pairs: list[tuple[str, str]]) -> str:
+    if not pairs:
+        return ""
+    trs = []
+    for label, value in pairs:
+        trs.append(
+            "<tr>"
+            f'<th scope="row" style="text-align:left; padding:6px 10px; border:1px solid #ccc; background:#e8f0f8; font-weight:600; white-space:nowrap;">{html.escape(label)}</th>'
+            f'<td style="padding:6px 10px; border:1px solid #ccc;">{html.escape(value)}</td>'
+            "</tr>"
+        )
+    return (
+        '<p class="sub" style="margin:12px 0 6px; font-weight:600; color:#1f4e79;">'
+        "Run overview</p>"
+        f'<table class="sum" role="presentation" style="border-collapse:collapse; max-width:480px; margin-bottom:18px;">{"".join(trs)}</table>'
+    )
+
+
+def _attachments_block_html(attachment_labels: list[str]) -> str:
+    if not attachment_labels:
+        return ""
+    items = "\n    ".join(f"<li>{html.escape(f)}</li>" for f in attachment_labels)
+    return f"""<p class="sub"><b>Attachments</b></p>
+  <ul style="margin:8px 0 16px; padding-left:20px; color:#333;">
+    {items}
+  </ul>"""
+
+
+def _format_ai_for_html(ai_text: str) -> str:
+    """Shorter in-cell, full text in title for long AI summaries."""
+    t = (ai_text or "").strip() or "—"
+    one_line = " ".join(t.split())
+    if len(t) > 200:
+        short = t[:200] + "…"
+        return (
+            f'<td class="c-ai" title="{html.escape(one_line, quote=True)}">'
+            f"{html.escape(short)}</td>"
+        )
+    return f'<td class="c-ai">{html.escape(t)}</td>'
 
 
 def _status_html_class(status: str) -> str:
@@ -185,7 +428,11 @@ def _status_html_class(status: str) -> str:
 
 
 def build_email_html(
-    rows: list[dict[str, str]], generated_on: str, error_note: str | None
+    rows: list[dict[str, str]],
+    generated_on: str,
+    error_note: str | None,
+    attachment_labels: list[str] | None = None,
+    summary_pairs: list[tuple[str, str]] | None = None,
 ) -> str:
     if error_note and not rows:
         table_body = (
@@ -198,11 +445,12 @@ def build_email_html(
             cls = _status_html_class(r["status"])
             trs.append(
                 "<tr>"
-                f'<td class="c-suite">{html.escape(r["suite"])}</td>'
-                f'<td class="c-flow">{html.escape(r["flow"])}</td>'
-                f'<td class="c-dev">{html.escape(r["device"])}</td>'
-                f'<td class="{cls}"><strong>{html.escape(r["status"])}</strong></td>'
-                f'<td class="c-ex">{html.escape(r["exit_code"])}</td>'
+                f'<td class="c-suite">{html.escape(r.get("suite", ""))}</td>'
+                f'<td class="c-flow">{html.escape(r.get("flow", ""))}</td>'
+                f'<td class="c-dev">{html.escape(r.get("device", ""))}</td>'
+                f'<td class="{cls}"><strong>{html.escape(r.get("status", ""))}</strong></td>'
+                f'{_format_ai_for_html(r.get("ai_analyses", ""))}'
+                f'<td class="c-ex">{html.escape(r.get("exit_code", ""))}</td>'
                 "</tr>"
             )
         if not trs:
@@ -227,6 +475,7 @@ def build_email_html(
   .warn {{ color: #a94442; background: #fbe8e6; padding: 8px; border-radius: 4px; }}
   table.ex {{ border-collapse: collapse; width: 100%; max-width: 1000px; border: 1px solid #ccc; }}
   table.ex th, table.ex td {{ border: 1px solid #d0d0d0; padding: 8px 10px; text-align: left; vertical-align: top; word-break: break-word; }}
+  .c-ai {{ max-width: 360px; font-size: 13px; line-height: 1.35; color: #222; }}
   table.ex th {{ background: #2e5c8a; color: #fff; font-weight: 600; }}
   .st-pass {{ color: #1b5e20; background: #e8f5e9; font-weight: bold; }}
   .st-fail {{ color: #b71c1c; background: #ffebee; font-weight: bold; }}
@@ -236,9 +485,10 @@ def build_email_html(
 </head>
 <body>
   <h1>Kodak Smile Execution Summary</h1>
-  <p class="sub">Generated on: {html.escape(generated_on)}</p>
+  {_summary_stats_html(summary_pairs if summary_pairs else [("Generated on", generated_on)])}
   {table_body}
-  <p class="sub" style="margin-top:20px;">This message was sent by Jenkins automation. The detailed workbook is attached.</p>
+  {_attachments_block_html(attachment_labels or [])}
+  <p class="sub" style="margin-top:20px;">This message was sent by Jenkins automation. See the attachment list above.</p>
 </body>
 </html>"""
 
@@ -246,41 +496,62 @@ def build_email_html(
 def _thead() -> str:
     return (
         "<tr>"
-        "<th>Suite</th><th>Flow</th><th>Device</th><th>Status</th><th>Exit Code</th>"
+        "<th>Suite</th><th>Flow</th><th>Device</th><th>Status</th><th>AI Analyses</th><th>Exit Code</th>"
         "</tr>"
     )
 
 
 def build_email_plain(
-    rows: list[dict[str, str]], generated_on: str, error_note: str | None
+    rows: list[dict[str, str]],
+    generated_on: str,
+    error_note: str | None,
+    attachment_labels: list[str] | None = None,
+    summary_pairs: list[tuple[str, str]] | None = None,
 ) -> str:
     lines = [
         "Kodak Smile Execution Summary",
         "",
-        f"Generated on: {generated_on}",
-        "",
     ]
+    for label, value in summary_pairs or [("Generated on", generated_on)]:
+        lines.append(f"{label}: {value}")
+    lines.append("")
     if error_note:
         lines.append(error_note)
         lines.append("")
     if not rows:
         lines.append("No execution rows in the report table.")
     else:
-        colw = (14, 28, 20, 10, 10)
-        lines.append("Suite | Flow | Device | Status | Exit Code")
-        lines.append("-" * 72)
+        colw = (12, 20, 14, 8, 32, 6)
+        lines.append("Suite | Flow | Device | Status | AI Analyses (trunc) | Exit")
+        lines.append("-" * 78)
         for r in rows:
+            ai = (r.get("ai_analyses") or "")[: colw[4]]
+            if len((r.get("ai_analyses") or "")) > colw[4]:
+                ai += "…"
             line = " | ".join(
                 [
-                    (r["suite"] or "")[: colw[0]],
-                    (r["flow"] or "")[: colw[1]],
-                    (r["device"] or "")[: colw[2]],
-                    (r["status"] or "")[: colw[3]],
-                    (r["exit_code"] or "")[: colw[4]],
+                    (r.get("suite") or "")[: colw[0]],
+                    (r.get("flow") or "")[: colw[1]],
+                    (r.get("device") or "")[: colw[2]],
+                    (r.get("status") or "")[: colw[3]],
+                    ai,
+                    (r.get("exit_code") or "")[: colw[5]],
                 ]
             )
             lines.append(line)
-    lines.extend(["", "See attached final_execution_report.xlsx for full details."])
+    lines.append("")
+    lines.append("Attachments:")
+    for name in attachment_labels or []:
+        lines.append(f"  - {name}")
+    lines.append("")
+    if _orch_email_attach_ai():
+        lines.append(
+            "The execution workbook, optional AI analysis files, and the log zip (when present) are attached."
+        )
+    else:
+        lines.append(
+            "The execution workbook and execution_logs.zip (when log files are present) are attached."
+        )
     return "\n".join(lines)
 
 
@@ -290,6 +561,31 @@ def getenv_any(*names: str, default: str = "") -> str:
         if v:
             return v
     return default
+
+
+def _add_file_attachment(msg: EmailMessage, path: Path) -> None:
+    data = path.read_bytes()
+    name = path.name
+    ext = path.suffix.lower()
+    if ext == ".json":
+        msg.add_attachment(data, maintype="application", subtype="json", filename=name)
+    elif ext == ".xlsx":
+        msg.add_attachment(
+            data,
+            maintype="application",
+            subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=name,
+        )
+    elif ext == ".zip":
+        msg.add_attachment(data, maintype="application", subtype="zip", filename=name)
+    else:
+        msg.add_attachment(data, maintype="application", subtype="octet-stream", filename=name)
+    logger.info("Attached: %s", name)
+
+
+def _orch_email_attach_ai() -> bool:
+    """Set ORCH_EMAIL_ATTACH_AI=1 to add ai_intelligence_report.xlsx + intelligence_result.json."""
+    return getenv_any("ORCH_EMAIL_ATTACH_AI", default="").lower() in ("1", "true", "yes", "on")
 
 
 def _orch_email_strict() -> bool:
@@ -357,13 +653,41 @@ def send_execution_report_email(
     )
 
     gen_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    rroot = root.resolve() if root is not None else None
+    exc_resolved = excel_path.resolve()
+
+    ai_to_attach: list[Path] = (
+        [p for p in resolve_ai_intelligence_artifacts(rroot) if p.resolve() != exc_resolved]
+        if rroot is not None and _orch_email_attach_ai()
+        else []
+    )
+    attachment_labels: list[str] = [excel_path.name]
+    for ap in ai_to_attach:
+        if ap.suffix.lower() == ".xlsx" and "ai_intelligence" in ap.name.lower():
+            attachment_labels.append(f"{ap.name} (AI Analyses)")
+        elif ap.suffix.lower() == ".json":
+            attachment_labels.append(f"{ap.name} (AI analyses - full result)")
+        else:
+            attachment_labels.append(ap.name)
+    logs_zip: Path | None = resolve_or_build_execution_logs_zip(
+        excel_path, rroot if rroot is not None else None
+    )
+    if logs_zip is not None:
+        attachment_labels.append(f"{logs_zip.name} (execution logs)")
+
     if body is not None:
         text_body = body
         html_body = f"<html><body><pre>{html.escape(body)}</pre></body></html>"
     else:
         table_rows, table_err = read_execution_table_rows(excel_path)
-        text_body = build_email_plain(table_rows, gen_ts, table_err)
-        html_body = build_email_html(table_rows, gen_ts, table_err)
+        sheet_kv = read_summary_sheet_key_values(excel_path)
+        summary_pairs = build_summary_display_pairs(sheet_kv, table_rows, gen_ts)
+        text_body = build_email_plain(
+            table_rows, gen_ts, table_err, attachment_labels, summary_pairs
+        )
+        html_body = build_email_html(
+            table_rows, gen_ts, table_err, attachment_labels, summary_pairs
+        )
 
     if not smtp_server or not smtp_user or not smtp_pass or not receiver:
         logger.warning(
@@ -386,22 +710,11 @@ def send_execution_report_email(
     msg.set_content(text_body)
     msg.add_alternative(html_body, subtype="html")
 
-    msg.add_attachment(
-        excel_path.read_bytes(),
-        maintype="application",
-        subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=excel_path.name,
-    )
-
-    logs_zip = resolve_execution_logs_zip(excel_path, root)
+    _add_file_attachment(msg, excel_path)
+    for ap in ai_to_attach:
+        _add_file_attachment(msg, ap)
     if logs_zip is not None:
-        msg.add_attachment(
-            logs_zip.read_bytes(),
-            maintype="application",
-            subtype="zip",
-            filename=logs_zip.name,
-        )
-        logger.info("Attached: %s", logs_zip)
+        _add_file_attachment(msg, logs_zip)
 
     context = ssl.create_default_context()
     try:
