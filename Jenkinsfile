@@ -54,8 +54,8 @@ pipeline {
         )
         string(
             name: 'SMTP_CREDENTIALS_ID',
-            defaultValue: '',
-            description: 'Optional Jenkins Username/Password ID for SMTP (username=sender, password=app password). If empty, uses SMTP_* env on the agent.'
+            defaultValue: 'gmail-smtp-kodak',
+            description: 'Jenkins username+password credential ID (Gmail + app password). Clear only if the agent already exports SMTP_USER, SMTP_PASS, RECEIVER_EMAIL.'
         )
         string(
             name: 'MAIL_TO_OVERRIDE',
@@ -313,18 +313,7 @@ pipeline {
                                 }
                             }
                         } else {
-                            withEnv([
-                                "SMTP_SERVER=${smtpServer}",
-                                "SMTP_PORT=${smtpPort}",
-                                "RECEIVER_EMAIL=${mailTo ?: defaultMailTo}",
-                                "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\final_execution_report.xlsx",
-                                'PYTHONIOENCODING=utf-8',
-                            ]) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                python mailout/send_email.py || (echo 1> email_failed.flag)
-                                """
-                            }
+                            echo "Send Email: SMTP_CREDENTIALS_ID is empty. Set the job parameter to your Jenkins Gmail+App Password credential, or set SMTP_USER/SMTP_PASS/RECEIVER_EMAIL on the agent. Skipping (no email_failed flag)."
                         }
                     }
                 }

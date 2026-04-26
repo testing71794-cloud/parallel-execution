@@ -62,6 +62,25 @@ def getenv_any(*names: str, default: str = "") -> str:
     return default
 
 
+def _orch_email_strict() -> bool:
+    return (os.environ.get("ORCH_EMAIL_STRICT", "").strip().lower() in ("1", "true", "yes", "on"))
+
+
+def _smtp_config_ready() -> bool:
+    """
+    True when user/pass/receiver and server (or implied Gmail) are all present to attempt SMTP.
+    """
+    smtp_user = getenv_any("SMTP_USER", "SENDER_EMAIL", "GMAIL_USER")
+    smtp_server = getenv_any("SMTP_SERVER", "SMTP_HOST")
+    if not smtp_server and smtp_user and "@" in smtp_user and smtp_user.lower().rstrip().endswith(
+        ("@gmail.com", "@googlemail.com")
+    ):
+        smtp_server = "smtp.gmail.com"
+    smtp_pass = getenv_any("SMTP_PASS", "SMTP_PASSWORD", "SENDER_PASSWORD", "GMAIL_APP_PASSWORD")
+    receiver = getenv_any("RECEIVER_EMAIL", "MAIL_TO", "EMAIL_RECIPIENTS", "RECIPIENT", "ORCH_MAIL_TO")
+    return bool(smtp_server and smtp_user and smtp_pass and receiver)
+
+
 def send_execution_report_email(
     excel_path: Path,
     *,
@@ -154,6 +173,20 @@ def main() -> int:
     excel = resolve_final_excel_path(root)
     if excel is None:
         return 1
+    if not _smtp_config_ready():
+        if _orch_email_strict():
+            logger.error(
+                "ORCH_EMAIL_STRICT=1: SMTP is not fully configured. "
+                "Jenkins: set job parameter SMTP_CREDENTIALS_ID (Gmail + App Password) and run the "
+                "Send Email step from the Pipeline, or export SMTP_USER, SMTP_PASS, RECEIVER_EMAIL "
+                "before: python mailout/send_email.py"
+            )
+            return 1
+        logger.warning(
+            "SMTP not configured (set SMTP_USER + SMTP_PASS + RECEIVER_EMAIL, and SMTP_SERVER or @gmail.com); "
+            "exiting 0. Set ORCH_EMAIL_STRICT=1 to fail this step if mail is required."
+        )
+        return 0
     return 0 if send_execution_report_email(excel) else 1
 
 
