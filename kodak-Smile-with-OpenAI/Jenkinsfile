@@ -18,7 +18,7 @@ def normalizeOpenRouterCredsId = { Object raw ->
 }
 
 // Bind Jenkins Secret text → OPENROUTER_API_KEY for Python / Maestro (optional).
-def withOpenRouterCredentials = { String credsId, Closure action ->
+def withOpenRouterCredentials = { Object credsId, Closure action ->
     def id = normalizeOpenRouterCredsId(credsId)
     if (id) {
         withCredentials([string(credentialsId: id, variable: 'OPENROUTER_API_KEY')]) {
@@ -355,26 +355,35 @@ pipeline {
             }
         }
 
-        // mailout/send_email.py — Gmail settings only in this stage (replace YOUR_APP_PASSWORD_HERE). No SMTP job parameters.
+        // mailout/send_email.py — user/pass from Jenkins credential "gmail-smtp-kodak" (Gmail + App Password). No secrets in this file.
         stage('Send Final Email') {
             when { expression { return params.SEND_FINAL_EMAIL } }
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    set SMTP_SERVER=smtp.gmail.com
-                    set SMTP_HOST=smtp.gmail.com
-                    set SMTP_PORT=587
-                    set SMTP_USER=kodaksmilechina@gmail.com
-                    set SMTP_PASS=gabqyztcztmtvvhm
-                    set RECEIVER_EMAIL=kodaksmilechina@gmail.com
-                    set MAIL_TO=kodaksmilechina@gmail.com
-                    set PYTHONIOENCODING=utf-8
-                    set ORCH_EMAIL_STRICT=1
-                    set "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\final_execution_report.xlsx"
-                    python mailout\\send_email.py || (echo 1> email_failed.flag)
-                    """
+                    script {
+                        withCredentials([usernamePassword(credentialsId: 'gmail-smtp-kodak', usernameVariable: 'B_SMTP_USER', passwordVariable: 'B_SMTP_PASS')]) {
+                            withEnv([
+                                'SMTP_SERVER=smtp.gmail.com',
+                                'SMTP_HOST=smtp.gmail.com',
+                                'SMTP_PORT=587',
+                                "SMTP_USER=${env.B_SMTP_USER}",
+                                "SMTP_PASS=${env.B_SMTP_PASS}",
+                                "SENDER_EMAIL=${env.B_SMTP_USER}",
+                                "RECEIVER_EMAIL=${env.B_SMTP_USER}",
+                                "MAIL_TO=${env.B_SMTP_USER}",
+                                'PYTHONIOENCODING=utf-8',
+                                'ORCH_EMAIL_STRICT=1',
+                                "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\build-summary\\final_execution_report.xlsx",
+                            ]) {
+                                bat """
+                                cd /d "%WORKSPACE%"
+                                echo Running send_email with Jenkins credential gmail-smtp-kodak ...
+                                python mailout\\send_email.py || (echo 1> email_failed.flag)
+                                """
+                            }
+                        }
+                    }
                 }
             }
         }
