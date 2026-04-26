@@ -1,361 +1,54 @@
-// Strip common mistake: parameter value "OPENROUTER_CREDENTIALS_ID = OPENROUTER_API_KEY"
-def normalizeOpenRouterCredsId = { Object raw ->
-    if (raw == null) {
-        return ''
-    }
-    def s = raw.toString().trim()
-    if (!s) {
-        return ''
-    }
-    if (s.contains('=')) {
-        def parts = s.split('=', 2)
-        if (parts.length == 2) {
-            s = parts[1].trim()
-        }
-    }
-    s = s.replaceAll('(?i)^OPENROUTER_CREDENTIALS_ID\\s*', '').trim()
-    return s
-}
-
-def withOpenRouterCredentials = { String credsId, Closure action ->
-    def id = normalizeOpenRouterCredsId(credsId)
-    if (id) {
-        withCredentials([string(credentialsId: id, variable: 'OPENROUTER_API_KEY')]) {
-            action()
-        }
-    } else {
-        action()
-    }
-}
-
 pipeline {
-    agent none
+    agent any
 
     parameters {
-        choice(
-            name: 'DEVICES_AGENT',
-            choices: ['devices', 'built-in'],
-            description: 'devices = agent with USB phones / adb'
-        )
-        string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'App package id for Maestro/app launch checks')
-        string(name: 'MAESTRO_CMD', defaultValue: 'maestro.bat', description: 'Maestro launcher (e.g. maestro.bat)')
-        string(name: 'MAESTRO_HOME', defaultValue: 'C:\\Users\\HP\\maestro\\maestro\\bin', description: 'Folder containing maestro.bat (optional if maestro is on PATH)')
-        string(name: 'ANDROID_HOME', defaultValue: 'C:\\Users\\HP\\AppData\\Local\\Android\\Sdk', description: 'Android SDK root')
-        string(name: 'JAVA_HOME_OVERRIDE', defaultValue: '', description: 'Optional JDK for Maestro (MAESTRO_JAVA_HOME)')
-        booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run non-printing flows (Python parallel orchestrator)')
-        booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run printing flows (Python parallel orchestrator)')
-        booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Per-flow OpenRouter AI (429: 3 tries, 5s backoff)')
-        booleanParam(name: 'RESTORE_AUTOFILL_AFTER_TEST', defaultValue: false, description: 'Best-effort restore of original autofill service after suite run')
-        booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send email with final_execution_report.xlsx')
-        string(
-            name: 'OPENROUTER_CREDENTIALS_ID',
-            defaultValue: 'OPENROUTER_API_KEY',
-            description: 'Jenkins Secret text credential ID → OPENROUTER_API_KEY'
-        )
-        string(
-            name: 'SMTP_CREDENTIALS_ID',
-            defaultValue: 'gmail-smtp-kodak',
-            description: 'Jenkins username+password credential ID (Gmail + app password). Clear only if the agent already exports SMTP_USER, SMTP_PASS, RECEIVER_EMAIL.'
-        )
-        string(
-            name: 'MAIL_TO_OVERRIDE',
-            defaultValue: '',
-            description: 'Optional RECEIVER_EMAIL override (defaults to SMTP user when using SMTP_CREDENTIALS_ID)'
-        )
-        string(
-            name: 'SMTP_SERVER',
-            defaultValue: 'smtp.gmail.com',
-            description: 'SMTP host when using SMTP_CREDENTIALS_ID or agent env'
-        )
-        string(
-            name: 'SMTP_PORT',
-            defaultValue: '587',
-            description: 'SMTP port'
-        )
-    }
-
-    options {
-        disableConcurrentBuilds()
-        skipDefaultCheckout(true)
-        preserveStashes(buildCount: 5)
-        buildDiscarder(logRotator(numToKeepStr: '20'))
-        timeout(time: 180, unit: 'MINUTES')
-    }
-
-    triggers {
-        cron('H 9 * * *')
-        githubPush()
+        booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: true, description: 'Send email')
     }
 
     stages {
-        stage('Checkout Code') {
-            agent { label 'built-in' }
+
+        stage('Dummy Test Stage') {
             steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    deleteDir()
-                    checkout scm
-                    stash name: 'repo', includes: '**/*', useDefaultExcludes: false
-                }
+                bat '''
+                echo Running your pipeline...
+                '''
             }
         }
 
-        stage('Install Dependencies') {
-            agent { label params.DEVICES_AGENT }
-            steps {
-                deleteDir()
-                unstash 'repo'
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python -m pip install --upgrade pip || (echo 1> install_failed.flag & exit /b 1)
-                    python -m pip install -r scripts/requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
-                    if exist package.json (
-                        call npm ci || call npm install || (echo 1> install_failed.flag & exit /b 1)
-                    )
-                    if exist ai-doctor/package.json (
-                        cd ai-doctor
-                        call npm ci || call npm install || (echo 1> ..\\install_failed.flag & exit /b 1)
-                        cd ..
-                    )
-                    """
-                }
-            }
-        }
-
-        stage('Environment Validation') {
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    script {
-                        def envList = []
-                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "MAESTRO_JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
-                        }
-                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
-                        withEnv(envList) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            where java
-                            java -version
-                            call scripts/precheck_environment.bat "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" || (echo 1> precheck_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                            """
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Cleanup Previous Execution') {
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python execution/cleanup_previous_run.py --repo-root "${env.WORKSPACE}" || (echo 1> cleanup_failed.flag & exit /b 1)
-                    """
-                }
-            }
-        }
-
-        stage('Detect Connected Devices') {
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    script {
-                        def envList = []
-                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "MAESTRO_JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
-                        }
-                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) {
-                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
-                            envList << "PATH+PLATFORM_TOOLS=${params.ANDROID_HOME}\\platform-tools"
-                        }
-                        withEnv(envList) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            call scripts/list_devices.bat || (echo 1> device_detection_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                            """
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Execute Non-Printing Flows (Parallel)') {
-            when { expression { return params.RUN_NON_PRINTING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        def envList = []
-                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "MAESTRO_JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
-                        }
-                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) {
-                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
-                            envList << "PATH+PLATFORM_TOOLS=${params.ANDROID_HOME}\\platform-tools"
-                        }
-                        envList << "AUTOFILL_RESTORE_AFTER_TEST=${params.RESTORE_AUTOFILL_AFTER_TEST.toString()}"
-                        def mh = params.MAESTRO_HOME?.trim()
-                        def mc = params.MAESTRO_CMD?.trim() ?: 'maestro.bat'
-                        def maestroExe = mh ? "${mh}\\${mc}" : mc
-                        def noAi = params.RUN_AI_ANALYSIS ? '' : '--no-ai'
-                        def restoreAutofillArg = params.RESTORE_AUTOFILL_AFTER_TEST ? '--restore-autofill' : ''
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            withEnv(envList) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                where java
-                                if defined ANDROID_HOME set "PATH=%ANDROID_HOME%\\platform-tools;%PATH%"
-                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/nonprinting_flows.txt --devices-file detected_devices.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noAi} ${restoreAutofillArg}
-                                if errorlevel 1 echo 1> orch_nonprinting_failed.flag
-                                exit /b 0
-                                """
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Execute Printing Flows (Parallel)') {
-            when { expression { return params.RUN_PRINTING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        def envList = []
-                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "MAESTRO_JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
-                        }
-                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) {
-                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
-                            envList << "PATH+PLATFORM_TOOLS=${params.ANDROID_HOME}\\platform-tools"
-                        }
-                        envList << "AUTOFILL_RESTORE_AFTER_TEST=${params.RESTORE_AUTOFILL_AFTER_TEST.toString()}"
-                        def mh = params.MAESTRO_HOME?.trim()
-                        def mc = params.MAESTRO_CMD?.trim() ?: 'maestro.bat'
-                        def maestroExe = mh ? "${mh}\\${mc}" : mc
-                        def noAi = params.RUN_AI_ANALYSIS ? '' : '--no-ai'
-                        def noPrime = (params.RUN_NON_PRINTING && params.RUN_PRINTING) ? '--no-prime' : ''
-                        def restoreAutofillArg = params.RESTORE_AUTOFILL_AFTER_TEST ? '--restore-autofill' : ''
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            withEnv(envList) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                where java
-                                if defined ANDROID_HOME set "PATH=%ANDROID_HOME%\\platform-tools;%PATH%"
-                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/printing_flows.txt --devices-file detected_devices.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noPrime} ${noAi} ${restoreAutofillArg}
-                                if errorlevel 1 echo 1> orch_printing_failed.flag
-                                exit /b 0
-                                """
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Generate Final Summary') {
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    if not exist build-summary mkdir build-summary
-                    python scripts/summarize_final_excel.py final_execution_report.xlsx build-summary/execution_counts.txt || (echo 1> summary_failed.flag)
-                    if exist build-summary\\execution_counts.txt type build-summary\\execution_counts.txt
-                    """
-                }
-            }
-        }
-
-        // Gmail app password only in Jenkins credentials (e.g. id: gmail-smtp-kodak). Not in this repo.
-        // If the job was created before SMTP_CREDENTIALS_ID existed, params can be null — we default in Groovy.
         stage('Send Final Email') {
             when { expression { return params.SEND_FINAL_EMAIL } }
-            agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        def smtpId = (params.SMTP_CREDENTIALS_ID?.toString() ?: '').trim() ?: 'gmail-smtp-kodak'
-                        def mailTo = (params.MAIL_TO_OVERRIDE?.toString() ?: '').trim()
-                        def defaultMailTo = 'kodaksmilechina@gmail.com'
-                        def smtpServer = (params.SMTP_SERVER?.toString() ?: '').trim() ?: 'smtp.gmail.com'
-                        def smtpPort = (params.SMTP_PORT?.toString() ?: '').trim() ?: '587'
-                        def receiver = mailTo ? mailTo : defaultMailTo
-                        echo "Send Final Email: credentialId=${smtpId} receiver=${receiver} server=${smtpServer} port=${smtpPort}"
-                        withCredentials([usernamePassword(credentialsId: smtpId, usernameVariable: 'B_SMTP_USER', passwordVariable: 'B_SMTP_PASS')]) {
-                            withEnv([
-                                "SMTP_SERVER=${smtpServer}",
-                                "SMTP_PORT=${smtpPort}",
-                                "SMTP_USER=${env.B_SMTP_USER}",
-                                "SMTP_PASS=${env.B_SMTP_PASS}",
-                                "SENDER_EMAIL=${env.B_SMTP_USER}",
-                                "RECEIVER_EMAIL=${receiver}",
-                                "MAIL_TO=${receiver}",
-                                "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\final_execution_report.xlsx",
-                                'PYTHONIOENCODING=utf-8',
-                            ]) {
-                                bat """
-                                cd /d "%WORKSPACE%"
-                                echo Running send_email (SMTP from Jenkins; password masked) ...
-                                python mailout\\send_email.py || (echo 1>email_failed.flag)
-                                """
-                            }
-                        }
-                    }
+                    bat '''
+                    cd /d "%WORKSPACE%"
+
+                    echo ==============================
+                    echo SIMPLE EMAIL MODE
+                    echo ==============================
+
+                    set SMTP_SERVER=smtp.gmail.com
+                    set SMTP_HOST=smtp.gmail.com
+                    set SMTP_PORT=587
+                    set SMTP_USER=kodaksmilechina@gmail.com
+                    set SMTP_PASS=YOUR_APP_PASSWORD_HERE
+                    set RECEIVER_EMAIL=kodaksmilechina@gmail.com
+                    set MAIL_TO=kodaksmilechina@gmail.com
+                    set PYTHONIOENCODING=utf-8
+
+                    echo DEBUG:
+                    echo SMTP_USER=%SMTP_USER%
+                    echo SMTP_SERVER=%SMTP_SERVER%
+                    echo RECEIVER_EMAIL=%RECEIVER_EMAIL%
+
+                    echo Running email script...
+                    python mailout\\send_email.py || (echo 1>email_failed.flag)
+
+                    echo ==============================
+                    echo EMAIL COMPLETED
+                    echo ==============================
+                    '''
                 }
             }
         }
-
-        stage('Archive Reports') {
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    archiveArtifacts artifacts: 'logs/**, reports/**, build-summary/**, final_execution_report.xlsx, detected_devices.txt, *.flag, *.failed', allowEmptyArchive: true
-                }
-            }
-        }
-
-        stage('Finalize Build') {
-            agent { label params.DEVICES_AGENT }
-            steps {
-                script {
-                    def unstableFlags = [
-                        'orch_nonprinting_failed.flag',
-                        'orch_printing_failed.flag',
-                        'summary_failed.flag',
-                        'email_failed.flag',
-                        'pipeline_failed.flag',
-                    ]
-                    def u = false
-                    unstableFlags.each { f -> if (fileExists(f)) { u = true } }
-                    if (fileExists('install_failed.flag') || fileExists('precheck_failed.flag') || fileExists('device_detection_failed.flag') || fileExists('cleanup_failed.flag')) {
-                        currentBuild.result = 'FAILURE'
-                    } else if (u) {
-                        currentBuild.result = 'UNSTABLE'
-                    } else {
-                        currentBuild.result = 'SUCCESS'
-                    }
-                }
-            }
-        }
-    }
-
-    post {
-        always { echo "Build: ${currentBuild.currentResult}" }
     }
 }
