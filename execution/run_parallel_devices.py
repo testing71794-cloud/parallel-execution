@@ -46,6 +46,50 @@ from mailout.send_email import send_execution_report_email  # noqa: E402
 logger = logging.getLogger("orch.parallel")
 
 
+def _adb_filename() -> str:
+    return "adb.exe" if os.name == "nt" else "adb"
+
+
+def resolve_adb_path() -> str | None:
+    """
+    Locate adb for subprocess (Jenkins/agents often lack platform-tools on PATH).
+    Order: ADB / ADB_PATH → PATH → ANDROID_HOME|ANDROID_SDK_ROOT/platform-tools → Windows LocalAppData SDK.
+    """
+    for env in ("ADB", "ADB_PATH"):
+        raw = os.environ.get(env, "").strip().strip('"')
+        if not raw:
+            continue
+        p = Path(raw)
+        if p.is_dir():
+            cand = p / _adb_filename()
+            if cand.is_file():
+                return str(cand.resolve())
+        elif p.is_file():
+            return str(p.resolve())
+
+    on_path = shutil.which("adb")
+    if on_path:
+        return on_path
+
+    name = _adb_filename()
+    for root_env in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
+        root = os.environ.get(root_env, "").strip().strip('"')
+        if not root:
+            continue
+        cand = Path(root) / "platform-tools" / name
+        if cand.is_file():
+            return str(cand.resolve())
+
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA", "").strip()
+        if local:
+            cand = Path(local) / "Android" / "Sdk" / "platform-tools" / name
+            if cand.is_file():
+                return str(cand.resolve())
+
+    return None
+
+
 def _safe_segment(name: str) -> str:
     return re.sub(r"[^\w\-.]+", "_", name)
 
@@ -63,9 +107,17 @@ def suite_and_flow(flow_path: Path, repo: Path) -> tuple[str, str]:
 
 
 def list_adb_devices() -> list[str]:
+    adb_exe = resolve_adb_path()
+    if not adb_exe:
+        logger.error(
+            "adb not found. Install platform-tools, set ANDROID_HOME to the SDK root, "
+            "or set ADB to the full path of adb.exe (e.g. %%ANDROID_HOME%%\\platform-tools\\adb.exe)."
+        )
+        return []
+    logger.info("Using adb: %s", adb_exe)
     try:
         out = subprocess.run(
-            ["adb", "devices"],
+            [adb_exe, "devices"],
             capture_output=True,
             text=True,
             timeout=60,
