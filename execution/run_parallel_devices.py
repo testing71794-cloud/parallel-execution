@@ -2,9 +2,9 @@
 """
 Parallel multi-device Maestro orchestration:
 - One thread per device (flows sequential within the thread)
-- JUnit + log per flow
-- Immediate AI analysis on failure (optional)
-- Incremental Excel append (thread-safe)
+- JUnit + log per flow; JUnit file removed before each run for a clean parse
+- AI after each non-PASS (optional); PASS rows get explicit N/A in AI column
+- Thread-safe Excel: cleanup + prime fresh workbook, then append rows
 - Optional email after all devices complete
 
 Does not modify Maestro YAML flows.
@@ -26,7 +26,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Sequence
 
-# Repo root on path for `ai`, `excel`, `mailout`
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -36,7 +35,8 @@ from ai.run_ai_analysis import (  # noqa: E402
     extract_junit_summary,
     read_log_tail,
 )
-from excel.update_excel import append_result_row, finalize_workbook  # noqa: E402
+from excel.update_excel import append_result_row, finalize_workbook, prime_workbook  # noqa: E402
+from execution.cleanup_previous_run import cleanup_for_new_run  # noqa: E402
 from mailout.send_email import send_execution_report_email  # noqa: E402
 
 logger = logging.getLogger("orch.parallel")
@@ -106,7 +106,6 @@ def build_maestro_cmd(
     config_path: Path,
     junit_out: Path,
 ) -> list[str]:
-    """Build argv for subprocess; use cmd /c on Windows for .bat/.cmd."""
     maestro_s = str(maestro)
     parts = [
         "--device",
@@ -137,8 +136,15 @@ def run_maestro_flow(
 ) -> int:
     junit_out.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    if junit_out.is_file():
+        try:
+            junit_out.unlink()
+            logger.debug("Removed stale JUnit: %s", junit_out)
+        except OSError as e:
+            logger.warning("Could not remove stale JUnit %s: %s", junit_out, e)
+
     cmd = build_maestro_cmd(maestro, device_id, flow_path, config_path, junit_out)
-    logger.info("Device %s flow %s", device_id, flow_path.name)
+    logger.info("Flow started | device=%s | flow=%s", device_id, flow_path.name)
     logger.debug("CMD %s", cmd)
     try:
         with open(log_path, "w", encoding="utf-8", errors="replace") as log_f:
@@ -151,12 +157,21 @@ def run_maestro_flow(
                 check=False,
                 shell=False,
             )
-        return int(proc.returncode)
+        code = int(proc.returncode)
+        logger.info(
+            "Flow completed | device=%s | flow=%s | exit=%s",
+            device_id,
+            flow_path.name,
+            code,
+        )
+        return code
     except subprocess.TimeoutExpired:
         log_path.write_text("Maestro subprocess timeout\n", encoding="utf-8")
+        logger.error("Flow timeout | device=%s | flow=%s", device_id, flow_path.name)
         return 124
     except Exception as e:
         log_path.write_text(f"Maestro launch error: {e}\n", encoding="utf-8")
+        logger.error("Flow launch error | device=%s | %s", device_id, e)
         return 1
 
 
@@ -184,6 +199,9 @@ def device_worker(
         except ValueError:
             flow_display = flow_path.name
 
+        print(f"Running Flow: {flow_display} on {device_id}", flush=True)
+        logger.info("Running Flow: %s on %s (%s)", flow_display, device_id, device_name)
+
         t0 = time.perf_counter()
         try:
             rc = run_maestro_flow(
@@ -210,7 +228,15 @@ def device_worker(
             failure_msg = (failure_msg or "") + f"Maestro exit code: {rc}"
 
         ai_text = ""
-        if use_ai and status not in ("PASS",):
+        if status.upper() == "PASS":
+            ai_text = "N/A — passed"
+        elif use_ai:
+            logger.info(
+                "AI triggered | device=%s | flow=%s | status=%s",
+                device_id,
+                flow_display,
+                status,
+            )
             excerpt = read_log_tail(log_path)
             try:
                 ai_text = analyze_flow_failure(
@@ -222,65 +248,51 @@ def device_worker(
             except Exception as e:
                 logger.error("AI pipeline error: %s", e)
                 ai_text = "AI Analysis Failed"
+            if not (ai_text or "").strip():
+                ai_text = "AI Analysis Failed"
+        else:
+            ai_text = "AI disabled (--no-ai)"
+
+        print(f"AI Result ({device_id} / {flow_display}): {ai_text}", flush=True)
 
         row = {
             "Timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
             "Device Name": device_name,
             "Flow Name": flow_display,
-            "Test Status": status,
+            "Status": status,
             "Failure Message": failure_msg[:8000] if failure_msg else "",
             "AI Analysis": ai_text,
             "Duration": duration_str,
         }
         try:
             append_result_row(excel_path, row, file_lock=excel_lock)
+            logger.info("Excel updated | device=%s | flow=%s", device_name, flow_display)
         except Exception as e:
             logger.error("Excel append failed: %s", e)
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Parallel device orchestration for Maestro flows")
-    p.add_argument(
-        "--repo-root",
-        type=Path,
-        default=REPO_ROOT,
-        help="Repository root (default: parent of execution/)",
-    )
+    p.add_argument("--repo-root", type=Path, default=REPO_ROOT)
     p.add_argument(
         "--flows-file",
         type=Path,
         default=REPO_ROOT / "execution" / "default_flows.txt",
-        help="Text file: one flow path per line, relative to repo root",
     )
-    p.add_argument(
-        "--config",
-        type=Path,
-        default=REPO_ROOT / "config.yaml",
-        help="Maestro workspace config path",
-    )
-    p.add_argument(
-        "--maestro",
-        type=Path,
-        default=Path("maestro.bat"),
-        help="Maestro launcher (e.g. maestro.bat or full path)",
-    )
+    p.add_argument("--config", type=Path, default=REPO_ROOT / "config.yaml")
+    p.add_argument("--maestro", type=Path, default=Path("maestro.bat"))
     p.add_argument(
         "--excel-out",
         type=Path,
         default=REPO_ROOT / "build-summary" / "final_execution_report.xlsx",
-        help="Incremental Excel report path",
     )
-    p.add_argument("--no-ai", action="store_true", help="Skip OpenRouter analysis")
+    p.add_argument("--no-ai", action="store_true")
+    p.add_argument("--send-email", action="store_true")
+    p.add_argument("--devices", nargs="*", default=None)
     p.add_argument(
-        "--send-email",
+        "--no-clean",
         action="store_true",
-        help="Send email after run (requires SMTP env vars)",
-    )
-    p.add_argument(
-        "--devices",
-        nargs="*",
-        default=None,
-        help="ADB serials (default: all connected devices)",
+        help="Do not delete logs/ and build-summary/ before this run",
     )
     return p.parse_args()
 
@@ -310,10 +322,21 @@ def main() -> int:
         if found:
             maestro = Path(found)
     excel_path = args.excel_out if args.excel_out.is_absolute() else repo / args.excel_out
-    excel_path.parent.mkdir(parents=True, exist_ok=True)
 
     excel_lock = threading.Lock()
     use_ai = not args.no_ai
+
+    if not args.no_clean:
+        try:
+            cleanup_for_new_run(repo)
+        except OSError as e:
+            logger.error("Cleanup failed: %s", e)
+            return 1
+    else:
+        logger.warning("Skipping pre-run cleanup (--no-clean)")
+
+    excel_path.parent.mkdir(parents=True, exist_ok=True)
+    prime_workbook(excel_path, file_lock=excel_lock)
 
     logger.info("Devices: %s", devices)
     logger.info("Flows (%s): %s", len(flows), [f.name for f in flows])
@@ -348,6 +371,7 @@ def main() -> int:
         send_execution_report_email(excel_path)
 
     logger.info("Done. Report: %s", excel_path)
+    print(f"Final Excel: {excel_path}", flush=True)
     return 0
 
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 import logging
 import time
 import urllib.error
-import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -29,6 +28,12 @@ except Exception:  # pragma: no cover - allow minimal import in isolation
     OpenRouterHTTPError = Exception  # type: ignore
 
 
+def _local(tag: str) -> str:
+    if "}" in tag:
+        return tag.split("}", 1)[-1]
+    return tag
+
+
 def extract_junit_summary(junit_path: Path, flow_display: str) -> tuple[str, str, str]:
     """
     Returns (overall_status, test_name, failure_message).
@@ -43,11 +48,9 @@ def extract_junit_summary(junit_path: Path, flow_display: str) -> tuple[str, str
         return "UNKNOWN", flow_display, f"JUnit parse error: {e}"
 
     cases = list(root.iter("testcase"))
-    if not cases:
-        return "UNKNOWN", flow_display, "No testcase elements in JUnit"
-
     failed_parts: list[str] = []
     names: list[str] = []
+
     for case in cases:
         name = case.get("name") or "unknown"
         classname = case.get("classname") or ""
@@ -55,6 +58,16 @@ def extract_junit_summary(junit_path: Path, flow_display: str) -> tuple[str, str
         names.append(label)
         fail = case.find("failure")
         err_el = case.find("error")
+        if fail is None:
+            for el in case:
+                if _local(el.tag) == "failure":
+                    fail = el
+                    break
+        if err_el is None:
+            for el in case:
+                if _local(el.tag) == "error":
+                    err_el = el
+                    break
         node = fail if fail is not None else err_el
         if node is None:
             continue
@@ -65,7 +78,25 @@ def extract_junit_summary(junit_path: Path, flow_display: str) -> tuple[str, str
     if failed_parts:
         return "FAIL", names[0] if names else flow_display, "\n---\n".join(failed_parts)[:8000]
 
-    skipped = [c for c in cases if c.find("skipped") is not None]
+    if not cases:
+        # Some exports only have testsuite-level metadata
+        suite_msgs: list[str] = []
+        for el in root.iter():
+            if _local(el.tag) in ("failure", "error"):
+                msg = el.get("message") or ""
+                body = (el.text or "").strip()
+                suite_msgs.append(f"{msg}\n{body}".strip())
+        for suite in root.iter():
+            if _local(suite.tag) != "testsuite":
+                continue
+            fails = int(suite.get("failures") or 0)
+            errs = int(suite.get("errors") or 0)
+            if fails + errs > 0:
+                hint = " ".join(suite_msgs) or f"testsuite reports failures={fails} errors={errs}"
+                return "FAIL", flow_display, hint[:8000]
+        return "UNKNOWN", flow_display, "No testcase elements in JUnit"
+
+    skipped = [c for c in cases if c.find("skipped") is not None or any(_local(x.tag) == "skipped" for x in c)]
     if skipped and len(skipped) == len(cases):
         return "ERROR", names[0] if names else flow_display, "All tests skipped"
 

@@ -1,6 +1,8 @@
 # Parallel device orchestration (Maestro)
 
-Runs **one thread per device**, **flows sequentially** on that device. After each flow: JUnit + log, optional **OpenRouter** AI row, **incremental** append to `build-summary/final_execution_report.xlsx`.
+Runs **one thread per device**, **flows sequentially** on that device. After each flow: JUnit + log, optional **OpenRouter** AI row, **thread-safe** append to `build-summary/final_execution_report.xlsx`.
+
+**Before each run** (default): `execution/cleanup_previous_run.py` logic removes `logs/` and `build-summary/`, then a **fresh** Excel is primed with headers only (no rows from prior runs). Use `--no-clean` to skip deletion.
 
 ## Requirements
 
@@ -14,6 +16,7 @@ Runs **one thread per device**, **flows sequentially** on that device. After eac
 | Path | Role |
 |------|------|
 | `execution/run_parallel_devices.py` | Entry |
+| `execution/cleanup_previous_run.py` | Standalone cleanup (also invoked by default from runner) |
 | `execution/default_flows.txt` | Ordered flow list |
 | `ai/run_ai_analysis.py` | JUnit summary + OpenRouter (429: 5s, max 3 tries) |
 | `excel/update_excel.py` | Thread-safe Excel append |
@@ -52,6 +55,12 @@ Specific devices only:
 python execution\run_parallel_devices.py --devices emulator-5554 R58M123ABC
 ```
 
+Cleanup only:
+
+```bat
+python execution\cleanup_previous_run.py
+```
+
 ## Maestro invocation
 
 Uses: `maestro --device <serial> test "<flow>" --config config.yaml --format junit --output "<path>"`  
@@ -59,4 +68,6 @@ Uses: `maestro --device <serial> test "<flow>" --config config.yaml --format jun
 
 ## Excel columns
 
-`Timestamp`, `Device Name`, `Flow Name`, `Test Status`, `Failure Message`, `AI Analysis`, `Duration`
+`Timestamp`, `Device Name`, `Flow Name`, `Status`, `Failure Message`, `AI Analysis`, `Duration`
+
+Pass rows show **AI Analysis** = `N/A — passed`. Failures use OpenRouter when a key is set; otherwise `AI Analysis Failed (no API key)`.
