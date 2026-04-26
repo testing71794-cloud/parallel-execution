@@ -282,7 +282,8 @@ pipeline {
             }
         }
 
-        stage('Send Email') {
+        // Do NOT put Gmail app passwords in this file. Store them only in Jenkins: Credentials (e.g. gmail-smtp-kodak).
+        stage('Send Final Email') {
             when { expression { return params.SEND_FINAL_EMAIL } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -291,29 +292,34 @@ pipeline {
                         def smtpId = params.SMTP_CREDENTIALS_ID?.trim()
                         def mailTo = params.MAIL_TO_OVERRIDE?.trim()
                         def defaultMailTo = 'kodaksmilechina@gmail.com'
-                        def smtpServer = params.SMTP_SERVER?.trim() ?: 'smtp.gmail.com'
-                        def smtpPort = params.SMTP_PORT?.trim() ?: '587'
-                        if (smtpId) {
-                            withCredentials([usernamePassword(credentialsId: smtpId, usernameVariable: 'SMTP_JENKINS_USER', passwordVariable: 'SMTP_JENKINS_PASS')]) {
-                                def receiver = mailTo ?: env.SMTP_JENKINS_USER ?: defaultMailTo
+                        if (!smtpId) {
+                            echo "Send Final Email: set job parameter SMTP_CREDENTIALS_ID (e.g. gmail-smtp-kodak) so Jenkins can inject Gmail + app password. Skipping."
+                        } else {
+                            withCredentials([usernamePassword(credentialsId: smtpId, usernameVariable: 'B_SMTP_USER', passwordVariable: 'B_SMTP_PASS')]) {
+                                def smtpServer = params.SMTP_SERVER?.trim() ?: 'smtp.gmail.com'
+                                def smtpPort = params.SMTP_PORT?.trim() ?: '587'
+                                def receiver = mailTo ?: defaultMailTo
                                 withEnv([
                                     "SMTP_SERVER=${smtpServer}",
                                     "SMTP_PORT=${smtpPort}",
-                                    "SMTP_USER=${env.SMTP_JENKINS_USER}",
-                                    "SMTP_PASS=${env.SMTP_JENKINS_PASS}",
-                                    "SENDER_EMAIL=${env.SMTP_JENKINS_USER}",
-                                    "RECEIVER_EMAIL=${receiver}",
                                     "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\final_execution_report.xlsx",
-                                    'PYTHONIOENCODING=utf-8',
+                                    "PYTHONIOENCODING=utf-8",
                                 ]) {
                                     bat """
-                                    cd /d "${env.WORKSPACE}"
-                                    python mailout/send_email.py || (echo 1> email_failed.flag)
+                                    cd /d "%WORKSPACE%"
+                                    echo Setting SMTP from Jenkins credential: ${smtpId}
+                                    set "SMTP_SERVER=${smtpServer}"
+                                    set "SMTP_PORT=${smtpPort}"
+                                    set "SMTP_USER=%B_SMTP_USER%"
+                                    set "SMTP_PASS=%B_SMTP_PASS%"
+                                    set "SENDER_EMAIL=%B_SMTP_USER%"
+                                    set "RECEIVER_EMAIL=${receiver.replaceAll('"', '')}"
+                                    set "MAIL_TO=${receiver.replaceAll('"', '')}"
+                                    echo Running email script...
+                                    python mailout\\send_email.py || (echo 1>email_failed.flag)
                                     """
                                 }
                             }
-                        } else {
-                            echo "Send Email: SMTP_CREDENTIALS_ID is empty. Set the job parameter to your Jenkins Gmail+App Password credential, or set SMTP_USER/SMTP_PASS/RECEIVER_EMAIL on the agent. Skipping (no email_failed flag)."
                         }
                     }
                 }
