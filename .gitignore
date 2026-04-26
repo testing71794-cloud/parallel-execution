@@ -19,4 +19,6 @@ __pycache__/
 *.zip
 
 # Optional nested copy when IDE workspace lives in a subfolder of the same repo
+# Pipeline for CI is ONLY tracked at repository root: ./Jenkinsfile
+# (Edits to kodak-Smile-with-OpenAI/ are not committed — that folder is ignored here.)
 /kodak-Smile-with-OpenAI/
