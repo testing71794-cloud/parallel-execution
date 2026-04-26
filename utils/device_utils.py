@@ -33,7 +33,8 @@ def _save_cache(m: dict[str, str]) -> None:
 def _adb_prop(device_id: str, prop: str) -> str:
     r = subprocess.run(
         ["adb", "-s", device_id, "shell", "getprop", prop],
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
         text=True,
         timeout=20,
     )

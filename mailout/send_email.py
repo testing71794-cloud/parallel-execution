@@ -12,13 +12,12 @@ Env ORCH_AI_INTELLIGENCE_XLSX / AI_INTELLIGENCE_REPORT_XLSX can override the AI 
 """
 from __future__ import annotations
 
-import functools
 import html
 import logging
 import os
 import smtplib
 import ssl
-import subprocess
+import sys
 import zipfile
 from datetime import datetime
 from email.message import EmailMessage
@@ -26,32 +25,12 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+_REPO = Path(__file__).resolve().parents[1]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+from utils.device_utils import get_device_name  # noqa: E402
+
 logger = logging.getLogger("orch.mail")
-
-
-@functools.lru_cache(maxsize=128)
-def get_device_name(device_id: str) -> str:
-    """
-    Resolve ``<brand> <model>`` via ADB for a serial/UDID. On failure, return ``device_id``.
-    Used when the report has a device id but no friendly device name in Excel.
-    """
-    did = (device_id or "").strip()
-    if not did:
-        return did
-    try:
-        brand = subprocess.check_output(
-            ["adb", "-s", did, "shell", "getprop", "ro.product.brand"],
-            timeout=12,
-            stderr=subprocess.DEVNULL,
-        ).decode("utf-8", errors="replace").strip()
-        model = subprocess.check_output(
-            ["adb", "-s", did, "shell", "getprop", "ro.product.model"],
-            timeout=12,
-            stderr=subprocess.DEVNULL,
-        ).decode("utf-8", errors="replace").strip()
-        return f"{brand} {model}".strip() or did
-    except Exception:  # noqa: BLE001 (offline device, no adb, timeout)
-        return did
 
 
 def resolve_final_excel_path(root: Path) -> Path | None:
@@ -211,6 +190,8 @@ def resolve_ai_intelligence_artifacts(root: Path) -> list[Path]:
 
 
 def _select_data_sheet(wb) -> object | None:
+    if "Flow Report" in wb.sheetnames:
+        return wb["Flow Report"]
     if "Raw Results" in wb.sheetnames:
         return wb["Raw Results"]
     for name in wb.sheetnames:
@@ -235,23 +216,26 @@ def _col_index(headers: list[str], *candidates: str) -> int | None:
     return None
 
 
+def _ai_cell_to_email(raw: str) -> str:
+    t = (raw or "").strip()
+    if not t or t in ("N/A", "NOT_CHECKED"):
+        return "—"
+    return t
+
+
 def read_execution_table_rows(
     excel_path: Path,
 ) -> tuple[list[dict[str, str]], str | None]:
     """
-    Return row dicts: suite, flow, device, status, exit_code, ai_analyses; plus an optional error.
-    AI text comes from columns named AI Analyses, AI Failure Summary, or as a fallback AI Status.
-
-    If ``Device Name`` is empty and ``Device ID`` is set, the email uses ``ro.product.brand`` +
-    ``ro.product.model`` from ``adb -s <id> shell getprop`` (see ``get_device_name``), so
-    the body shows a friendly name instead of a bare serial.
+    Return flow-wise rows: suite, flow, device, status, exit_code, ai_analyses.
+    Prefers the ``Flow Report`` sheet; otherwise ``Raw Results``. Skips rows with no flow.
     """
     path = excel_path.resolve()
     wb = load_workbook(path, read_only=True, data_only=True)
     try:
         ws = _select_data_sheet(wb)
         if ws is None:
-            return [], "No tabular sheet found (expected 'Raw Results' or a sheet with Suite/Flow and Status)."
+            return [], "No tabular sheet found (expected 'Flow Report' or 'Raw Results')."
 
         rows_iter = ws.iter_rows(values_only=True)
         header_row = next(rows_iter, None)
@@ -259,19 +243,39 @@ def read_execution_table_rows(
             return [], "Empty sheet."
 
         headers = [str(h or "").strip() for h in header_row]
-        i_suite = _col_index(headers, "Suite")
-        i_flow = _col_index(headers, "Flow Name", "Flow")
-        i_dname = _col_index(headers, "Device Name", "Device")
-        i_did = _col_index(headers, "Device ID", "Device Id", "Udid", "UDID")
-        i_status = _col_index(headers, "Status")
-        i_exit = _col_index(headers, "Exit Code", "Exit code")
-        i_ai = _col_index(
-            headers,
-            "AI Analyses",
-            "AI Failure Summary",
-            "AI Status",
+        is_flow_report = (
+            bool(ws.title) and str(ws.title).strip() == "Flow Report" and "AI Analysis" in headers
         )
 
+        if is_flow_report:
+            i_suite = _col_index(headers, "Suite")
+            i_flow = _col_index(headers, "Flow")
+            i_dev = _col_index(headers, "Device")
+            i_did = _col_index(headers, "Device ID", "Device Id", "Udid", "UDID")
+            i_status = _col_index(headers, "Status")
+            i_exit = _col_index(headers, "Exit Code", "Exit code")
+            i_ai = _col_index(
+                headers,
+                "AI Analysis",
+                "AI Analyses",
+                "AI Failure Summary",
+            )
+            i_dname = None
+        else:
+            i_suite = _col_index(headers, "Suite")
+            i_flow = _col_index(headers, "Flow Name", "Flow")
+            i_dname = _col_index(headers, "Device Name", "Device")
+            i_did = _col_index(headers, "Device ID", "Device Id", "Udid", "UDID")
+            i_status = _col_index(headers, "Status")
+            i_exit = _col_index(headers, "Exit Code", "Exit code")
+            i_ai = _col_index(
+                headers,
+                "AI Analysis",
+                "AI Analyses",
+                "AI Failure Summary",
+                "AI Status",
+            )
+            i_dev = None
         if i_status is None:
             return [], "No 'Status' column in execution data."
 
@@ -290,21 +294,29 @@ def read_execution_table_rows(
 
             suite = _cell(i_suite)
             flow = _cell(i_flow)
-            dname = _cell(i_dname)
-            did = _cell(i_did)
-            if dname:
-                device = dname
-            elif did:
-                device = get_device_name(did)
-            else:
-                device = ""
+            if not str(flow or "").strip():
+                continue
+
             st = _cell(i_status).upper() or "UNKNOWN"
             ex = _cell(i_exit)
             if ex == "":
                 ex = "0"
-            ai = _cell(i_ai)
-            if st == "PASS" and (not ai or ai in ("—", "N/A", "NOT_CHECKED")):
-                ai = "N/A"
+            if is_flow_report:
+                device = _cell(i_dev) if i_dev is not None else ""
+                did = _cell(i_did) if i_did is not None else ""
+                if not device.strip() and did:
+                    device = get_device_name(did)
+            else:
+                dname = _cell(i_dname) if i_dname is not None else ""
+                did = _cell(i_did) if i_did is not None else ""
+                if dname:
+                    device = dname
+                elif did:
+                    device = get_device_name(did)
+                else:
+                    device = ""
+            raw_ai = _cell(i_ai) if i_ai is not None else ""
+            ai = _ai_cell_to_email(raw_ai)
 
             out.append(
                 {
@@ -485,8 +497,8 @@ def build_email_html(
                 f'<td class="c-flow">{html.escape(r.get("flow", ""))}</td>'
                 f'<td class="c-dev">{html.escape(r.get("device", ""))}</td>'
                 f'<td class="{cls}"><strong>{html.escape(r.get("status", ""))}</strong></td>'
-                f'{_format_ai_for_html(r.get("ai_analyses", ""))}'
                 f'<td class="c-ex">{html.escape(r.get("exit_code", ""))}</td>'
+                f'{_format_ai_for_html(r.get("ai_analyses", ""))}'
                 "</tr>"
             )
         if not trs:
@@ -532,7 +544,7 @@ def build_email_html(
 def _thead() -> str:
     return (
         "<tr>"
-        "<th>Suite</th><th>Flow</th><th>Device</th><th>Status</th><th>AI Analyses</th><th>Exit Code</th>"
+        "<th>Suite</th><th>Flow</th><th>Device</th><th>Status</th><th>Exit Code</th><th>AI Analysis</th>"
         "</tr>"
     )
 
@@ -557,12 +569,12 @@ def build_email_plain(
     if not rows:
         lines.append("No execution rows in the report table.")
     else:
-        colw = (12, 20, 14, 8, 32, 6)
-        lines.append("Suite | Flow | Device | Status | AI Analyses (trunc) | Exit")
-        lines.append("-" * 78)
+        colw = (12, 18, 20, 8, 4, 28)
+        lines.append("Suite | Flow | Device | Status | Exit | AI Analysis (trunc)")
+        lines.append("-" * 84)
         for r in rows:
-            ai = (r.get("ai_analyses") or "")[: colw[4]]
-            if len((r.get("ai_analyses") or "")) > colw[4]:
+            ai = (r.get("ai_analyses") or "")[: colw[5]]
+            if len((r.get("ai_analyses") or "")) > colw[5]:
                 ai += "…"
             line = " | ".join(
                 [
@@ -570,8 +582,8 @@ def build_email_plain(
                     (r.get("flow") or "")[: colw[1]],
                     (r.get("device") or "")[: colw[2]],
                     (r.get("status") or "")[: colw[3]],
+                    (r.get("exit_code") or "")[: colw[4]],
                     ai,
-                    (r.get("exit_code") or "")[: colw[5]],
                 ]
             )
             lines.append(line)

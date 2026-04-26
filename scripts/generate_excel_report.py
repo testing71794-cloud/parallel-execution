@@ -53,9 +53,62 @@ COLS = [
     "Log Path",
     "Screenshot Path",
     "Timestamp",
+    "AI Analysis",
 ]
 
 _SCREEN_DEFAULT = str((REPO / ".maestro" / "screenshots").resolve())
+
+# Flow-only view for final report / email (no suite-level rows without a flow)
+FLOW_REPORT_HEADERS: tuple[str, ...] = (
+    "Suite",
+    "Flow",
+    "Device",
+    "Device ID",
+    "Status",
+    "Exit Code",
+    "AI Analysis",
+)
+
+
+def _augment_merged_row(rowd: dict) -> None:
+    """Refresh Device Name from ADB and AI Analysis for rows loaded from an older xlsx merge."""
+    did = str(rowd.get("Device ID", "") or "").strip()
+    if did:
+        rowd["Device Name"] = get_device_name(did)
+    ai = (
+        str(rowd.get("AI Analysis", "") or "").strip()
+        or str(rowd.get("AI Analyses", "") or "").strip()
+        or str(rowd.get("AI Failure Summary", "") or "").strip()
+        or "—"
+    )
+    rowd["AI Analysis"] = ai
+
+
+def _write_flow_report_sheet(wb: Workbook, all_rows: list[dict]) -> None:
+    w = wb.create_sheet("Flow Report", 1)
+    w.append(list(FLOW_REPORT_HEADERS))
+    for c in w[1]:
+        c.fill = HEADER_FILL
+        c.font = Font(bold=True)
+    for r in all_rows:
+        flow = str(r.get("Flow Name", "") or "").strip()
+        if not flow:
+            continue
+        suite_s = str(r.get("Suite", "") or "").strip()
+        if not suite_s:
+            continue
+        did = str(r.get("Device ID", "") or "").strip()
+        dev = str(r.get("Device Name", "") or "").strip() or (get_device_name(did) if did else "")
+        st = str(r.get("Status", "") or "").strip()
+        ex = str(r.get("Exit Code", "") or "").strip() or "0"
+        ai = (
+            str(r.get("AI Analysis", "") or "").strip()
+            or str(r.get("AI Analyses", "") or "").strip()
+            or str(r.get("AI Failure Summary", "") or "").strip()
+            or "—"
+        )
+        w.append([suite_s, flow, dev, did, st, ex, ai])
+    _autosize(w, 60)
 
 
 def parse_status_file(file_path: Path) -> dict:
@@ -101,14 +154,15 @@ def _device_id(row: dict) -> str:
     return (row.get("device_id") or row.get("device") or "").strip()
 
 
-def _device_name(row: dict) -> str:
-    dn = (row.get("device_name") or "").strip()
-    if dn:
-        return dn
+def _display_device_name_for_report(row: dict) -> str:
+    """
+    Device column: always prefer ADB "Brand Model" for a serial, so Excel shows Samsung Galaxy
+    S21, not RZCT... . Falls back to status device_name if no id; then get_device_name on id.
+    """
     did = _device_id(row)
-    if not did:
-        return ""
-    return get_device_name(did)
+    if did:
+        return get_device_name(did)
+    return (row.get("device_name") or "").strip()
 
 
 def _log_path(row: dict) -> str:
@@ -140,7 +194,7 @@ def _rows_to_raw_dicts(
     out: list[dict] = []
     for row in results:
         did = _device_id(row)
-        dname = _device_name(row)
+        dname = _display_device_name_for_report(row)
         st = (row.get("status") or "UNKNOWN").upper()
         logp = _log_path(row)
         ec = (row.get("exit_code") or "").strip() or "0"
@@ -154,6 +208,8 @@ def _rows_to_raw_dicts(
             an = analyze_failure_for_row(
                 None, status="PASS", use_openrouter=False
             )
+        ai_raw = (an.get("ai_failure_summary") or "").strip()
+        ai_one = (ai_raw[:2000] if ai_raw else "—")
         out.append(
             {
                 "Suite": suite_label,
@@ -185,6 +241,7 @@ def _rows_to_raw_dicts(
                 "Timestamp": (row.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))[
                     :32
                 ],
+                "AI Analysis": ai_one,
             }
         )
     return out
@@ -243,6 +300,7 @@ def _merge_build_summary(
                         rowd.get("AI Failure Summary", "")
                     ).strip():
                         rowd["AI Analyses"] = rowd.get("AI Failure Summary", "")
+                    _augment_merged_row(rowd)
                     by_suites[su].append(rowd)
         except Exception as exc:
             print(f"Note: could not merge prior final_execution_report.xlsx: {exc}")
@@ -270,6 +328,7 @@ def _merge_build_summary(
     ws0["A4"], ws0["B4"] = "Failed (non-PASS, excl. flaky count below)", str(nf)
     ws0["A5"], ws0["B5"] = "Flaky", str(fl)
     ws0["A6"], ws0["B6"] = "Generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _write_flow_report_sheet(wb, all_rows)
     wdev = wb.create_sheet("Device Summary")
     wdev.append(["Device Name", "Device ID", "Total", "Passed", "Failed", "Flaky"])
     by_d: dict[str, list[dict]] = defaultdict(list)
@@ -336,6 +395,7 @@ def build_workbook(
     ws0["A6"] = "Generated"
     ws0["B6"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    _write_flow_report_sheet(wb, raw)
     wdev = wb.create_sheet("Device Summary")
     wdev.append(["Device Name", "Device ID", "Total", "Passed", "Failed", "Flaky"])
     by_d: dict[str, list[dict]] = defaultdict(list)
