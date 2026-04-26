@@ -1,0 +1,36 @@
+appId: com.kodaksmile
+name: ED_03 - Fit Crop
+---
+# ✅ IMPORTANT: use correct relative path for your structure
+# If this file is: flows/editing/ED_03_fit_crop.yaml
+# And ED_01 is in same folder: flows/editing/ED_01_enter_edit_mode.yaml
+- tapOn:
+    id: imageViewEdit
+- waitForAnimationToEnd
+
+# Optional: if your Fit tool shows crop handles, move the image slightly
+# (drag/swipe is supported)
+- swipe:
+    start: "50%,55%"
+    end: "70%,55%"
+- waitForAnimationToEnd
+
+- swipe:
+    start: "70%,55%"
+    end: "50%,55%"
+- waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible: "Save"
+    commands:
+      - tapOn: "Save"
+      - waitForAnimationToEnd
+
+# Some screens use Done instead of Save
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd

@@ -1,0 +1,21 @@
+appId: com.kodaksmile
+---
+# Handle Android Bluetooth pairing request dialog
+
+- runFlow:
+    when:
+      visible: "Bluetooth pairing request"
+    commands:
+      - assertVisible: "Pair"
+      - tapOn: "Pair"
+      - waitForAnimationToEnd
+
+# Some devices show partial text like "Pair with Kodak Smile+"
+- runFlow:
+    when:
+      visible: "Pair with Kodak"
+    commands:
+      - tapOn: "Pair"
+      - waitForAnimationToEnd
+
+

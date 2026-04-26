@@ -1,0 +1,8 @@
+appId: com.kodaksmile
+name: ED_09 - Highlights
+---
+- tapOn: "Highlights"
+- swipe:
+    start: "30%,90%"
+    end: "80%,90%"
+- tapOn: "Done"

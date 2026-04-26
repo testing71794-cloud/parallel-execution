@@ -1,0 +1,31 @@
+appId: com.kodaksmile
+name: ED_15 - Frames
+---
+
+- tapOn: "Frames"
+- waitForAnimationToEnd
+- tapOn:
+    id: ivFrameCategory
+    index: 1
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: imageViewFilter
+      index: 4
+# Tap any frame thumbnail (best-effort)
+- tapOn:
+    point: 56%,75%
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- doubleTapOn:
+    id: imageViewFilter
+    index: 3
+    delay: 100
+- waitForAnimationToEnd
+# Save/apply
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd

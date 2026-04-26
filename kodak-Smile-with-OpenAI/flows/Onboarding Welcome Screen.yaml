@@ -1,0 +1,27 @@
+appId: com.kodaksmile
+name: Onboarding Welcome Screen
+---
+- waitForAnimationToEnd
+# ------------------------------
+# Welcome Screen – Assert elements + Tap Find My Printer
+# ------------------------------
+
+- waitForAnimationToEnd
+
+# Title & Subtitle
+- assertVisible: "Welcome"
+- assertVisible: "Which device would you like to connect?"
+
+# Printer Option
+- assertVisible: "Find My Printer"
+
+# Camera Option
+- assertVisible: "Find My Camera"
+
+# Footer link
+- assertVisible: "Kodakphotoplus.com"
+
+# Tap Printer (change if you want Camera instead)
+- tapOn: "Find My Printer"
+
+- waitForAnimationToEnd

@@ -1,0 +1,6 @@
+# ATP smoke — minimal; main app flows are unchanged under "Non printing flows" / "Printing Flow"
+appId: com.kodaksmile
+name: ATP signup smoke
+---
+- launchApp
+- waitForAnimationToEnd

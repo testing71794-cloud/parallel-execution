@@ -5,7 +5,7 @@ ai-doctor/node_modules/
 /status/
 collected-artifacts/
 /build-summary/
-demo_intelligence_workspace/build-summary/
+demo_intelligence_workspace/
 .maestro/
 temp-runners/
 *.flag
@@ -17,3 +17,7 @@ ai-doctor/.env
 __pycache__/
 *.pyc
 *.zip
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/

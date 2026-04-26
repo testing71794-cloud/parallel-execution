@@ -1,0 +1,165 @@
+appId: com.kodaksmile
+---
+
+# Open Camera from Home (try by id first, fallback to point tap if element not found)
+- runFlow:
+    when:
+      visible:
+        id: cameraImageView
+    commands:
+      - tapOn:
+          id: cameraImageView
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      notVisible:
+        id: cameraImageView
+    commands:
+      - tapOn:
+          point: "50%,92%"
+      - waitForAnimationToEnd
+
+# Handle camera permission popup if it appears on first open
+- runFlow: ../flows/handleCameraAccessPopup.yaml
+
+# Coachmark in video: "Swipe left to apply live filters" with button "Ok"
+- runFlow:
+    when:
+      visible: "Swipe left to apply live filters"
+    commands:
+      - runFlow:
+          when:
+            visible: "Ok"
+          commands:
+            - tapOn: "Ok"
+            - waitForAnimationToEnd
+      - runFlow:
+          when:
+            visible: "OK"
+          commands:
+            - tapOn: "OK"
+            - waitForAnimationToEnd
+
+# Camera screen anchor (video shows "Close" text at top)
+- runFlow:
+    when:
+      visible: "Close"
+    commands:
+      - assertVisible: "Close"
+
+# Open Gallery preview icon (bottom-left small thumbnail)
+- assertVisible:
+    id: imageViewPreview
+- tapOn:
+    id: imageViewPreview
+- waitForAnimationToEnd
+# If the fine-tune coachmark popup is visible, dismiss it
+- runFlow:
+    when:
+      visible: "Ok"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+
+# Tap the X close button from fine-tune screen
+- runFlow:
+    when:
+      visible: "X"
+    commands:
+      - tapOn: "X"
+      - waitForAnimationToEnd
+# Ensure we are on camera screen
+- assertVisible: "Close"
+# Close preview if open, return to camera
+- tapOn: "Close"
+- waitForAnimationToEnd
+# Tap flash button (top right)
+- tapOn:
+    id: imageViewFlash
+- waitForAnimationToEnd
+
+# Tap capture button (big yellow circle)
+- runFlow:
+    when:
+      visible:
+        id: shutterButton
+    commands:
+      - tapOn:
+          id: shutterButton
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      notVisible:
+        id: shutterButton
+    commands:
+      - tapOn:
+          point: "50%,90%"
+      - waitForAnimationToEnd
+- tapOn:
+    id: imageViewPreview
+# Wait for a few seconds to simulate user review time
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Now close the preview screen
+- tapOn: "Close"
+- waitForAnimationToEnd
+
+# ===============================
+# Camera: Switch -> Flash -> Capture -> Preview
+# ===============================
+
+# Make sure we are on Camera screen
+- assertVisible: "Close"
+
+# 1) Tap camera switch icon (near top-right, beside flash)
+# Using point is most reliable across builds.
+- tapOn:
+    id: imageViewFlipCamera
+- waitForAnimationToEnd
+
+# 2) Tap flash icon (top-right)
+# Prefer id if available; otherwise use point.
+- runFlow:
+    when:
+      visible:
+        id: imageViewFlash
+    commands:
+      - tapOn:
+          id: imageViewFlash
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      notVisible:
+        id: imageViewFlash
+    commands:
+      - tapOn:
+          point: "94%,7%"
+      - waitForAnimationToEnd
+
+# 3) Tap capture (yellow circle)
+# Prefer id if available; otherwise use point.
+- runFlow:
+    when:
+      visible:
+        id: shutterButton
+    commands:
+      - tapOn:
+          id: shutterButton
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      notVisible:
+        id: shutterButton
+    commands:
+      - tapOn:
+          point: "50%,90%"
+      - waitForAnimationToEnd
+# Open Gallery preview icon (bottom-left small thumbnail)
+- assertVisible:
+    id: imageViewPreview
+- tapOn:
+    id: imageViewPreview
+- waitForAnimationToEnd

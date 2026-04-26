@@ -1,0 +1,72 @@
+appId: com.kodaksmile
+---
+# If already connected, do nothing
+- runFlow:
+    when:
+      visible: ${output.home.connectedText}
+    commands:
+      - assertVisible: ${output.home.connectedText}
+
+# Solve it / Disconnected -> enter connection
+- runFlow:
+    when:
+      visible: ${output.home.solveItText}
+    commands:
+      - tapOn: ${output.home.solveItText}
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible: ${output.home.disconnectedText}
+    commands:
+      - tapOn: ${output.home.disconnectedText}
+      - waitForAnimationToEnd
+# -----------------------------------
+# If "Connect" visible → Tap Connect
+# -----------------------------------
+- runFlow:
+    when:
+      visible: "Connect"
+    commands:
+      - waitForAnimationToEnd
+      - assertVisible: "Connect"
+      - tapOn: "Connect"
+      - waitForAnimationToEnd
+
+# Retry search a few times
+- repeat:
+    times: 8
+    commands:
+      - runFlow:
+          when:
+            visible: ${output.printer.searchAgainText}
+          commands:
+            - tapOn: ${output.printer.searchAgainText}
+            - waitForAnimationToEnd
+
+      - runFlow:
+          when:
+            visible: ${output.home.connectText}
+          commands:
+            - tapOn: ${output.home.connectText}
+            - waitForAnimationToEnd
+
+      - runFlow:
+          when:
+            visible: "Bluetooth pairing request"
+          commands:
+            - tapOn: ${output.printer.pairText}
+            - waitForAnimationToEnd
+# -----------------------------------
+# If "Connect" visible → Tap Connect
+# -----------------------------------
+- runFlow:
+    when:
+      visible: "Connect"
+    commands:
+      - waitForAnimationToEnd
+      - assertVisible: "Connect"
+      - tapOn: "Connect"
+      - waitForAnimationToEnd
+
+- waitForAnimationToEnd

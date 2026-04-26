@@ -1,0 +1,8 @@
+appId: com.kodaksmile
+---
+- runScript: login.js
+- runScript: home.js
+- runScript: printer.js
+- runScript: common.js
+- runScript: camera.js
+- runScript: editor.js

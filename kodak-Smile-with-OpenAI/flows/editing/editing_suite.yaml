@@ -1,0 +1,22 @@
+appId: com.kodaksmile
+name: EDITING SUITE - Kodak Smile (Subflows)
+---
+- runFlow: ED_01_enter_edit_mode.yaml
+- runFlow: ED_02_filters.yaml
+- runFlow: ED_03_fit_crop.yaml
+- runFlow: ED_04_rotate.yaml
+- runFlow: ED_05_brightness.yaml
+- runFlow: ED_06_contrast.yaml
+- runFlow: ED_07_warmth.yaml
+- runFlow: ED_08_saturation.yaml
+- runFlow: ED_09_highlights.yaml
+- runFlow: ED_10_shadows.yaml
+- runFlow: ED_11_stickers.yaml
+- runFlow: ED_12_text.yaml
+- runFlow: ED_13_doodle.yaml
+- runFlow: ED_14_erase_doodle.yaml
+- runFlow: ED_15_frames.yaml
+- runFlow: ED_16_ar_video.yaml
+- runFlow: ED_17_scan_ar_video.yaml
+- runFlow: ED_E01_cancel_without_saving.yaml
+- runFlow: ED_E02_multiple_edits.yaml

@@ -1,0 +1,39 @@
+appId: com.kodaksmile
+---
+# Handle in-app camera permission popup + Android permission dialog
+
+- runFlow:
+    when:
+      visible: "Enable camera access"
+    commands:
+      - tapOn: "Enable camera access"
+      - waitForAnimationToEnd
+
+      # Android permission dialog variants
+      - runFlow:
+          when:
+            visible: "While using the app"
+          commands:
+            - tapOn: "While using the app"
+            - waitForAnimationToEnd
+
+      - runFlow:
+          when:
+            visible: "Allow only while using the app"
+          commands:
+            - tapOn: "Allow only while using the app"
+            - waitForAnimationToEnd
+
+      - runFlow:
+          when:
+            visible: "Allow"
+          commands:
+            - tapOn: "Allow"
+            - waitForAnimationToEnd
+
+      - runFlow:
+          when:
+            visible: "OK"
+          commands:
+            - tapOn: "OK"
+            - waitForAnimationToEnd

@@ -1,0 +1,64 @@
+appId: com.kodaksmile
+name: Flow10 - Signup -> Permissions -> Onboarding (skip)->Camera-> Connect -> Print
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load elements
+- runFlow: ../elements/loadElements.yaml
+
+# Signup + terms + permission + onboarding + rate popups
+- runFlow: ../flows/signupFlow.yaml
+- runFlow: ../flows/handleTerms.yaml
+- runFlow: ../flows/handleNoInternet.yaml
+- runFlow: ../flows/permissionsFlow.yaml
+- runFlow: ../flows/onboardingSkip.yaml
+- runFlow: ../flows/handleRateApp.yaml
+
+# ---------- HOME ----------
+# (Sometimes a tutorial overlay appears. Dismiss if present.)
+- runFlow:
+    when:
+      visible: "Ok"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+
+# Home title (use your POM or fallback text)
+- runFlow:
+    when:
+      visible: ${output.home.titleText}
+    commands:
+      - assertVisible: ${output.home.titleText}
+
+- runFlow:
+    when:
+      visible: "KODAK SMILE"
+    commands:
+      - assertVisible: "KODAK SMILE"
+
+# ---------- OPEN CAMERA -> SWITCH -> FLASH -> CAPTURE -> PREVIEW ----------
+- runFlow: ../flows/Camera.yaml
+- waitForAnimationToEnd
+
+# ---------- PRINT WITH CONNECTION HANDLING + COPIES=2 ----------
+- runFlow: ../flows/printFromPreview_withReconnect.yaml
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+# Low battery handler
+- runFlow: ../flows/handleLowBattery.yaml
+
+# Back to Home
+- back
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: ${output.home.titleText}
+    commands:
+      - assertVisible: ${output.home.titleText}
+- runFlow:
+    when:
+      visible: "KODAK SMILE"
+    commands:
+      - assertVisible: "KODAK SMILE"

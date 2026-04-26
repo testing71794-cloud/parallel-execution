@@ -1,0 +1,5 @@
+# ATP (automation_with_testcases) — Maestro project config
+flows:
+  - "automation_with_testcases/flows/**/*.yaml"
+executionOrder:
+  continueOnFailure: true

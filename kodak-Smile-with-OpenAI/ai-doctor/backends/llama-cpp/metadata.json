@@ -1,0 +1,6 @@
+{
+  "meta_backend_for": "cpu-llama-cpp",
+  "name": "llama-cpp",
+  "gallery_url": "github:mudler/LocalAI/backend/index.yaml@master",
+  "installed_at": "2026-02-19T07:53:46Z"
+}

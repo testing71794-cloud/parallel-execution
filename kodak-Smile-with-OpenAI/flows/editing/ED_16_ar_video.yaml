@@ -1,0 +1,9 @@
+appId: com.kodaksmile
+name: ED_16 - AR Video
+---
+- tapOn: "Album"
+- tapOn:
+    point: "15%,30%"
+- tapOn: "AR"
+- tapOn: "Video"
+- tapOn: "Done"

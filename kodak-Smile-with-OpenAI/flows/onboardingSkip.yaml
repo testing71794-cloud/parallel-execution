@@ -1,0 +1,11 @@
+appId: com.kodaksmile
+---
+- repeat:
+    times: 3
+    commands:
+      - runFlow:
+          when:
+            visible: ${output.common.skipText}
+          commands:
+            - tapOn: ${output.common.skipText}
+            - waitForAnimationToEnd

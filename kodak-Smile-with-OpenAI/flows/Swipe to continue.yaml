@@ -1,0 +1,50 @@
+appId: com.kodaksmile
+name: Connect printer from intro + print (complete)
+---
+- waitForAnimationToEnd
+
+# ------------------------------
+# 1) Swipe to continue (if shown)
+# ------------------------------
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
+
+# ------------------------------
+# 2) Choose Find My Printer (if shown)
+# ------------------------------
+- runFlow:
+    when:
+      visible: "Find My Printer"
+    commands:
+      - tapOn: "Find My Printer"
+      - waitForAnimationToEnd
+
+# ------------------------------
+# 8) Sometimes Connect shows again after pairing
+# ------------------------------
+- runFlow:
+    when:
+      visible: "Connect"
+    commands:
+      - waitForAnimationToEnd
+      - assertVisible: "Connect"
+      - tapOn: "Connect"
+      - waitForAnimationToEnd
+# Handle Android Bluetooth pairing request dialog
+
+- runFlow:
+    when:
+      visible: "Pair"
+    commands:
+      - assertVisible: "Pair"
+      - tapOn: "Pair"
+      - waitForAnimationToEnd

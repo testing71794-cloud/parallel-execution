@@ -1,0 +1,42 @@
+appId: com.kodaksmile
+name: flow11 - EDITING SUITE - Kodak Smile
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- runFlow: ../elements/loadElements.yaml
+- runFlow: ../flows/I will do it later.yaml
+- runFlow: ../flows/Agree Term and Condition.yaml
+- runFlow: ../flows/permissionsFlow.yaml
+- runFlow: ../flows/Onboarding Welcome Screen.yaml
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
+- runFlow: ../flows/onboardingSkip.yaml
+- assertVisible: ${output.home.titleText}
+- runFlow: ../flows/editing/ED_01_enter_edit_mode.yaml
+- runFlow: ../flows/editing/ED_03_fit_crop.yaml
+- runFlow: ../flows/editing/ED_04_rotate.yaml
+- runFlow: ../flows/editing/ED_05_brightness.yaml
+- runFlow: ../flows/editing/ED_06_contrast.yaml
+- runFlow: ../flows/editing/ED_07_warmth.yaml
+- runFlow: ../flows/editing/ED_08_saturation.yaml
+- runFlow: ../flows/editing/ED_09_highlights.yaml
+- runFlow: ../flows/editing/ED_10_shadows.yaml
+- runFlow: ../flows/editing/ED_11_stickers.yaml
+- runFlow: ../flows/editing/ED_12_text.yaml
+- runFlow: ../flows/editing/ED_13_doodle.yaml
+- runFlow: ../flows/editing/ED_14_erase_doodle.yaml
+- runFlow: ../flows/editing/ED_15_frames.yaml
+- runFlow: ../flows/editing/ED_16_ar_video.yaml
+- runFlow: ../flows/editing/ED_17_scan_ar_video.yaml
+- runFlow: ../flows/editing/ED_E01_cancel_without_saving.yaml
+- runFlow: ../flows/editing/ED_E02_multiple_edits.yaml

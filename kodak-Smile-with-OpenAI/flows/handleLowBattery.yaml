@@ -1,0 +1,9 @@
+# Handles Low Battery popup during print flow
+appId: com.kodaksmile
+---
+- runFlow:
+    when:
+      visible: "Low Battery"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd

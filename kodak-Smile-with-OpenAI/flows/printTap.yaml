@@ -1,0 +1,29 @@
+appId: com.kodaksmile
+---
+- runFlow:
+    when:
+      visible: ${output.printer.printText}
+    commands:
+      - tapOn: ${output.printer.printText}
+      - waitForAnimationToEnd
+
+# ------------------------------
+# 7) Fine-tune popup (optional)
+# ------------------------------
+- runFlow:
+    when:
+      visible: "Time to Fine-Tune"
+    commands:
+      - runFlow:
+          when:
+            visible: "Ok"
+          commands:
+            - tapOn: "Ok"
+      - runFlow:
+          when:
+            visible: "OK"
+          commands:
+            - tapOn: "OK"
+      - waitForAnimationToEnd
+
+

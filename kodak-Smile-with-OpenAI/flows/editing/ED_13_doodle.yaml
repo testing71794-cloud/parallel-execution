@@ -1,0 +1,20 @@
+appId: com.kodaksmile
+name: ED_13 - Doodle
+---
+
+- tapOn: "Doodle"
+- waitForAnimationToEnd
+
+# Draw stroke (no draw/drag; use swipe across canvas)
+- swipe:
+    start: "35%,45%"
+    end: "75%,65%"
+- waitForAnimationToEnd
+
+# Save/apply
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd

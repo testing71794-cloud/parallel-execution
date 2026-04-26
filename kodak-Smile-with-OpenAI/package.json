@@ -1,0 +1,21 @@
+{
+  "name": "kodak-maestro-suite",
+  "version": "1.0.0",
+  "description": "Maestro AI Doctor with Cursor AI (ATP-based)",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs",
+    "test": "python -m pytest intelligent_platform/tests -q",
+    "ready": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/ready_to_test.ps1",
+    "doctor": "bash ./doctor.sh",
+    "doctor:junit": "node ai-doctor/index.mjs",
+    "doctor:legacy-rerun-maestro": "bash ./scripts/deprecated_doctor_rerun_maestro.sh"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "fast-glob": "^3.3.3",
+    "nodemailer": "^8.0.2",
+    "xml2js": "^0.6.2"
+  }
+}

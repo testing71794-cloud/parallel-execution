@@ -1,0 +1,61 @@
+appId: com.kodaksmile
+name: Filter
+---
+# Image Filter Application Flow Test
+# Dismiss the tutorial overlay
+# ) Fine-tune popup (optional)
+# ------------------------------
+- runFlow:
+    when:
+      visible: "Time to Fine-Tune"
+    commands:
+      - runFlow:
+          when:
+            visible: "Ok"
+          commands:
+            - tapOn: "Ok"
+      - runFlow:
+          when:
+            visible: "OK"
+          commands:
+            - tapOn: "OK"
+      - waitForAnimationToEnd
+  
+# Apply various filters by tapping on them in the carousel
+- tapOn:
+    id: imageViewFilter
+    index: 1
+- assertVisible: "Sepia"
+- waitForAnimationToEnd
+# Run only if Filter Intensity popup is visible
+- runFlow:
+    when:
+      visible: "Ok"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+- tapOn:
+    id: imageViewFilter
+    index: 2
+- assertVisible: "Desaturate"
+- waitForAnimationToEnd
+- tapOn:
+    id: imageViewFilter
+    index: 3
+- assertVisible: "Polaroid"
+- waitForAnimationToEnd
+- tapOn:
+    id: imageViewFilter
+    index: 4
+- assertVisible: "Brownie"
+- waitForAnimationToEnd
+- tapOn:
+    id: imageViewFilter
+    index: 5
+- assertVisible: "Vintage"
+- waitForAnimationToEnd
+# Scroll the filter carousel to reveal more filters (if needed)
+- waitForAnimationToEnd
+
+
+

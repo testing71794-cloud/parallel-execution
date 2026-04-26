@@ -1,0 +1,31 @@
+appId: com.kodaksmile
+name: ED_11 - Stickers
+---
+- tapOn: "Stickers"
+- waitForAnimationToEnd
+
+# Tap any sticker thumbnail (best-effort)
+- tapOn:
+    point: "20%,75%"
+- waitForAnimationToEnd
+
+# Move sticker on canvas (drag not supported; use swipe)
+- swipe:
+    start: "50%,55%"
+    end: "70%,60%"
+- waitForAnimationToEnd
+- tapOn:
+    id: imageViewStricker
+    index: 9
+- waitForAnimationToEnd
+- tapOn:
+    id: imageViewStricker
+    index: 9
+- waitForAnimationToEnd
+# Save/apply
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd

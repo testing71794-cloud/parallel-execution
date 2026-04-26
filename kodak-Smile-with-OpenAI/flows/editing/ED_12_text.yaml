@@ -1,0 +1,43 @@
+appId: com.kodaksmile
+name: ED_12 - Add Text
+---
+
+- tapOn: "Text"
+- waitForAnimationToEnd
+
+# Focus text field (best-effort)
+- tapOn:
+    point: "50%,50%"
+- waitForAnimationToEnd
+
+- inputText: "Hello World"
+- waitForAnimationToEnd
+
+# Close keyboard / confirm (varies by device)
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd
+
+# Move text on canvas (drag not supported; use swipe)
+- swipe:
+    start: "50%,55%"
+    end: "70%,60%"
+- waitForAnimationToEnd
+
+# Save/apply
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible: "Save"
+    commands:
+      - tapOn: "Save"
+      - waitForAnimationToEnd

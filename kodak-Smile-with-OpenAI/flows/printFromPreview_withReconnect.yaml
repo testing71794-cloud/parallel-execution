@@ -1,0 +1,71 @@
+appId: com.kodaksmile
+---
+# ==========================================================
+# Preview -> Print
+# If not connected: handle searching/couldn't find/device list + pairing
+# Then select copies=2 and confirm print
+# ==========================================================
+
+# Must be on Preview/Edit screen
+- runFlow:
+    when:
+      visible: "Print"
+    commands:
+      - assertVisible: "Print"
+
+- runFlow:
+    when:
+      visible: "0 Print"
+    commands:
+      - assertVisible: "0 Print"
+
+# Tap Print (first time)
+- runFlow:
+    when:
+      visible: "Print"
+    commands:
+      - tapOn: "Print"
+      - waitForAnimationToEnd
+
+# flows/handleBluetoothEnablePopup.yaml
+
+- waitForAnimationToEnd
+
+# Handle Android Bluetooth enable system popup (optional)
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - assertVisible: "Allow"
+      - tapOn: "Allow"
+      - waitForAnimationToEnd
+# If connection screens appear, handle them
+- runFlow: ../flows/handlePrinterConnection.yaml
+
+# After connection, app should return back to Preview/Edit screen.
+# Tap Print again to open copies selector (some builds require this)
+- runFlow:
+    when:
+      visible: "Print"
+    commands:
+      - tapOn: "Print"
+      - waitForAnimationToEnd
+
+
+# # Select copies and print
+- scrollUntilVisible:
+    element: "1 Copy"
+    direction: DOWN
+    timeout: 40000
+
+- tapOn: "1 Copy"
+- tapOn: "Print"
+
+# Out of paper (EDGE CASE)
+- runFlow:
+    when:
+      visible: "You are out of paper"
+    commands:
+      - tapOn: "Ok"
+
+
