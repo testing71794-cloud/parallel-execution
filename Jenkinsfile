@@ -282,43 +282,38 @@ pipeline {
             }
         }
 
-        // Do NOT put Gmail app passwords in this file. Store them only in Jenkins: Credentials (e.g. gmail-smtp-kodak).
+        // Gmail app password only in Jenkins credentials (e.g. id: gmail-smtp-kodak). Not in this repo.
+        // If the job was created before SMTP_CREDENTIALS_ID existed, params can be null — we default in Groovy.
         stage('Send Final Email') {
             when { expression { return params.SEND_FINAL_EMAIL } }
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
-                        def smtpId = params.SMTP_CREDENTIALS_ID?.trim()
-                        def mailTo = params.MAIL_TO_OVERRIDE?.trim()
+                        def smtpId = (params.SMTP_CREDENTIALS_ID?.toString() ?: '').trim() ?: 'gmail-smtp-kodak'
+                        def mailTo = (params.MAIL_TO_OVERRIDE?.toString() ?: '').trim()
                         def defaultMailTo = 'kodaksmilechina@gmail.com'
-                        if (!smtpId) {
-                            echo "Send Final Email: set job parameter SMTP_CREDENTIALS_ID (e.g. gmail-smtp-kodak) so Jenkins can inject Gmail + app password. Skipping."
-                        } else {
-                            withCredentials([usernamePassword(credentialsId: smtpId, usernameVariable: 'B_SMTP_USER', passwordVariable: 'B_SMTP_PASS')]) {
-                                def smtpServer = params.SMTP_SERVER?.trim() ?: 'smtp.gmail.com'
-                                def smtpPort = params.SMTP_PORT?.trim() ?: '587'
-                                def receiver = mailTo ?: defaultMailTo
-                                withEnv([
-                                    "SMTP_SERVER=${smtpServer}",
-                                    "SMTP_PORT=${smtpPort}",
-                                    "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\final_execution_report.xlsx",
-                                    "PYTHONIOENCODING=utf-8",
-                                ]) {
-                                    bat """
-                                    cd /d "%WORKSPACE%"
-                                    echo Setting SMTP from Jenkins credential: ${smtpId}
-                                    set "SMTP_SERVER=${smtpServer}"
-                                    set "SMTP_PORT=${smtpPort}"
-                                    set "SMTP_USER=%B_SMTP_USER%"
-                                    set "SMTP_PASS=%B_SMTP_PASS%"
-                                    set "SENDER_EMAIL=%B_SMTP_USER%"
-                                    set "RECEIVER_EMAIL=${receiver.replaceAll('"', '')}"
-                                    set "MAIL_TO=${receiver.replaceAll('"', '')}"
-                                    echo Running email script...
-                                    python mailout\\send_email.py || (echo 1>email_failed.flag)
-                                    """
-                                }
+                        def smtpServer = (params.SMTP_SERVER?.toString() ?: '').trim() ?: 'smtp.gmail.com'
+                        def smtpPort = (params.SMTP_PORT?.toString() ?: '').trim() ?: '587'
+                        def receiver = mailTo ? mailTo : defaultMailTo
+                        echo "Send Final Email: credentialId=${smtpId} receiver=${receiver} server=${smtpServer} port=${smtpPort}"
+                        withCredentials([usernamePassword(credentialsId: smtpId, usernameVariable: 'B_SMTP_USER', passwordVariable: 'B_SMTP_PASS')]) {
+                            withEnv([
+                                "SMTP_SERVER=${smtpServer}",
+                                "SMTP_PORT=${smtpPort}",
+                                "SMTP_USER=${env.B_SMTP_USER}",
+                                "SMTP_PASS=${env.B_SMTP_PASS}",
+                                "SENDER_EMAIL=${env.B_SMTP_USER}",
+                                "RECEIVER_EMAIL=${receiver}",
+                                "MAIL_TO=${receiver}",
+                                "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\final_execution_report.xlsx",
+                                'PYTHONIOENCODING=utf-8',
+                            ]) {
+                                bat """
+                                cd /d "%WORKSPACE%"
+                                echo Running send_email (SMTP from Jenkins; password masked) ...
+                                python mailout\\send_email.py || (echo 1>email_failed.flag)
+                                """
                             }
                         }
                     }
