@@ -177,9 +177,8 @@ def main() -> int:
         if _orch_email_strict():
             logger.error(
                 "ORCH_EMAIL_STRICT=1: SMTP is not fully configured. "
-                "Jenkins: set job parameter SMTP_CREDENTIALS_ID (Gmail + App Password) and run the "
-                "Send Email step from the Pipeline, or export SMTP_USER, SMTP_PASS, RECEIVER_EMAIL "
-                "before: python mailout/send_email.py"
+                "Jenkins: in the Send Final Email stage set SMTP_USER, SMTP_PASS, RECEIVER_EMAIL (e.g. in the batch step), "
+                "or export them on the agent before: python mailout/send_email.py"
             )
             return 1
         logger.warning(
