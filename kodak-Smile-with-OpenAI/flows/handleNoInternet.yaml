@@ -1,9 +1,0 @@
-# Handles No Internet popup if it appears
-appId: com.kodaksmile
----
-- runFlow:
-    when:
-      visible: "No Internet Connection"
-    commands:
-      - tapOn: "Ok"
-      - waitForAnimationToEnd
