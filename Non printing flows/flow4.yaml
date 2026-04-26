@@ -1,5 +1,5 @@
 appId: com.kodaksmile
-name: Flow3 - Login + Onboarding + Home
+name: Flow4 - Login + Onboarding + Home
 ---
 - launchApp:
     clearState: true
@@ -67,4 +67,5 @@ name: Flow3 - Login + Onboarding + Home
 - runFlow: ../flows/handleRateApp.yaml
 
 # ----------- HOME -----------
-- assertVisible: ${output.home.titleText}
+- assertVisible: "KODAK SMILE"
+

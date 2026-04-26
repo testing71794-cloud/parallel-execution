@@ -189,31 +189,83 @@ def resolve_ai_intelligence_artifacts(root: Path) -> list[Path]:
     return out
 
 
-def _select_data_sheet(wb) -> object | None:
-    if "Flow Report" in wb.sheetnames:
-        return wb["Flow Report"]
-    if "Raw Results" in wb.sheetnames:
-        return wb["Raw Results"]
-    for name in wb.sheetnames:
-        ws = wb[name]
-        row1 = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
-        if not row1:
+def _normalize_header(s: str) -> str:
+    return str(s or "").strip().lower().replace("  ", " ")
+
+
+def _row_values_to_len(row, n_cols: int) -> list:
+    r = list(row) if row is not None else []
+    if len(r) < n_cols:
+        r.extend([None] * (n_cols - len(r)))
+    return r
+
+
+def _sheet_headers_from_ws(ws) -> list[str] | None:
+    row1 = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+    if not row1:
+        return None
+    return [str(h or "").strip() for h in row1]
+
+
+def _sheet_looks_flow_tabular(headers: list[str]) -> bool:
+    hlow = { _normalize_header(x) for x in headers if str(x or "").strip() }
+    if "status" not in hlow and "test status" not in hlow:
+        return False
+    if "suite" not in hlow and "test suite" not in hlow and "suite name" not in hlow:
+        return False
+    return any(
+        k in hlow
+        for k in (
+            "flow",
+            "flow name",
+            "test name",
+        )
+    )
+
+
+def _ordered_tabular_candidate_names(wb) -> list[str]:
+    """Sheets that look like execution data, ordered: Flow Report, Raw Results, then others."""
+    out: list[str] = []
+    for want in ("Flow Report", "Raw Results"):
+        if want in wb.sheetnames and want not in out:
+            out.append(want)
+    for w in wb.sheetnames:
+        wstr = str(w or "").strip()
+        if wstr.lower() in ("flow report", "raw results"):
+            if w not in out:
+                out.append(w)
+    for w in wb.sheetnames:
+        if w in out:
             continue
-        headers = [str(h or "").strip() for h in row1]
-        if "Status" not in headers:
-            continue
-        if "Suite" in headers or "Flow Name" in headers or "Flow" in headers:
-            return ws
-    return None
+        h = _sheet_headers_from_ws(wb[w])
+        if h and _sheet_looks_flow_tabular(h):
+            out.append(w)
+    return out
 
 
 def _col_index(headers: list[str], *candidates: str) -> int | None:
-    lower = {h.strip().lower(): i for i, h in enumerate(headers) if h and str(h).strip()}
+    lower = { _normalize_header(h): i for i, h in enumerate(headers) if str(h or "").strip()}
     for c in candidates:
-        key = c.strip().lower()
+        key = _normalize_header(c)
         if key in lower:
             return lower[key]
     return None
+
+
+def _ai_indices_in_order(headers: list[str]) -> list[int]:
+    out: list[int] = []
+    for cand in (
+        "AI Analysis",
+        "AI Analyses",
+        "AI Failure Summary",
+        "AI Status",
+        "Root Cause",
+        "Suggested Fix",
+    ):
+        i = _col_index(headers, cand)
+        if i is not None and i not in out:
+            out.append(i)
+    return out
 
 
 def _ai_cell_to_email(raw: str) -> str:
@@ -223,111 +275,196 @@ def _ai_cell_to_email(raw: str) -> str:
     return t
 
 
+def _flow_cell_invalid(flow_raw: str) -> bool:
+    t = (flow_raw or "").strip()
+    if not t:
+        return True
+    if t in (
+        "—",
+        "–",
+        "―",
+        "-",
+        "—",  # unicode
+        "n/a",
+        "N/A",
+    ):
+        return True
+    return False
+
+
+def _simplified_resolve_device(disp: str, did: str) -> str:
+    """
+    Prefer Excel device column when it looks like a real name (e.g. contains a space and differs from ID);
+    else resolve the serial/UDID through ADB (get_device_name cache).
+    """
+    display = (disp or "").strip()
+    did = (did or "").strip()
+    if not did and not display:
+        return ""
+    if not did:
+        if display and " " in display:
+            return display
+        return get_device_name(display) if display else ""
+    if not display or display == did or display.upper() == did:
+        return get_device_name(did)
+    if " " in display and display != did:
+        return display
+    return get_device_name(did)
+
+
+def _parse_table_rows_for_sheet(
+    headers: list[str], rows_iter, _sheet_title: str = ""
+) -> list[dict[str, str]]:
+    n_cols = len(headers)
+
+    i_suite = _col_index(
+        headers, "Suite", "Test suite", "Suite Name"
+    )
+    i_flow = _col_index(
+        headers,
+        "Flow",
+        "Flow Name",
+        "Test Name",
+    )
+    i_dname = _col_index(
+        headers,
+        "Device Name",
+        "Device",
+    )
+    i_did = _col_index(
+        headers,
+        "Device ID",
+        "Device Id",
+        "Udid",
+        "UDID",
+        "Serial",
+    )
+    i_status = _col_index(headers, "Status", "Test status")
+    i_exit = _col_index(headers, "Exit Code", "Exit code", "ExitCode", "exit_code")
+    ai_idx_list = _ai_indices_in_order(headers)
+
+    if i_status is None or i_flow is None:
+        return []
+
+    out: list[dict[str, str]] = []
+    for row in rows_iter:
+        if not row and n_cols:
+            continue
+        cells = _row_values_to_len(row, n_cols)
+        if all(v is None or str(v).strip() == "" for v in cells):
+            continue
+
+        def _cell(i: int | None) -> str:
+            if i is None or i < 0 or i >= len(cells):
+                return ""
+            v = cells[i]
+            return "" if v is None else str(v).strip()
+
+        suite = _cell(i_suite) if i_suite is not None else ""
+        flow = _cell(i_flow)
+        if _flow_cell_invalid(flow):
+            continue
+
+        st = (_cell(i_status) or "").upper() or "UNKNOWN"
+        ex = _cell(i_exit)
+        if ex == "":
+            ex = "0"
+
+        disp = _cell(i_dname) if i_dname is not None else ""
+        did = _cell(i_did) if i_did is not None else ""
+        device = _simplified_resolve_device(disp, did)
+
+        raw_ai_parts: list[str] = []
+        for j in ai_idx_list:
+            t = _cell(j)
+            if t and t not in raw_ai_parts:
+                raw_ai_parts.append(t)
+        raw_ai = " | ".join(raw_ai_parts) if raw_ai_parts else ""
+        ai = _ai_cell_to_email(raw_ai)
+
+        out.append(
+            {
+                "suite": suite,
+                "flow": flow,
+                "device": device,
+                "status": st,
+                "exit_code": ex,
+                "ai_analyses": ai,
+            }
+        )
+    return out
+
+
+def _drop_unknown_mixed_simpler(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """If any row is PASS/FAIL/FLAKY, drop only rows that are only UNKNOWN and look like spurious rollups."""
+    if not rows:
+        return rows
+    has_pfb = any((r.get("status") or "").upper() in ("PASS", "FAIL", "FLAKY") for r in rows)
+    if not has_pfb:
+        return rows
+    return [r for r in rows if (r.get("status") or "").upper() != "UNKNOWN"]
+
+
 def read_execution_table_rows(
     excel_path: Path,
 ) -> tuple[list[dict[str, str]], str | None]:
     """
     Return flow-wise rows: suite, flow, device, status, exit_code, ai_analyses.
-    Prefers the ``Flow Report`` sheet; otherwise ``Raw Results``. Skips rows with no flow.
+    Picks the best data sheet and maps columns robustly. Does not use read_only so
+    short rows are padded to the header width (fixes ragged/merged cell reads).
     """
     path = excel_path.resolve()
-    wb = load_workbook(path, read_only=True, data_only=True)
+    _log = logger.info
+    _print = print
+    _log("[email] final_execution Excel path: %s", path)
+    _print(f"[orch.mail] final_execution Excel path: {path}")
+
+    wb = load_workbook(path, read_only=False, data_only=True)
     try:
-        ws = _select_data_sheet(wb)
-        if ws is None:
-            return [], "No tabular sheet found (expected 'Flow Report' or 'Raw Results')."
+        names = _ordered_tabular_candidate_names(wb)
+        _print(f"[orch.mail] workbook sheets: {list(wb.sheetnames)}")
+        _log("Available sheet names: %s", wb.sheetnames)
+        if not names:
+            return [], "No tabular execution sheet found (need Suite, Flow, Status in header row 1)."
 
-        rows_iter = ws.iter_rows(values_only=True)
-        header_row = next(rows_iter, None)
-        if not header_row:
-            return [], "Empty sheet."
+        parsed_triples: list[tuple[str, list[dict[str, str]], list[str]]] = []
+        for name in names:
+            ws = wb[name]
+            h = _sheet_headers_from_ws(ws)
+            if not h or not _sheet_looks_flow_tabular(h):
+                _log("Skip sheet (header mismatch): %s", name)
+                continue
+            pr = _parse_table_rows_for_sheet(
+                h, ws.iter_rows(min_row=2, values_only=True), name
+            )
+            n = len(pr)
+            _log("Sheet %r: parsed %d row(s) before project-wide filters", name, n)
+            _print(
+                f"[orch.mail] sheet {name!r}: {n} row(s) parsed; header: {h!r}"
+            )
+            parsed_triples.append((name, pr, h))
 
-        headers = [str(h or "").strip() for h in header_row]
-        is_flow_report = (
-            bool(ws.title) and str(ws.title).strip() == "Flow Report" and "AI Analysis" in headers
+        if not parsed_triples:
+            return [], "No execution data rows (after parsing candidate sheets)."
+
+        pref = {"Flow Report": 0, "Raw Results": 1}
+        sheet_used, out, headers_used = max(
+            parsed_triples,
+            key=lambda t: (len(t[1]), -pref.get(t[0], 3)),
         )
-
-        if is_flow_report:
-            i_suite = _col_index(headers, "Suite")
-            i_flow = _col_index(headers, "Flow")
-            i_dev = _col_index(headers, "Device")
-            i_did = _col_index(headers, "Device ID", "Device Id", "Udid", "UDID")
-            i_status = _col_index(headers, "Status")
-            i_exit = _col_index(headers, "Exit Code", "Exit code")
-            i_ai = _col_index(
-                headers,
-                "AI Analysis",
-                "AI Analyses",
-                "AI Failure Summary",
+        out = _drop_unknown_mixed_simpler(out)
+        if not out:
+            return (
+                [],
+                f"All rows on sheet {sheet_used!r} were filtered (empty/invalid flow or UNKNOWN-only).",
             )
-            i_dname = None
-        else:
-            i_suite = _col_index(headers, "Suite")
-            i_flow = _col_index(headers, "Flow Name", "Flow")
-            i_dname = _col_index(headers, "Device Name", "Device")
-            i_did = _col_index(headers, "Device ID", "Device Id", "Udid", "UDID")
-            i_status = _col_index(headers, "Status")
-            i_exit = _col_index(headers, "Exit Code", "Exit code")
-            i_ai = _col_index(
-                headers,
-                "AI Analysis",
-                "AI Analyses",
-                "AI Failure Summary",
-                "AI Status",
-            )
-            i_dev = None
-        if i_status is None:
-            return [], "No 'Status' column in execution data."
 
-        out: list[dict[str, str]] = []
-        for row in rows_iter:
-            if not row:
-                continue
-            if all(v is None or str(v).strip() == "" for v in row):
-                continue
-
-            def _cell(i: int | None) -> str:
-                if i is None or i >= len(row):
-                    return ""
-                v = row[i]
-                return "" if v is None else str(v).strip()
-
-            suite = _cell(i_suite)
-            flow = _cell(i_flow)
-            if not str(flow or "").strip():
-                continue
-
-            st = _cell(i_status).upper() or "UNKNOWN"
-            ex = _cell(i_exit)
-            if ex == "":
-                ex = "0"
-            if is_flow_report:
-                device = _cell(i_dev) if i_dev is not None else ""
-                did = _cell(i_did) if i_did is not None else ""
-                if not device.strip() and did:
-                    device = get_device_name(did)
-            else:
-                dname = _cell(i_dname) if i_dname is not None else ""
-                did = _cell(i_did) if i_did is not None else ""
-                if dname:
-                    device = dname
-                elif did:
-                    device = get_device_name(did)
-                else:
-                    device = ""
-            raw_ai = _cell(i_ai) if i_ai is not None else ""
-            ai = _ai_cell_to_email(raw_ai)
-
-            out.append(
-                {
-                    "suite": suite,
-                    "flow": flow,
-                    "device": device,
-                    "status": st,
-                    "exit_code": ex,
-                    "ai_analyses": ai,
-                }
-            )
+        _print(
+            f"[orch.mail] selected sheet: {sheet_used!r} | total email rows: {len(out)}"
+        )
+        _print(f"[orch.mail] detected column headers: {headers_used!r}")
+        _log("Selected sheet: %r; detected columns: %s", sheet_used, headers_used)
+        _log("Using %d email table row(s)", len(out))
         return out, None
     finally:
         wb.close()
@@ -521,8 +658,8 @@ def build_email_html(
   h1 {{ color: #1f4e79; font-size: 20px; margin-bottom: 8px; }}
   .sub {{ color: #666; font-size: 13px; margin-bottom: 16px; }}
   .warn {{ color: #a94442; background: #fbe8e6; padding: 8px; border-radius: 4px; }}
-  table.ex {{ border-collapse: collapse; width: 100%; max-width: 1000px; border: 1px solid #ccc; }}
-  table.ex th, table.ex td {{ border: 1px solid #d0d0d0; padding: 8px 10px; text-align: left; vertical-align: top; word-break: break-word; }}
+  table.ex {{ border-collapse: collapse; width: 100%; max-width: 1000px; border: 1px solid #000; }}
+  table.ex th, table.ex td {{ border: 1px solid #000; padding: 8px 10px; text-align: left; vertical-align: top; word-break: break-word; }}
   .c-ai {{ max-width: 360px; font-size: 13px; line-height: 1.35; color: #222; }}
   table.ex th {{ background: #2e5c8a; color: #fff; font-weight: 600; }}
   .st-pass {{ color: #1b5e20; background: #e8f5e9; font-weight: bold; }}

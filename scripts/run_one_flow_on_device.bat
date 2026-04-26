@@ -141,34 +141,31 @@ if /I "%CLEAR_STATE%"=="true" (
 
 set "SIGNUP_RETRY_USED=0"
 if /I not "%FLOW_NAME%"=="flow1b" goto :run_maestro_default
-rem ---- flow1b block (see end of file for :run_maestro_default) ----
-
-rem ---- flow1b: unique email per device + optional duplicate-user retry (parallel-safe JSON per device) ----
-set "SIGNUP_BAT=%TEMP%\kodak_signup_!SAFE_DEVICE!_!RANDOM!.bat"
-python "%REPO_ROOT%\scripts\generate_signup_user.py" --device "%DEVICE_ID%" --repo "%REPO_ROOT%" --json-basename "%SAFE_DEVICE%" --write-bat "!SIGNUP_BAT!"
+rem ---- flow1b only: Nitesh / 252546Nm# / runtime kodak_<ts>_<random>@test.com ----
+call "%REPO_ROOT%\scripts\flow1b_set_signup_env.bat"
 if errorlevel 1 (
-    echo ERROR: generate_signup_user.py failed>> "%LOG_FILE%"
+    echo ERROR: flow1b_set_signup_env failed ^(EMAIL generation^)>> "%LOG_FILE%"
     set "RUN_EXIT=30"
     set "STATUS_VALUE=FAIL"
-    set "REASON=SIGNUP_USER_GEN_FAILED"
+    set "REASON=FLOW1B_SIGNUP_ENV_FAILED"
     goto :write_result
 )
-call "!SIGNUP_BAT!"
-set "KODAK_SIGNUP_JSON=%REPO_ROOT%\reports\signup_users\%SAFE_DEVICE%_signup_user.json"
+set "KODAK_SIGNUP_JSON="
+set "SIGNUP_RUN_ID="
+for /f "delims=@" %%E in ("!EMAIL!") do set "SIGNUP_RUN_ID=%%E"
+set "SIGNUP_ATTEMPT=0"
 echo.>> "%LOG_FILE%"
-echo === Signup user (flow1b) ===>> "%LOG_FILE%"
-echo KODAK_SIGNUP_EMAIL=!EMAIL!>> "%LOG_FILE%"
-echo KODAK_SIGNUP_RUN_ID=!SIGNUP_RUN_ID!>> "%LOG_FILE%"
-echo KODAK_SIGNUP_ATTEMPT=!SIGNUP_ATTEMPT!>> "%LOG_FILE%"
-if defined KODAK_SIGNUP_JSON echo KODAK_SIGNUP_JSON=!KODAK_SIGNUP_JSON!>> "%LOG_FILE%"
+echo === flow1b signup ^(runtime^) ===>> "%LOG_FILE%"
+echo [flow1b] EMAIL=!EMAIL!>> "%LOG_FILE%"
+if defined SIGNUP_RUN_ID echo KODAK_SIGNUP_RUN_ID=!SIGNUP_RUN_ID!>> "%LOG_FILE%"
 
-set "MAESTRO_ARGS=test -e EMAIL=!EMAIL! -e FULL_NAME=!FULL_NAME! -e PASSWORD=!PASSWORD!"
+set "MAESTRO_ARGS=test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=!PASSWORD!"
 set "MAESTRO_ARGS=!MAESTRO_ARGS! "%FLOW_PATH%""
 set "MAESTRO_ARGS=!MAESTRO_ARGS! --device "%DEVICE_ID%""
 if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
 
-echo Starting Maestro test (flow1b)...>> "%LOG_FILE%"
-echo Command: call "%MAESTRO_BIN%" !MAESTRO_ARGS!>> "%LOG_FILE%"
+echo Starting Maestro test (flow1b)... (PASSWORD is not written to the log^)>> "%LOG_FILE%"
+echo [flow1b] !MAESTRO_BIN! test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=omitted "%FLOW_PATH%" --device "%DEVICE_ID%">> "%LOG_FILE%"
 echo. >> "%LOG_FILE%"
 call "%MAESTRO_BIN%" !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
 set "RUN_EXIT=%ERRORLEVEL%"
@@ -180,20 +177,23 @@ if errorlevel 1 (
     set "REASON=MAESTRO_FAILED"
     goto :after_flow1b_maestro
 )
-echo Duplicate-like signup error detected; regenerating user and retrying once...>> "%LOG_FILE%"
-python "%REPO_ROOT%\scripts\generate_signup_user.py" --device "%DEVICE_ID%" --repo "%REPO_ROOT%" --json-basename "%SAFE_DEVICE%" --retry --write-bat "!SIGNUP_BAT!"
+echo Duplicate-like signup error detected; new EMAIL and retry ^(flow1b^) once...>> "%LOG_FILE%"
+call "%REPO_ROOT%\scripts\flow1b_set_signup_env.bat"
 if errorlevel 1 (
     set "STATUS_VALUE=FAIL"
-    set "REASON=SIGNUP_RETRY_GEN_FAILED"
+    set "REASON=FLOW1B_SIGNUP_RETRY_ENV_FAILED"
     set "RUN_EXIT=31"
     goto :write_result
 )
-call "!SIGNUP_BAT!"
+set "SIGNUP_RUN_ID="
+for /f "delims=@" %%E in ("!EMAIL!") do set "SIGNUP_RUN_ID=%%E"
+set "SIGNUP_ATTEMPT=1"
 set "SIGNUP_RETRY_USED=1"
-echo KODAK_SIGNUP_EMAIL_RETRY=!EMAIL!>> "%LOG_FILE%"
+echo [flow1b] EMAIL retry: !EMAIL!>> "%LOG_FILE%"
+if defined SIGNUP_RUN_ID echo KODAK_SIGNUP_RUN_ID retry: !SIGNUP_RUN_ID!>> "%LOG_FILE%"
 echo.>> "%LOG_FILE%"
 echo === Maestro retry (flow1b) ===>> "%LOG_FILE%"
-set "MAESTRO_ARGS=test -e EMAIL=!EMAIL! -e FULL_NAME=!FULL_NAME! -e PASSWORD=!PASSWORD!"
+set "MAESTRO_ARGS=test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=!PASSWORD!"
 set "MAESTRO_ARGS=!MAESTRO_ARGS! "%FLOW_PATH%""
 set "MAESTRO_ARGS=!MAESTRO_ARGS! --device "%DEVICE_ID%""
 if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""

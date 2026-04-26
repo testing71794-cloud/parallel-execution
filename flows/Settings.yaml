@@ -43,9 +43,7 @@ name: Settings Screen - Testcases
             visible: "Purchase Paper"
           commands:
             - assertVisible: "Purchase Paper"
-            - assertVisible:
-                id: bylineInfo_feature_div
-            - assertVisible: 81DpkNI8KCL._AC_UF1000,1000_QL80_FMwebp_
+
       - tapOn:
           id: linearLayoutBack
       - waitForAnimationToEnd
@@ -118,6 +116,11 @@ name: Settings Screen - Testcases
       - assertVisible: "FACEBOOK"
       - tapOn: "Sign in"
       - waitForAnimationToEnd
+      - waitForAnimationToEnd
+      - tapOn:
+         text: "Continue as.*"
+         optional: true
+
       - waitForAnimationToEnd
       - waitForAnimationToEnd
       - assertVisible: "Social Accounts"

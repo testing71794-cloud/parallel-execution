@@ -11,9 +11,8 @@ rem
 rem If you omit the serial, the first "device" line from adb is used. With
 rem several devices, pass the serial you want.
 rem
-rem Signup data: generate_signup_user.py — uses OpenRouter at runtime if
-rem OpenRouterAPI/OPENROUTER_API_KEY is set and KODAK_SIGNUP_USE_AI is not 0
-rem (add --no-ai to that script for CI to force local-only). Else deterministic.
+rem flow1b: FULL_NAME=Nitesh, PASSWORD=252546Nm#, EMAIL=kodak_<ts>_<random>@test.com
+rem (same as run_one_flow_on_device for flow1b; unique per run/device for parallel)
 rem ============================================================================
 
 set "MAESTRO_CMD=maestro"
@@ -64,29 +63,23 @@ if not exist "!FLOW1B!" (
   exit /b 1
 )
 
-set "JSON_BASE=local_flow1b"
-set "SIGNUP_BAT=%TEMP%\kodak_signup_!JSON_BASE!_!RANDOM!.bat"
-
 where python >nul 2>&1 || ( echo ERROR: python not on PATH. & exit /b 1 )
 
-python "%REPO_ROOT%\scripts\generate_signup_user.py" --device "!DEVICE_ID!" --repo "!REPO_ROOT!" --json-basename "!JSON_BASE!" --write-bat "!SIGNUP_BAT!"
+call "%REPO_ROOT%\scripts\flow1b_set_signup_env.bat"
 if errorlevel 1 (
-  echo ERROR: generate_signup_user.py failed
+  echo ERROR: flow1b_set_signup_env failed
   exit /b 1
 )
-call "!SIGNUP_BAT!"
 
 if not defined EMAIL ( echo ERROR: SIGNUP env not set. & exit /b 1 )
 if not defined FULL_NAME ( echo ERROR: FULL_NAME not set. & exit /b 1 )
 if not defined PASSWORD ( echo ERROR: PASSWORD not set. & exit /b 1 )
 
-echo [run_flow1b_local] KODAK_SIGNUP_EMAIL=!EMAIL!
-echo [run_flow1b_local] FULL_NAME=!FULL_NAME!
-echo [run_flow1b_local] User JSON: !REPO_ROOT!\reports\signup_users\!JSON_BASE!_signup_user.json
+echo [run_flow1b_local] EMAIL=!EMAIL!
 echo.
-echo [run_flow1b_local] Starting Maestro...
-set "MAESTRO_ARGS=test -e EMAIL=!EMAIL! -e FULL_NAME=!FULL_NAME! -e PASSWORD=!PASSWORD! "!FLOW1B!" --device "!DEVICE_ID!"
-echo %MAESTRO_BIN% !MAESTRO_ARGS!
+echo [run_flow1b_local] Starting Maestro... (PASSWORD is not printed below^)
+set "MAESTRO_ARGS=test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=!PASSWORD! "!FLOW1B!" --device "!DEVICE_ID!"
+echo [run_flow1b_local] !MAESTRO_BIN! test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=omitted "!FLOW1B!" --device "!DEVICE_ID!"
 echo.
 call "%MAESTRO_BIN%" !MAESTRO_ARGS!
 set "MEXIT=!ERRORLEVEL!"
