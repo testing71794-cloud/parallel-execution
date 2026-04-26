@@ -50,6 +50,110 @@ def _truthy_env(name: str, default: str = "0") -> bool:
     return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _parse_java_major(version_text: str) -> int:
+    """
+    Parse Java major from `java -version` output.
+    Handles `17.0.8`, `21.0.2`, and legacy `1.8.0_...`.
+    """
+    m = re.search(r'version\s+"([^"]+)"', version_text)
+    if not m:
+        return 0
+    raw = m.group(1).strip()
+    if raw.startswith("1."):
+        parts = raw.split(".")
+        if len(parts) >= 2 and parts[1].isdigit():
+            return int(parts[1])
+        return 0
+    head = raw.split(".", 1)[0]
+    return int(head) if head.isdigit() else 0
+
+
+def _java_home_from_exe(java_exe: Path) -> Path | None:
+    # .../bin/java(.exe) -> JAVA_HOME
+    parent = java_exe.parent
+    if parent.name.lower() == "bin":
+        home = parent.parent
+        if home.is_dir():
+            return home
+    return None
+
+
+def _candidate_java_exes() -> list[Path]:
+    out: list[Path] = []
+    seen: set[str] = set()
+
+    def add(p: Path | None) -> None:
+        if not p:
+            return
+        try:
+            rp = str(p.resolve())
+        except OSError:
+            return
+        if rp in seen:
+            return
+        seen.add(rp)
+        out.append(Path(rp))
+
+    # Highest priority: explicit envs
+    for env_name in ("MAESTRO_JAVA_HOME", "JAVA_HOME"):
+        root = os.environ.get(env_name, "").strip().strip('"')
+        if root:
+            add(Path(root) / "bin" / ("java.exe" if os.name == "nt" else "java"))
+
+    # PATH
+    on_path = shutil.which("java")
+    if on_path:
+        add(Path(on_path))
+
+    # Windows where java (captures multiple installed JDKs/JREs)
+    if os.name == "nt":
+        try:
+            proc = subprocess.run(
+                ["cmd", "/c", "where", "java"],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=False,
+            )
+            for line in (proc.stdout or "").splitlines():
+                line = line.strip().strip('"')
+                if line:
+                    add(Path(line))
+        except OSError:
+            pass
+
+    return [p for p in out if p.is_file()]
+
+
+def resolve_maestro_java_home() -> Path | None:
+    """
+    Choose JAVA_HOME for Maestro. Prefer Java 17 specifically, else any 17+.
+    """
+    java17: Path | None = None
+    java17plus: Path | None = None
+    for exe in _candidate_java_exes():
+        try:
+            proc = subprocess.run(
+                [str(exe), "-version"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        merged = (proc.stderr or "") + "\n" + (proc.stdout or "")
+        major = _parse_java_major(merged)
+        home = _java_home_from_exe(exe)
+        if not home:
+            continue
+        if major == 17 and not java17:
+            java17 = home
+        if major >= 17 and not java17plus:
+            java17plus = home
+    return java17 or java17plus
+
+
 def _adb_filename() -> str:
     return "adb.exe" if os.name == "nt" else "adb"
 
@@ -378,6 +482,15 @@ def run_maestro_flow(
     logger.info("Flow started | %s | %s", flow_path.name, device_id)
     logger.debug("CMD %s", cmd)
     try:
+        run_env = os.environ.copy()
+        # Force Maestro onto compatible Java in Jenkins hosts with mixed JRE/JDK installs.
+        chosen_java = resolve_maestro_java_home()
+        if chosen_java:
+            run_env["MAESTRO_JAVA_HOME"] = str(chosen_java)
+            run_env["JAVA_HOME"] = str(chosen_java)
+            logger.info("Using JAVA_HOME for Maestro: %s", chosen_java)
+        else:
+            logger.warning("No Java 17+ detected for Maestro; using current process env")
         with open(log_path, "w", encoding="utf-8", errors="replace") as log_f:
             proc = subprocess.run(
                 cmd,
@@ -387,6 +500,7 @@ def run_maestro_flow(
                 timeout=3600,
                 check=False,
                 shell=False,
+                env=run_env,
             )
         code = int(proc.returncode)
         logger.info("Flow completed | %s | %s | exit=%s", flow_path.name, device_id, code)
