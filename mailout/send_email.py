@@ -12,11 +12,13 @@ Env ORCH_AI_INTELLIGENCE_XLSX / AI_INTELLIGENCE_REPORT_XLSX can override the AI 
 """
 from __future__ import annotations
 
+import functools
 import html
 import logging
 import os
 import smtplib
 import ssl
+import subprocess
 import zipfile
 from datetime import datetime
 from email.message import EmailMessage
@@ -25,6 +27,31 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 logger = logging.getLogger("orch.mail")
+
+
+@functools.lru_cache(maxsize=128)
+def get_device_name(device_id: str) -> str:
+    """
+    Resolve ``<brand> <model>`` via ADB for a serial/UDID. On failure, return ``device_id``.
+    Used when the report has a device id but no friendly device name in Excel.
+    """
+    did = (device_id or "").strip()
+    if not did:
+        return did
+    try:
+        brand = subprocess.check_output(
+            ["adb", "-s", did, "shell", "getprop", "ro.product.brand"],
+            timeout=12,
+            stderr=subprocess.DEVNULL,
+        ).decode("utf-8", errors="replace").strip()
+        model = subprocess.check_output(
+            ["adb", "-s", did, "shell", "getprop", "ro.product.model"],
+            timeout=12,
+            stderr=subprocess.DEVNULL,
+        ).decode("utf-8", errors="replace").strip()
+        return f"{brand} {model}".strip() or did
+    except Exception:  # noqa: BLE001 (offline device, no adb, timeout)
+        return did
 
 
 def resolve_final_excel_path(root: Path) -> Path | None:
@@ -214,6 +241,10 @@ def read_execution_table_rows(
     """
     Return row dicts: suite, flow, device, status, exit_code, ai_analyses; plus an optional error.
     AI text comes from columns named AI Analyses, AI Failure Summary, or as a fallback AI Status.
+
+    If ``Device Name`` is empty and ``Device ID`` is set, the email uses ``ro.product.brand`` +
+    ``ro.product.model`` from ``adb -s <id> shell getprop`` (see ``get_device_name``), so
+    the body shows a friendly name instead of a bare serial.
     """
     path = excel_path.resolve()
     wb = load_workbook(path, read_only=True, data_only=True)
@@ -259,9 +290,14 @@ def read_execution_table_rows(
 
             suite = _cell(i_suite)
             flow = _cell(i_flow)
-            device = _cell(i_dname)
-            if not device:
-                device = _cell(i_did)
+            dname = _cell(i_dname)
+            did = _cell(i_did)
+            if dname:
+                device = dname
+            elif did:
+                device = get_device_name(did)
+            else:
+                device = ""
             st = _cell(i_status).upper() or "UNKNOWN"
             ex = _cell(i_exit)
             if ex == "":
