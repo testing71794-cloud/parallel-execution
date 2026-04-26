@@ -45,6 +45,7 @@ pipeline {
         booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run non-printing flows (Python parallel orchestrator)')
         booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run printing flows (Python parallel orchestrator)')
         booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Per-flow OpenRouter AI (429: 3 tries, 5s backoff)')
+        booleanParam(name: 'RESTORE_AUTOFILL_AFTER_TEST', defaultValue: false, description: 'Best-effort restore of original autofill service after suite run')
         booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send email with final_execution_report.xlsx')
         string(
             name: 'OPENROUTER_CREDENTIALS_ID',
@@ -203,17 +204,19 @@ pipeline {
                             envList << "ANDROID_HOME=${params.ANDROID_HOME}"
                             envList << "PATH+PLATFORM_TOOLS=${params.ANDROID_HOME}\\platform-tools"
                         }
+                        envList << "AUTOFILL_RESTORE_AFTER_TEST=${params.RESTORE_AUTOFILL_AFTER_TEST.toString()}"
                         def mh = params.MAESTRO_HOME?.trim()
                         def mc = params.MAESTRO_CMD?.trim() ?: 'maestro.bat'
                         def maestroExe = mh ? "${mh}\\${mc}" : mc
                         def noAi = params.RUN_AI_ANALYSIS ? '' : '--no-ai'
+                        def restoreAutofillArg = params.RESTORE_AUTOFILL_AFTER_TEST ? '--restore-autofill' : ''
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(envList) {
                                 bat """
                                 cd /d "${env.WORKSPACE}"
                                 where java
                                 if defined ANDROID_HOME set "PATH=%ANDROID_HOME%\\platform-tools;%PATH%"
-                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/nonprinting_flows.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noAi}
+                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/nonprinting_flows.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noAi} ${restoreAutofillArg}
                                 if errorlevel 1 echo 1> orch_nonprinting_failed.flag
                                 exit /b 0
                                 """
@@ -241,18 +244,20 @@ pipeline {
                             envList << "ANDROID_HOME=${params.ANDROID_HOME}"
                             envList << "PATH+PLATFORM_TOOLS=${params.ANDROID_HOME}\\platform-tools"
                         }
+                        envList << "AUTOFILL_RESTORE_AFTER_TEST=${params.RESTORE_AUTOFILL_AFTER_TEST.toString()}"
                         def mh = params.MAESTRO_HOME?.trim()
                         def mc = params.MAESTRO_CMD?.trim() ?: 'maestro.bat'
                         def maestroExe = mh ? "${mh}\\${mc}" : mc
                         def noAi = params.RUN_AI_ANALYSIS ? '' : '--no-ai'
                         def noPrime = (params.RUN_NON_PRINTING && params.RUN_PRINTING) ? '--no-prime' : ''
+                        def restoreAutofillArg = params.RESTORE_AUTOFILL_AFTER_TEST ? '--restore-autofill' : ''
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(envList) {
                                 bat """
                                 cd /d "${env.WORKSPACE}"
                                 where java
                                 if defined ANDROID_HOME set "PATH=%ANDROID_HOME%\\platform-tools;%PATH%"
-                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/printing_flows.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noPrime} ${noAi}
+                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/printing_flows.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noPrime} ${noAi} ${restoreAutofillArg}
                                 if errorlevel 1 echo 1> orch_printing_failed.flag
                                 exit /b 0
                                 """
@@ -285,11 +290,12 @@ pipeline {
                     script {
                         def smtpId = params.SMTP_CREDENTIALS_ID?.trim()
                         def mailTo = params.MAIL_TO_OVERRIDE?.trim()
+                        def defaultMailTo = 'kodaksmilechina@gmail.com'
                         def smtpServer = params.SMTP_SERVER?.trim() ?: 'smtp.gmail.com'
                         def smtpPort = params.SMTP_PORT?.trim() ?: '587'
                         if (smtpId) {
                             withCredentials([usernamePassword(credentialsId: smtpId, usernameVariable: 'SMTP_JENKINS_USER', passwordVariable: 'SMTP_JENKINS_PASS')]) {
-                                def receiver = mailTo ?: env.SMTP_JENKINS_USER
+                                def receiver = mailTo ?: env.SMTP_JENKINS_USER ?: defaultMailTo
                                 withEnv([
                                     "SMTP_SERVER=${smtpServer}",
                                     "SMTP_PORT=${smtpPort}",
@@ -310,6 +316,7 @@ pipeline {
                             withEnv([
                                 "SMTP_SERVER=${smtpServer}",
                                 "SMTP_PORT=${smtpPort}",
+                                "RECEIVER_EMAIL=${mailTo ?: defaultMailTo}",
                                 "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\final_execution_report.xlsx",
                                 'PYTHONIOENCODING=utf-8',
                             ]) {

@@ -24,6 +24,8 @@ if "%DEVICE_ID%"=="" exit /b 12
 if "%APP_ID%"=="" exit /b 13
 if "%MAESTRO_CMD%"=="" set "MAESTRO_CMD=maestro"
 if "%INCLUDE_TAG%"=="__EMPTY__" set "INCLUDE_TAG="
+if "%AUTOFILL_RESTORE_AFTER_TEST%"=="" set "AUTOFILL_RESTORE_AFTER_TEST=0"
+set "ORIG_AUTOFILL_SERVICE=unknown"
 
 set "CLASSPATH="
 set "JAVA_TOOL_OPTIONS="
@@ -106,6 +108,29 @@ if errorlevel 1 (
     set "STATUS_VALUE=FAIL"
     set "REASON=DEVICE_NOT_READY"
     goto :write_result
+)
+
+echo.>> "%LOG_FILE%"
+echo [INFO] Device %DEVICE_ID% - checking autofill service>> "%LOG_FILE%"
+for /f "delims=" %%A in ('adb -s "%DEVICE_ID%" shell settings get secure autofill_service 2^>^&1') do (
+    if not defined ORIG_AUTOFILL_SERVICE_RESULT set "ORIG_AUTOFILL_SERVICE_RESULT=%%A"
+)
+if defined ORIG_AUTOFILL_SERVICE_RESULT set "ORIG_AUTOFILL_SERVICE=!ORIG_AUTOFILL_SERVICE_RESULT!"
+echo [INFO] Device %DEVICE_ID% - autofill_service before change: !ORIG_AUTOFILL_SERVICE!>> "%LOG_FILE%"
+adb -s "%DEVICE_ID%" shell settings put secure autofill_service null >> "%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    echo [WARN] Device %DEVICE_ID% - could not disable autofill_service, continuing>> "%LOG_FILE%"
+) else (
+    echo [INFO] Device %DEVICE_ID% - autofill disabled ^(autofill_service=null^)>> "%LOG_FILE%"
+)
+
+for %%P in (com.samsung.android.samsungpassautofill com.samsung.android.authfw) do (
+    adb -s "%DEVICE_ID%" shell cmd package disable-user --user 0 %%P >> "%LOG_FILE%" 2>&1
+    if errorlevel 1 (
+        echo [WARN] Device %DEVICE_ID% - Samsung package not disabled/supported: %%P>> "%LOG_FILE%"
+    ) else (
+        echo [INFO] Device %DEVICE_ID% - Samsung package disabled: %%P>> "%LOG_FILE%"
+    )
 )
 
 if /I "%CLEAR_STATE%"=="true" (
@@ -230,6 +255,21 @@ if /I "%FLOW_NAME%"=="flow1b" if defined EMAIL (
 > "%RESULT_FILE%" (
     echo suite,flow,device,status,exit_code,reason,log_file
     echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,%STATUS_VALUE%,%RUN_EXIT%,%REASON%,"%LOG_FILE%"
+)
+
+echo. >> "%LOG_FILE%"
+if /I "%AUTOFILL_RESTORE_AFTER_TEST%"=="1" (
+    if /I "!ORIG_AUTOFILL_SERVICE!"=="unknown" (
+        echo [WARN] Device %DEVICE_ID% - no original autofill_service captured; skip restore>> "%LOG_FILE%"
+    ) else (
+        echo [INFO] Device %DEVICE_ID% - restoring autofill_service to !ORIG_AUTOFILL_SERVICE!>> "%LOG_FILE%"
+        adb -s "%DEVICE_ID%" shell settings put secure autofill_service "!ORIG_AUTOFILL_SERVICE!" >> "%LOG_FILE%" 2>&1
+        if errorlevel 1 (
+            echo [WARN] Device %DEVICE_ID% - autofill restore failed, continuing>> "%LOG_FILE%"
+        ) else (
+            echo [INFO] Device %DEVICE_ID% - autofill restore completed>> "%LOG_FILE%"
+        )
+    )
 )
 
 echo. >> "%LOG_FILE%"

@@ -46,6 +46,10 @@ from mailout.send_email import send_execution_report_email  # noqa: E402
 logger = logging.getLogger("orch.parallel")
 
 
+def _truthy_env(name: str, default: str = "0") -> bool:
+    return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
 def _adb_filename() -> str:
     return "adb.exe" if os.name == "nt" else "adb"
 
@@ -146,6 +150,121 @@ def _enriched_env_for_adb() -> dict[str, str]:
     return env
 
 
+def _run_adb(adb_exe: str, args: Sequence[str], *, timeout: int = 30) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [adb_exe, *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+        env=_enriched_env_for_adb(),
+    )
+
+
+def maybe_disable_device_autofill(adb_exe: str, device_id: str) -> str:
+    """
+    Best-effort pre-test protection against Google/Samsung autofill popups.
+    Returns previously configured autofill service (or empty/unknown sentinel).
+    Never raises.
+    """
+    original = "unknown"
+    try:
+        got = _run_adb(adb_exe, ["-s", device_id, "shell", "settings", "get", "secure", "autofill_service"])
+        text = (got.stdout or "").strip()
+        if text:
+            original = text
+    except Exception as e:
+        logger.warning("[WARN] Device %s: failed reading autofill_service: %s", device_id, e)
+
+    logger.info("[INFO] Device %s autofill_service before change: %s", device_id, original)
+    print(f"[INFO] Device {device_id} autofill_service before change: {original}", flush=True)
+
+    try:
+        put = _run_adb(adb_exe, ["-s", device_id, "shell", "settings", "put", "secure", "autofill_service", "null"])
+        if put.returncode == 0:
+            logger.info("[INFO] Device %s autofill disabled (autofill_service=null)", device_id)
+            print(f"[INFO] Device {device_id} autofill disabled (autofill_service=null)", flush=True)
+        else:
+            logger.warning(
+                "[WARN] Device %s: could not disable autofill_service (rc=%s): %s",
+                device_id,
+                put.returncode,
+                (put.stderr or put.stdout or "").strip(),
+            )
+    except Exception as e:
+        logger.warning("[WARN] Device %s: autofill disable command failed: %s", device_id, e)
+
+    # Samsung Pass related package names vary by OS version; disable best-effort only.
+    samsung_pkgs = (
+        "com.samsung.android.samsungpassautofill",
+        "com.samsung.android.authfw",
+    )
+    for pkg in samsung_pkgs:
+        try:
+            cmd = _run_adb(
+                adb_exe,
+                ["-s", device_id, "shell", "cmd", "package", "disable-user", "--user", "0", pkg],
+                timeout=45,
+            )
+            if cmd.returncode == 0:
+                logger.info("[INFO] Device %s Samsung autofill package disabled: %s", device_id, pkg)
+            else:
+                logger.warning(
+                    "[WARN] Device %s Samsung package not disabled (supported/installed?) %s rc=%s",
+                    device_id,
+                    pkg,
+                    cmd.returncode,
+                )
+        except Exception as e:
+            logger.warning("[WARN] Device %s: Samsung autofill disable failed for %s: %s", device_id, pkg, e)
+
+    return original
+
+
+def maybe_restore_device_autofill(adb_exe: str, device_id: str, original: str) -> None:
+    if not original or original.lower() == "unknown":
+        logger.warning("[WARN] Device %s: no saved autofill_service to restore", device_id)
+        return
+    value = "null" if original.lower() == "null" else original
+    try:
+        rst = _run_adb(adb_exe, ["-s", device_id, "shell", "settings", "put", "secure", "autofill_service", value])
+        if rst.returncode == 0:
+            logger.info("[INFO] Device %s autofill_service restored to: %s", device_id, value)
+            print(f"[INFO] Device {device_id} autofill_service restored", flush=True)
+        else:
+            logger.warning(
+                "[WARN] Device %s: failed to restore autofill_service rc=%s",
+                device_id,
+                rst.returncode,
+            )
+    except Exception as e:
+        logger.warning("[WARN] Device %s: autofill restore command failed: %s", device_id, e)
+
+
+def select_working_adb(cli_adb: str | None = None) -> tuple[str | None, subprocess.CompletedProcess[str] | None]:
+    candidates = iter_adb_candidates(cli_adb)
+    if not candidates:
+        return None, None
+    env = _enriched_env_for_adb()
+    for adb_exe in candidates:
+        logger.info("Trying adb: %s", adb_exe)
+        try:
+            proc = subprocess.run(
+                [adb_exe, "devices"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+                env=env,
+            )
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as e:
+            logger.warning("adb not runnable (%s): %s", adb_exe, e)
+            continue
+        logger.info("Using adb: %s", adb_exe)
+        return adb_exe, proc
+    return None, None
+
+
 def _safe_segment(name: str) -> str:
     return re.sub(r"[^\w\-.]+", "_", name)
 
@@ -163,35 +282,12 @@ def suite_and_flow(flow_path: Path, repo: Path) -> tuple[str, str]:
 
 
 def list_adb_devices(*, cli_adb: str | None = None) -> list[str]:
-    candidates = iter_adb_candidates(cli_adb)
-    if not candidates:
+    adb_exe, out = select_working_adb(cli_adb)
+    if not adb_exe or out is None:
         logger.error(
             "adb not found. Install platform-tools, set ANDROID_HOME to the SDK root, "
             "add platform-tools to PATH, pass --adb, or set ADB to the full path of adb.exe."
         )
-        return []
-    env = _enriched_env_for_adb()
-    last_err: Exception | None = None
-    for adb_exe in candidates:
-        logger.info("Trying adb: %s", adb_exe)
-        try:
-            proc = subprocess.run(
-                [adb_exe, "devices"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                check=False,
-                env=env,
-            )
-        except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as e:
-            last_err = e
-            logger.warning("adb not runnable (%s): %s", adb_exe, e)
-            continue
-        out = proc
-        logger.info("Using adb: %s", adb_exe)
-        break
-    else:
-        logger.error("adb devices failed after trying %s candidate(s): %s", len(candidates), last_err)
         return []
     serials: list[str] = []
     for line in out.stdout.splitlines():
@@ -315,12 +411,16 @@ def device_worker(
     excel_path: Path,
     excel_lock: threading.Lock,
     use_ai: bool,
+    adb_exe: str,
+    restore_autofill: bool,
     outcome_lock: threading.Lock,
     shared_outcomes: list[str],
 ) -> None:
     device_name = resolve_device_name(repo, device_id)
     logger.info("Device %s detected (%s)", device_id, device_name)
     print(f"[INFO] Device {device_id} detected ({device_name})", flush=True)
+
+    original_autofill = maybe_disable_device_autofill(adb_exe, device_id)
 
     log_base = repo / "logs" / _safe_segment(device_id)
 
@@ -408,6 +508,9 @@ def device_worker(
         with outcome_lock:
             shared_outcomes.append(status.upper())
 
+    if restore_autofill:
+        maybe_restore_device_autofill(adb_exe, device_id, original_autofill)
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Parallel device orchestration for Maestro flows")
@@ -442,6 +545,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Full path to adb.exe (recommended for Jenkins if PATH lacks platform-tools).",
+    )
+    p.add_argument(
+        "--restore-autofill",
+        action="store_true",
+        help="Restore each device's original autofill service after all flows on that device complete.",
     )
     return p.parse_args()
 
@@ -485,9 +593,15 @@ def main() -> int:
         return 1
 
     adb_cli = str(args.adb.resolve()) if args.adb else None
+    restore_autofill = args.restore_autofill or _truthy_env("AUTOFILL_RESTORE_AFTER_TEST")
     devices = args.devices if args.devices else list_adb_devices(cli_adb=adb_cli)
     if not devices:
         logger.error("No Android devices in 'adb devices'")
+        return 1
+
+    adb_exe, _adb_probe = select_working_adb(adb_cli)
+    if not adb_exe:
+        logger.error("Unable to resolve adb executable for device setup")
         return 1
 
     for d in devices:
@@ -516,6 +630,8 @@ def main() -> int:
                 excel_path=excel_path,
                 excel_lock=excel_lock,
                 use_ai=use_ai,
+                adb_exe=adb_exe,
+                restore_autofill=restore_autofill,
                 outcome_lock=outcome_lock,
                 shared_outcomes=shared_outcomes,
             )

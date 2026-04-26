@@ -21,6 +21,7 @@ if "%FLOW_DIR%"=="" exit /b 11
 if "%APP_ID%"=="" exit /b 12
 if "%CLEAR_STATE%"=="" set "CLEAR_STATE=true"
 if "%MAESTRO_CMD%"=="" set "MAESTRO_CMD=maestro"
+if "%AUTOFILL_RESTORE_AFTER_TEST%"=="" set "AUTOFILL_RESTORE_AFTER_TEST=0"
 
 set "REPO_ROOT=%~dp0.."
 for %%I in ("%REPO_ROOT%") do set "REPO_ROOT=%%~fI"
@@ -42,6 +43,7 @@ echo Flow dir: %FLOW_DIR%
 echo Include tag: %INCLUDE_TAG%
 echo App id: %APP_ID%
 echo Clear state: %CLEAR_STATE%
+echo Autofill restore after test: %AUTOFILL_RESTORE_AFTER_TEST%
 echo Maestro cmd: %MAESTRO_CMD%
 echo Repo root: %REPO_ROOT%
 echo PS runner: %PS1%

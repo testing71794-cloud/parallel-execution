@@ -40,6 +40,63 @@ function Read-DeviceIds([string]$RepoRoot) {
     return $devices | Select-Object -Unique
 }
 
+function Disable-AutofillForDevice([string]$DeviceId) {
+    $original = "unknown"
+    try {
+        $raw = & adb -s $DeviceId shell settings get secure autofill_service 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($raw)) {
+            $original = ($raw | Select-Object -First 1).ToString().Trim()
+        }
+    } catch {
+        Write-Host "[WARN] Device $DeviceId - failed reading autofill_service: $($_.Exception.Message)"
+    }
+
+    Write-Host "[INFO] Device $DeviceId - autofill_service before change: $original"
+
+    try {
+        & adb -s $DeviceId shell settings put secure autofill_service null 1>$null 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "[INFO] Device $DeviceId - autofill disabled (autofill_service=null)"
+        } else {
+            Write-Host "[WARN] Device $DeviceId - could not disable autofill_service, continuing"
+        }
+    } catch {
+        Write-Host "[WARN] Device $DeviceId - autofill disable command failed: $($_.Exception.Message)"
+    }
+
+    foreach ($pkg in @("com.samsung.android.samsungpassautofill", "com.samsung.android.authfw")) {
+        try {
+            & adb -s $DeviceId shell cmd package disable-user --user 0 $pkg 1>$null 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "[INFO] Device $DeviceId - Samsung package disabled: $pkg"
+            } else {
+                Write-Host "[WARN] Device $DeviceId - Samsung package not disabled/supported: $pkg"
+            }
+        } catch {
+            Write-Host "[WARN] Device $DeviceId - Samsung package disable failed ($pkg): $($_.Exception.Message)"
+        }
+    }
+
+    return $original
+}
+
+function Restore-AutofillForDevice([string]$DeviceId, [string]$OriginalService) {
+    if ([string]::IsNullOrWhiteSpace($OriginalService) -or $OriginalService -eq "unknown") {
+        Write-Host "[WARN] Device $DeviceId - no original autofill_service captured; skip restore"
+        return
+    }
+    try {
+        & adb -s $DeviceId shell settings put secure autofill_service $OriginalService 1>$null 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "[INFO] Device $DeviceId - autofill_service restored to $OriginalService"
+        } else {
+            Write-Host "[WARN] Device $DeviceId - failed to restore autofill_service"
+        }
+    } catch {
+        Write-Host "[WARN] Device $DeviceId - autofill restore failed: $($_.Exception.Message)"
+    }
+}
+
 function Quote-Arg([string]$s) {
     if ($null -eq $s) { return '""' }
     return '"' + ($s -replace '"','""') + '"'
@@ -142,10 +199,17 @@ New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ResultsDir | Out-Null
 
 $devices = Read-DeviceIds -RepoRoot $RepoRoot
+$restoreAutofill = ($env:AUTOFILL_RESTORE_AFTER_TEST -match '^(?i:1|true|yes|on)$')
+$deviceAutofillState = @{}
 Write-Host ""
 Write-Host "Devices found: $($devices.Count)"
 foreach ($d in $devices) { Write-Host " - $d" }
 if ($devices.Count -eq 0) { Write-Host "ERROR: No connected devices found"; exit 1 }
+
+Write-Section "Disabling Android autofill/password-save prompts (best-effort)"
+foreach ($d in $devices) {
+    $deviceAutofillState[$d] = Disable-AutofillForDevice -DeviceId $d
+}
 
 $flowFiles = Get-ChildItem -LiteralPath $FlowRoot -Filter *.yaml -File | Sort-Object Name
 if (-not $flowFiles -or $flowFiles.Count -eq 0) { Write-Host "ERROR: No yaml flows found in $FlowRoot"; exit 1 }
@@ -223,4 +287,13 @@ if ($retryRows.Count -gt 0) {
 
 Write-Host "Merged result file: $MasterCsv"
 Write-Host "Device summary file: $DeviceSummaryCsv"
+
+if ($restoreAutofill) {
+    Write-Section "Restoring Android autofill service (best-effort)"
+    foreach ($d in $devices) {
+        $orig = if ($deviceAutofillState.ContainsKey($d)) { [string]$deviceAutofillState[$d] } else { "unknown" }
+        Restore-AutofillForDevice -DeviceId $d -OriginalService $orig
+    }
+}
+
 if ($overallFailed) { exit 1 } else { exit 0 }
