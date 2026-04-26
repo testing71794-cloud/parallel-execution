@@ -17,3 +17,6 @@ ai-doctor/.env
 __pycache__/
 *.pyc
 *.zip
+
+# Optional nested copy when IDE workspace lives in a subfolder of the same repo
+/kodak-Smile-with-OpenAI/

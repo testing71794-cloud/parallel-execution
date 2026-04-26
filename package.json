@@ -6,6 +6,8 @@
   "main": "index.mjs",
   "scripts": {
     "start": "node index.mjs",
+    "test": "python -m pytest intelligent_platform/tests -q",
+    "ready": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/ready_to_test.ps1",
     "doctor": "bash ./doctor.sh",
     "doctor:junit": "node ai-doctor/index.mjs",
     "doctor:legacy-rerun-maestro": "bash ./scripts/deprecated_doctor_rerun_maestro.sh"
