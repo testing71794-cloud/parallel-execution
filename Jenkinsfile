@@ -216,7 +216,7 @@ pipeline {
                                 cd /d "${env.WORKSPACE}"
                                 where java
                                 if defined ANDROID_HOME set "PATH=%ANDROID_HOME%\\platform-tools;%PATH%"
-                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/nonprinting_flows.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noAi} ${restoreAutofillArg}
+                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/nonprinting_flows.txt --devices-file detected_devices.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noAi} ${restoreAutofillArg}
                                 if errorlevel 1 echo 1> orch_nonprinting_failed.flag
                                 exit /b 0
                                 """
@@ -257,7 +257,7 @@ pipeline {
                                 cd /d "${env.WORKSPACE}"
                                 where java
                                 if defined ANDROID_HOME set "PATH=%ANDROID_HOME%\\platform-tools;%PATH%"
-                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/printing_flows.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noPrime} ${noAi} ${restoreAutofillArg}
+                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/printing_flows.txt --devices-file detected_devices.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noPrime} ${noAi} ${restoreAutofillArg}
                                 if errorlevel 1 echo 1> orch_printing_failed.flag
                                 exit /b 0
                                 """

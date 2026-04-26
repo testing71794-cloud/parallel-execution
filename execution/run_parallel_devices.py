@@ -398,6 +398,22 @@ def select_working_adb(cli_adb: str | None = None) -> tuple[str | None, subproce
     return None, None
 
 
+def _dedupe_preserve_order(items: Sequence[str]) -> list[str]:
+    return list(dict.fromkeys([x.strip() for x in items if (x or "").strip()]))
+
+
+def _read_device_serials_from_file(path: Path) -> list[str]:
+    if not path.is_file():
+        return []
+    out: list[str] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        out.append(s)
+    return out
+
+
 def _safe_segment(name: str) -> str:
     return re.sub(r"[^\w\-.]+", "_", name)
 
@@ -509,9 +525,14 @@ def run_maestro_flow(
 
     cmd = build_maestro_cmd(maestro, device_id, flow_path, config_path, junit_out)
     logger.info("Flow started | %s | %s", flow_path.name, device_id)
+    logger.info("Maestro (device=%s) cmd: %s", device_id, " ".join(str(p) for p in cmd))
     logger.debug("CMD %s", cmd)
     try:
         run_env = os.environ.copy()
+        # Jenkins / shells often set ANDROID_SERIAL to a single device. Maestro/ADB can honor
+        # that env and ignore parallel runs unless each subprocess gets the intended serial.
+        run_env["ANDROID_SERIAL"] = device_id
+        run_env.pop("ANDROID_DEBUG_SERIAL", None)
         # Force Maestro onto compatible Java in Jenkins hosts with mixed JRE/JDK installs.
         chosen_java = resolve_maestro_java_home()
         if chosen_java:
@@ -567,6 +588,7 @@ def run_flow_for_device(
     log_path = flow_run_dir / "log.txt"
 
     suite, flow_file = suite_and_flow(flow_path, repo)
+    _orch_print(f"[DEBUG] thread: Maestro {flow_file} on {device_id} (junit+logs under {flow_run_dir})")
     try:
         flow_rel = str(flow_path.resolve().relative_to(repo.resolve()))
     except ValueError:
@@ -703,7 +725,14 @@ def run_all_flows_parallel(
         autofill_original[d] = maybe_disable_device_autofill(adb_exe, d)
 
     for flow_path in flows:
+        _, flow_name = suite_and_flow(flow_path, repo)
         logger.info("Flow wave (parallel across devices): %s", flow_path.name)
+        for d in devices:
+            _orch_print(f"[DEBUG] Running {flow_name} on {d}")
+        _orch_print(
+            f"[DEBUG] scheduling {len(devices)} parallel Maestro run(s) for {flow_name}: "
+            f"{', '.join(devices)}"
+        )
         with ThreadPoolExecutor(max_workers=len(devices), thread_name_prefix="flowwave") as ex:
             futs = [
                 ex.submit(
@@ -791,7 +820,18 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--no-ai", action="store_true")
     p.add_argument("--send-email", action="store_true")
-    p.add_argument("--devices", nargs="*", default=None)
+    p.add_argument(
+        "--devices",
+        nargs="*",
+        default=None,
+        help="ADB serial(s) to use. If omitted, use ORCH_DEVICE_LIST, or --devices-file, else adb devices.",
+    )
+    p.add_argument(
+        "--devices-file",
+        type=Path,
+        default=None,
+        help="File with one device serial per line (e.g. detected_devices.txt from list_devices.bat).",
+    )
     p.add_argument(
         "--no-clean",
         action="store_true",
@@ -861,7 +901,7 @@ def main() -> int:
 
     adb_cli = str(args.adb.resolve()) if args.adb else None
     restore_autofill = args.restore_autofill or _truthy_env("AUTOFILL_RESTORE_AFTER_TEST")
-    devices = args.devices if args.devices else list_adb_devices(cli_adb=adb_cli)
+    devices = resolve_device_ids(args, repo, adb_cli=adb_cli)
     if not devices:
         logger.error("No Android devices in 'adb devices'")
         return 1
@@ -950,6 +990,59 @@ def main() -> int:
 
 def _orch_debug() -> bool:
     return os.environ.get("ORCH_DEBUG", "").strip().lower() in ("1", "true", "yes")
+
+
+def resolve_device_ids(
+    args: argparse.Namespace,
+    repo: Path,
+    *,
+    adb_cli: str | None,
+) -> list[str]:
+    """
+    Build the device list: explicit --devices, ORCH_DEVICE_LIST, then optional --devices-file, else adb.
+    """
+    if args.devices:
+        d = _dedupe_preserve_order([str(x) for x in args.devices])
+        if d:
+            _orch_print(f"[DEBUG] device list from CLI ({len(d)}): {', '.join(d)}")
+        return d
+
+    raw_env = (os.environ.get("ORCH_DEVICE_LIST") or "").strip()
+    if raw_env:
+        # Comma, semicolon, or whitespace separated serials
+        sp = re.split(r"[\s,;]+", raw_env)
+        d = _dedupe_preserve_order([x for x in sp if x])
+        if d:
+            _orch_print(f"[DEBUG] device list from ORCH_DEVICE_LIST ({len(d)}): {', '.join(d)}")
+        return d
+
+    file_arg: Path | None = args.devices_file
+    if file_arg is None:
+        ev = (os.environ.get("ORCH_DEVICES_FILE") or "").strip()
+        if ev:
+            file_arg = Path(ev)
+    if file_arg is not None:
+        df = file_arg
+        p = (repo / df) if not df.is_absolute() else df
+        p = p.resolve()
+        if p.is_file():
+            from_file = _read_device_serials_from_file(p)
+            from_file = _dedupe_preserve_order(from_file)
+            if from_file:
+                _orch_print(
+                    f"[DEBUG] device list from file {p.name} ({len(from_file)}): {', '.join(from_file)}"
+                )
+                return from_file
+            logger.warning("Devices file empty or invalid: %s; falling back to adb devices", p)
+        else:
+            logger.warning("Devices file not found: %s; using adb devices", p)
+
+    adb = list_adb_devices(cli_adb=adb_cli)
+    adb = _dedupe_preserve_order(adb)
+    _orch_print(
+        f"[DEBUG] device list from adb devices ({len(adb)}): {', '.join(adb) if adb else '(none)'}"
+    )
+    return adb
 
 
 if __name__ == "__main__":
