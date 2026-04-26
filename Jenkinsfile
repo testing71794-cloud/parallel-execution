@@ -286,6 +286,7 @@ pipeline {
                                     "SMTP_PASS=${env.SMTP_JENKINS_PASS}",
                                     "SENDER_EMAIL=${env.SMTP_JENKINS_USER}",
                                     "RECEIVER_EMAIL=${receiver}",
+                                    "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\final_execution_report.xlsx",
                                     'PYTHONIOENCODING=utf-8',
                                 ]) {
                                     bat """
@@ -298,6 +299,7 @@ pipeline {
                             withEnv([
                                 "SMTP_SERVER=${smtpServer}",
                                 "SMTP_PORT=${smtpPort}",
+                                "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\final_execution_report.xlsx",
                                 'PYTHONIOENCODING=utf-8',
                             ]) {
                                 bat """

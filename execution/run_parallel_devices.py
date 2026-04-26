@@ -328,7 +328,33 @@ def main() -> int:
     )
     args = parse_args()
     repo = args.repo_root.resolve()
-    flows = read_flow_paths(repo, args.flows_file.resolve())
+    excel_path = args.excel_out if args.excel_out.is_absolute() else repo / args.excel_out
+
+    excel_lock = threading.Lock()
+    outcome_lock = threading.Lock()
+    shared_outcomes: list[str] = []
+    use_ai = not args.no_ai
+
+    if not args.no_clean:
+        cleanup_for_new_run(repo)
+    else:
+        logger.warning("Skipping pre-run cleanup (--no-clean)")
+
+    # Prime Excel before flow/device checks so Jenkins email step always has a file to attach
+    # when the job fails early (no devices, bad flows file, etc.).
+    excel_path.parent.mkdir(parents=True, exist_ok=True)
+    if not args.no_prime:
+        prime_workbook(excel_path, file_lock=excel_lock)
+    elif not excel_path.is_file():
+        logger.warning("Excel missing with --no-prime; priming new workbook")
+        prime_workbook(excel_path, file_lock=excel_lock)
+
+    try:
+        flows = read_flow_paths(repo, args.flows_file.resolve())
+    except FileNotFoundError as e:
+        logger.error("%s", e)
+        return 1
+
     if not flows:
         logger.error("No flows to run (check %s)", args.flows_file)
         return 1
@@ -349,24 +375,6 @@ def main() -> int:
         found = shutil.which(str(maestro_arg))
         if found:
             maestro = Path(found)
-    excel_path = args.excel_out if args.excel_out.is_absolute() else repo / args.excel_out
-
-    excel_lock = threading.Lock()
-    outcome_lock = threading.Lock()
-    shared_outcomes: list[str] = []
-    use_ai = not args.no_ai
-
-    if not args.no_clean:
-        cleanup_for_new_run(repo)
-    else:
-        logger.warning("Skipping pre-run cleanup (--no-clean)")
-
-    excel_path.parent.mkdir(parents=True, exist_ok=True)
-    if not args.no_prime:
-        prime_workbook(excel_path, file_lock=excel_lock)
-    elif not excel_path.is_file():
-        logger.warning("Excel missing with --no-prime; priming new workbook")
-        prime_workbook(excel_path, file_lock=excel_lock)
 
     logger.info("Flows (%s): %s", len(flows), [f.name for f in flows])
 

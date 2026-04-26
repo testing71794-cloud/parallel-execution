@@ -14,6 +14,46 @@ from pathlib import Path
 logger = logging.getLogger("orch.mail")
 
 
+def resolve_final_excel_path(root: Path) -> Path | None:
+    """
+    Locate final_execution_report.xlsx for attachment.
+    Order: explicit env path → repo root → build-summary → shallowest rglob under root.
+    """
+    root = root.resolve()
+    for env_name in ("FINAL_EXECUTION_REPORT_XLSX", "ORCH_EXCEL_OUT"):
+        raw = os.getenv(env_name, "").strip()
+        if not raw:
+            continue
+        p = Path(raw)
+        if not p.is_absolute():
+            p = (root / p).resolve()
+        if p.is_file():
+            logger.info("Using Excel from %s=%s", env_name, p)
+            return p
+        logger.warning("Env %s points to missing file: %s", env_name, p)
+
+    candidates = [
+        root / "final_execution_report.xlsx",
+        root / "build-summary" / "final_execution_report.xlsx",
+    ]
+    for c in candidates:
+        if c.is_file():
+            logger.info("Using Excel: %s", c)
+            return c
+
+    matches = [p for p in root.rglob("final_execution_report.xlsx") if p.is_file()]
+    if matches:
+        best = min(matches, key=lambda p: (len(p.parts), str(p)))
+        logger.info("Using Excel (search): %s", best)
+        return best
+
+    logger.error(
+        "No final_execution_report.xlsx under %s (tried env FINAL_EXECUTION_REPORT_XLSX / ORCH_EXCEL_OUT, root, build-summary, rglob)",
+        root,
+    )
+    return None
+
+
 def getenv_any(*names: str, default: str = "") -> str:
     for name in names:
         v = os.getenv(name, "").strip()
@@ -90,11 +130,9 @@ def send_execution_report_email(
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     root = Path(os.environ.get("WORKSPACE", os.getcwd())).resolve()
-    excel = root / "final_execution_report.xlsx"
-    if not excel.is_file():
-        legacy = root / "build-summary" / "final_execution_report.xlsx"
-        if legacy.is_file():
-            excel = legacy
+    excel = resolve_final_excel_path(root)
+    if excel is None:
+        return 1
     return 0 if send_execution_report_email(excel) else 1
 
 
