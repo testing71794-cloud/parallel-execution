@@ -2,7 +2,11 @@ pipeline {
     agent any
 
     parameters {
-        booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: true, description: 'Send email')
+        booleanParam(
+            name: 'SEND_FINAL_EMAIL',
+            defaultValue: true,
+            description: 'In case of email: when enabled, run Send Final Email (replace YOUR_APP_PASSWORD_HERE in that stage)'
+        )
     }
 
     stages {
@@ -34,6 +38,8 @@ pipeline {
                     set RECEIVER_EMAIL=kodaksmilechina@gmail.com
                     set MAIL_TO=kodaksmilechina@gmail.com
                     set PYTHONIOENCODING=utf-8
+                    set ORCH_EMAIL_STRICT=1
+                    set "FINAL_EXECUTION_REPORT_XLSX=%WORKSPACE%\final_execution_report.xlsx"
 
                     echo DEBUG:
                     echo SMTP_USER=%SMTP_USER%
