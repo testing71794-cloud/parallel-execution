@@ -3,11 +3,12 @@
 Parallel multi-device Maestro orchestration (production).
 
 Before anything else: auto cleanup (logs, reports, build-summary, …) unless --no-clean.
-Per device: parallel thread. Per device: flows run sequentially.
+Default: for each flow, run that flow on all devices in parallel (synchronized per flow).
+Optional legacy: per-device thread with flows sequential on that device (--legacy-per-device-sequential).
 
 Per flow artifacts (no reuse from prior runs):
   logs/<device_serial>/<flow_stem>/junit.xml
-  logs/<device_serial>/<flow_stem>/maestro.log
+  logs/<device_serial>/<flow_stem>/log.txt
 
 Excel: fresh file each run (prime after cleanup), columns include AI Analysis, live Timestamp.
 
@@ -48,6 +49,34 @@ logger = logging.getLogger("orch.parallel")
 
 def _truthy_env(name: str, default: str = "0") -> bool:
     return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _safe_console_text(s: str) -> str:
+    """
+    Windows consoles often use cp1252; printing Unicode from AI can raise UnicodeEncodeError.
+    """
+    if not s:
+        return ""
+    for enc in ("utf-8", "cp1252", "replace"):
+        if enc == "replace":
+            return s.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
+        try:
+            s.encode(enc)
+            return s
+        except UnicodeEncodeError:
+            continue
+    return s
+
+
+def _orch_print(msg: str) -> None:
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        try:
+            sys.stdout.buffer.write((msg + "\n").encode(sys.stdout.encoding or "utf-8", errors="replace"))
+            sys.stdout.buffer.flush()
+        except Exception:
+            logger.info("%s", _safe_console_text(msg))
 
 
 def _parse_java_major(version_text: str) -> int:
@@ -515,7 +544,196 @@ def run_maestro_flow(
         return 1
 
 
-def device_worker(
+def run_flow_for_device(
+    device_id: str,
+    device_name: str,
+    flow_path: Path,
+    *,
+    repo: Path,
+    maestro: Path,
+    config_path: Path,
+    excel_path: Path,
+    excel_lock: threading.Lock,
+    use_ai: bool,
+    outcome_lock: threading.Lock,
+    shared_outcomes: list[str],
+) -> None:
+    """Run a single flow on a single device (used for per-flow parallel fan-out)."""
+    log_base = repo / "logs" / _safe_segment(device_id)
+    stem = _safe_segment(flow_path.stem)
+    flow_run_dir = log_base / stem
+    flow_run_dir.mkdir(parents=True, exist_ok=True)
+    junit_path = flow_run_dir / "junit.xml"
+    log_path = flow_run_dir / "log.txt"
+
+    suite, flow_file = suite_and_flow(flow_path, repo)
+    try:
+        flow_rel = str(flow_path.resolve().relative_to(repo.resolve()))
+    except ValueError:
+        flow_rel = flow_path.name
+
+    _orch_print(f"[INFO] Running {flow_file} on {device_id}")
+    logger.info("Running %s on device %s", flow_rel, device_id)
+
+    try:
+        rc = run_maestro_flow(
+            maestro,
+            device_id,
+            flow_path.resolve(),
+            config_path.resolve(),
+            junit_path,
+            log_path,
+            repo,
+        )
+    except Exception as e:
+        logger.exception("Unexpected Maestro error: %s", e)
+        rc = 1
+
+    status, test_name, failure_msg = extract_junit_summary(junit_path, flow_rel)
+    if rc != 0 and status == "PASS":
+        status = "FAIL"
+        failure_msg = (failure_msg or "") + f"\nMaestro exit code: {rc}"
+    if rc != 0 and status == "UNKNOWN":
+        failure_msg = (failure_msg or "") + f"Maestro exit code: {rc}"
+
+    ai_text = ""
+    if status.upper() == "PASS":
+        ai_text = "N/A — passed"
+    elif use_ai:
+        logger.info("AI triggered | %s | %s | status=%s", flow_file, device_id, status)
+        _orch_print(f"[INFO] AI triggered | {flow_file} | {device_id}")
+        excerpt = read_log_tail(log_path)
+        try:
+            ai_text = analyze_flow_failure(
+                test_name=test_name,
+                status=status,
+                failure_message=failure_msg,
+                log_excerpt=excerpt,
+            )
+        except Exception as e:
+            logger.error("AI pipeline error: %s", e)
+            ai_text = "AI Analysis Failed"
+        if not (ai_text or "").strip():
+            ai_text = "AI Analysis Failed"
+        logger.info("AI result received | %s | %s", flow_file, device_id)
+        _orch_print(f"[INFO] AI result received | {flow_file} | {device_id}")
+    else:
+        ai_text = "AI disabled (--no-ai)"
+
+    preview = _safe_console_text((ai_text or "")[:200])
+    _orch_print(f"[INFO] AI Result ({device_id} / {flow_file}): {preview}")
+
+    ts = datetime.now().replace(microsecond=0).isoformat()
+    row = {
+        "Timestamp": ts,
+        "Suite": suite,
+        "Flow": flow_file,
+        "Device": f"{device_name} ({device_id})",
+        "Status": status,
+        "Exit Code": str(rc),
+        "Log Path": str(log_path.resolve()),
+        "AI Analysis": ai_text,
+    }
+    try:
+        append_result_row(excel_path, row, file_lock=excel_lock)
+        logger.info("Excel updated | %s | %s", flow_file, device_id)
+        _orch_print(f"[INFO] Excel updated | {flow_file} | {device_id}")
+    except Exception as e:
+        logger.error("Excel append failed: %s", e)
+
+    with outcome_lock:
+        shared_outcomes.append(status.upper())
+
+
+def run_flow(
+    device: str,
+    flow: Path,
+    *,
+    repo: Path,
+    maestro: Path,
+    config_path: Path,
+    excel_path: Path,
+    excel_lock: threading.Lock,
+    use_ai: bool,
+    device_name: str,
+    outcome_lock: threading.Lock,
+    shared_outcomes: list[str],
+) -> None:
+    """
+    Single flow on one device: Maestro, PASS/FAIL, AI, Excel row.
+    `device` is the ADB serial; `device_name` is the human-readable name from resolve_device_name.
+    """
+    run_flow_for_device(
+        device,
+        device_name,
+        flow,
+        repo=repo,
+        maestro=maestro,
+        config_path=config_path,
+        excel_path=excel_path,
+        excel_lock=excel_lock,
+        use_ai=use_ai,
+        outcome_lock=outcome_lock,
+        shared_outcomes=shared_outcomes,
+    )
+
+
+def run_all_flows_parallel(
+    devices: Sequence[str],
+    flows: Sequence[Path],
+    *,
+    device_names: dict[str, str],
+    repo: Path,
+    maestro: Path,
+    config_path: Path,
+    excel_path: Path,
+    excel_lock: threading.Lock,
+    use_ai: bool,
+    outcome_lock: threading.Lock,
+    shared_outcomes: list[str],
+    adb_exe: str,
+    restore_autofill: bool,
+) -> None:
+    """
+    For each flow, run that flow on all devices in parallel; wait, then next flow.
+    Optionally disable autofill once per device before waves, restore after all waves.
+    """
+    autofill_original: dict[str, str] = {}
+    for d in devices:
+        autofill_original[d] = maybe_disable_device_autofill(adb_exe, d)
+
+    for flow_path in flows:
+        logger.info("Flow wave (parallel across devices): %s", flow_path.name)
+        with ThreadPoolExecutor(max_workers=len(devices), thread_name_prefix="flowwave") as ex:
+            futs = [
+                ex.submit(
+                    run_flow_for_device,
+                    d,
+                    device_names[d],
+                    flow_path,
+                    repo=repo,
+                    maestro=maestro,
+                    config_path=config_path,
+                    excel_path=excel_path,
+                    excel_lock=excel_lock,
+                    use_ai=use_ai,
+                    outcome_lock=outcome_lock,
+                    shared_outcomes=shared_outcomes,
+                )
+                for d in devices
+            ]
+            for fut in as_completed(futs):
+                try:
+                    fut.result()
+                except Exception as e:
+                    logger.error("Flow wave task failed: %s", e)
+
+    if restore_autofill:
+        for d in devices:
+            maybe_restore_device_autofill(adb_exe, d, autofill_original.get(d, "unknown"))
+
+
+def legacy_device_worker(
     device_id: str,
     flows: Sequence[Path],
     *,
@@ -530,97 +748,27 @@ def device_worker(
     outcome_lock: threading.Lock,
     shared_outcomes: list[str],
 ) -> None:
+    """Previous model: all flows sequential on a device, devices in parallel."""
     device_name = resolve_device_name(repo, device_id)
     logger.info("Device %s detected (%s)", device_id, device_name)
-    print(f"[INFO] Device {device_id} detected ({device_name})", flush=True)
+    _orch_print(f"[INFO] Device {device_id} detected ({device_name})")
 
     original_autofill = maybe_disable_device_autofill(adb_exe, device_id)
 
-    log_base = repo / "logs" / _safe_segment(device_id)
-
     for flow_path in flows:
-        stem = _safe_segment(flow_path.stem)
-        flow_run_dir = log_base / stem
-        flow_run_dir.mkdir(parents=True, exist_ok=True)
-        junit_path = flow_run_dir / "junit.xml"
-        log_path = flow_run_dir / "maestro.log"
-
-        suite, flow_file = suite_and_flow(flow_path, repo)
-        try:
-            flow_rel = str(flow_path.resolve().relative_to(repo.resolve()))
-        except ValueError:
-            flow_rel = flow_path.name
-
-        print(f"[INFO] Running {flow_file} on {device_id}", flush=True)
-        logger.info("Running %s on device %s", flow_rel, device_id)
-
-        try:
-            rc = run_maestro_flow(
-                maestro,
-                device_id,
-                flow_path.resolve(),
-                config_path.resolve(),
-                junit_path,
-                log_path,
-                repo,
-            )
-        except Exception as e:
-            logger.exception("Unexpected Maestro error: %s", e)
-            rc = 1
-
-        status, test_name, failure_msg = extract_junit_summary(junit_path, flow_rel)
-        if rc != 0 and status == "PASS":
-            status = "FAIL"
-            failure_msg = (failure_msg or "") + f"\nMaestro exit code: {rc}"
-        if rc != 0 and status == "UNKNOWN":
-            failure_msg = (failure_msg or "") + f"Maestro exit code: {rc}"
-
-        ai_text = ""
-        if status.upper() == "PASS":
-            ai_text = "N/A — passed"
-        elif use_ai:
-            logger.info("AI triggered | %s | %s | status=%s", flow_file, device_id, status)
-            print(f"[INFO] AI triggered | {flow_file} | {device_id}", flush=True)
-            excerpt = read_log_tail(log_path)
-            try:
-                ai_text = analyze_flow_failure(
-                    test_name=test_name,
-                    status=status,
-                    failure_message=failure_msg,
-                    log_excerpt=excerpt,
-                )
-            except Exception as e:
-                logger.error("AI pipeline error: %s", e)
-                ai_text = "AI Analysis Failed"
-            if not (ai_text or "").strip():
-                ai_text = "AI Analysis Failed"
-            logger.info("AI result received | %s | %s", flow_file, device_id)
-            print(f"[INFO] AI result received | {flow_file} | {device_id}", flush=True)
-        else:
-            ai_text = "AI disabled (--no-ai)"
-
-        print(f"[INFO] AI Result ({device_id} / {flow_file}): {ai_text[:200]!s}", flush=True)
-
-        ts = datetime.now().replace(microsecond=0).isoformat()
-        row = {
-            "Timestamp": ts,
-            "Suite": suite,
-            "Flow": flow_file,
-            "Device": f"{device_name} ({device_id})",
-            "Status": status,
-            "Exit Code": str(rc),
-            "Log Path": str(log_path.resolve()),
-            "AI Analysis": ai_text,
-        }
-        try:
-            append_result_row(excel_path, row, file_lock=excel_lock)
-            logger.info("Excel updated | %s | %s", flow_file, device_id)
-            print(f"[INFO] Excel updated | {flow_file} | {device_id}", flush=True)
-        except Exception as e:
-            logger.error("Excel append failed: %s", e)
-
-        with outcome_lock:
-            shared_outcomes.append(status.upper())
+        run_flow_for_device(
+            device_id,
+            device_name,
+            flow_path,
+            repo=repo,
+            maestro=maestro,
+            config_path=config_path,
+            excel_path=excel_path,
+            excel_lock=excel_lock,
+            use_ai=use_ai,
+            outcome_lock=outcome_lock,
+            shared_outcomes=shared_outcomes,
+        )
 
     if restore_autofill:
         maybe_restore_device_autofill(adb_exe, device_id, original_autofill)
@@ -664,6 +812,11 @@ def parse_args() -> argparse.Namespace:
         "--restore-autofill",
         action="store_true",
         help="Restore each device's original autofill service after all flows on that device complete.",
+    )
+    p.add_argument(
+        "--legacy-per-device-sequential",
+        action="store_true",
+        help="Legacy scheduling: one thread per device, flows sequential per device. Default is per-flow fan-out to all devices.",
     )
     return p.parse_args()
 
@@ -718,9 +871,11 @@ def main() -> int:
         logger.error("Unable to resolve adb executable for device setup")
         return 1
 
+    device_names: dict[str, str] = {}
     for d in devices:
-        logger.info("Device %s detected", d)
-        print(f"[INFO] Device {d} detected", flush=True)
+        device_names[d] = resolve_device_name(repo, d)
+        logger.info("Device %s detected (%s)", d, device_names[d])
+        _orch_print(f"[INFO] Device {d} detected ({device_names[d]})")
 
     config_path = args.config if args.config.is_absolute() else repo / args.config
     maestro_arg = args.maestro if args.maestro.is_absolute() else Path(args.maestro)
@@ -732,30 +887,49 @@ def main() -> int:
 
     logger.info("Flows (%s): %s", len(flows), [f.name for f in flows])
 
-    with ThreadPoolExecutor(max_workers=len(devices), thread_name_prefix="device") as ex:
-        futs = [
-            ex.submit(
-                device_worker,
-                d,
-                flows,
-                repo=repo,
-                maestro=maestro,
-                config_path=config_path,
-                excel_path=excel_path,
-                excel_lock=excel_lock,
-                use_ai=use_ai,
-                adb_exe=adb_exe,
-                restore_autofill=restore_autofill,
-                outcome_lock=outcome_lock,
-                shared_outcomes=shared_outcomes,
-            )
-            for d in devices
-        ]
-        for fut in as_completed(futs):
-            try:
-                fut.result()
-            except Exception as e:
-                logger.error("Device worker failed: %s", e)
+    legacy = args.legacy_per_device_sequential or _truthy_env("ORCH_LEGACY_PER_DEVICE_SEQUENTIAL")
+
+    if legacy:
+        with ThreadPoolExecutor(max_workers=len(devices), thread_name_prefix="device") as ex:
+            futs = [
+                ex.submit(
+                    legacy_device_worker,
+                    d,
+                    flows,
+                    repo=repo,
+                    maestro=maestro,
+                    config_path=config_path,
+                    excel_path=excel_path,
+                    excel_lock=excel_lock,
+                    use_ai=use_ai,
+                    adb_exe=adb_exe,
+                    restore_autofill=restore_autofill,
+                    outcome_lock=outcome_lock,
+                    shared_outcomes=shared_outcomes,
+                )
+                for d in devices
+            ]
+            for fut in as_completed(futs):
+                try:
+                    fut.result()
+                except Exception as e:
+                    logger.error("Device worker failed: %s", e)
+    else:
+        run_all_flows_parallel(
+            devices,
+            flows,
+            device_names=device_names,
+            repo=repo,
+            maestro=maestro,
+            config_path=config_path,
+            excel_path=excel_path,
+            excel_lock=excel_lock,
+            use_ai=use_ai,
+            outcome_lock=outcome_lock,
+            shared_outcomes=shared_outcomes,
+            adb_exe=adb_exe,
+            restore_autofill=restore_autofill,
+        )
 
     try:
         finalize_workbook(excel_path, file_lock=excel_lock)
@@ -766,7 +940,7 @@ def main() -> int:
         send_execution_report_email(excel_path)
 
     logger.info("Done. Report: %s", excel_path)
-    print(f"[INFO] Final Excel: {excel_path}", flush=True)
+    _orch_print(f"[INFO] Final Excel: {excel_path}")
 
     if shared_outcomes and any(s != "PASS" for s in shared_outcomes):
         logger.warning("Run finished with one or more non-PASS results (see Excel)")

@@ -193,12 +193,47 @@ def analyze_flow_failure(
                 time.sleep(5)
                 continue
             break
+        except RuntimeError as e:
+            last_err = str(e)
+            msg = last_err.lower()
+            if "no message content" in msg and attempt < 2:
+                logger.warning("OpenRouter empty content; retry %s/3 after 5s", attempt + 1)
+                time.sleep(5)
+                continue
+            logger.exception("AI call failed")
+            break
         except Exception as e:
             last_err = str(e)
+            msg = last_err.lower()
+            if "no message content" in msg and attempt < 2:
+                logger.warning("OpenRouter empty/invalid content; retry %s/3 after 5s", attempt + 1)
+                time.sleep(5)
+                continue
             logger.exception("AI call failed")
             break
 
     return f"AI Analysis Failed ({last_err[:500]})"
+
+
+def analyze_failure_with_ai(
+    junit_path: Path,
+    log_path: Path,
+    *,
+    flow_display: str,
+    model: str | None = None,
+) -> str:
+    """
+    High-level helper: read JUnit + log tail, return one-line root-cause text.
+    """
+    status, test_name, failure_message = extract_junit_summary(junit_path, flow_display)
+    excerpt = read_log_tail(log_path)
+    return analyze_flow_failure(
+        test_name=test_name,
+        status=status,
+        failure_message=failure_message,
+        log_excerpt=excerpt,
+        model=model,
+    )
 
 
 def read_log_tail(path: Path, max_bytes: int = 24_000) -> str:
