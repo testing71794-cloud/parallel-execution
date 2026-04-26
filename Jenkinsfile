@@ -171,7 +171,10 @@ pipeline {
                             envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
                         }
                         if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "PATH+PLATFORM_TOOLS=${params.ANDROID_HOME}\\platform-tools"
+                        }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
@@ -196,7 +199,10 @@ pipeline {
                             envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
                         }
                         if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "PATH+PLATFORM_TOOLS=${params.ANDROID_HOME}\\platform-tools"
+                        }
                         def mh = params.MAESTRO_HOME?.trim()
                         def mc = params.MAESTRO_CMD?.trim() ?: 'maestro.bat'
                         def maestroExe = mh ? "${mh}\\${mc}" : mc
@@ -206,6 +212,7 @@ pipeline {
                                 bat """
                                 cd /d "${env.WORKSPACE}"
                                 where java
+                                if defined ANDROID_HOME set "PATH=%ANDROID_HOME%\\platform-tools;%PATH%"
                                 python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/nonprinting_flows.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noAi}
                                 if errorlevel 1 echo 1> orch_nonprinting_failed.flag
                                 exit /b 0
@@ -230,7 +237,10 @@ pipeline {
                             envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
                         }
                         if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "PATH+PLATFORM_TOOLS=${params.ANDROID_HOME}\\platform-tools"
+                        }
                         def mh = params.MAESTRO_HOME?.trim()
                         def mc = params.MAESTRO_CMD?.trim() ?: 'maestro.bat'
                         def maestroExe = mh ? "${mh}\\${mc}" : mc
@@ -241,6 +251,7 @@ pipeline {
                                 bat """
                                 cd /d "${env.WORKSPACE}"
                                 where java
+                                if defined ANDROID_HOME set "PATH=%ANDROID_HOME%\\platform-tools;%PATH%"
                                 python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/printing_flows.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noPrime} ${noAi}
                                 if errorlevel 1 echo 1> orch_printing_failed.flag
                                 exit /b 0

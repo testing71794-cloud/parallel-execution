@@ -50,44 +50,100 @@ def _adb_filename() -> str:
     return "adb.exe" if os.name == "nt" else "adb"
 
 
-def resolve_adb_path() -> str | None:
-    """
-    Locate adb for subprocess (Jenkins/agents often lack platform-tools on PATH).
-    Order: ADB / ADB_PATH → PATH → ANDROID_HOME|ANDROID_SDK_ROOT/platform-tools → Windows LocalAppData SDK.
-    """
-    for env in ("ADB", "ADB_PATH"):
-        raw = os.environ.get(env, "").strip().strip('"')
-        if not raw:
-            continue
-        p = Path(raw)
-        if p.is_dir():
-            cand = p / _adb_filename()
-            if cand.is_file():
-                return str(cand.resolve())
-        elif p.is_file():
-            return str(p.resolve())
+def _add_adb_candidate(seen: set[str], out: list[str], candidate: str | None) -> None:
+    if not candidate:
+        return
+    s = str(candidate).strip().strip('"')
+    if not s:
+        return
+    p = Path(s)
+    if p.is_dir():
+        exe = p / _adb_filename()
+        if exe.is_file():
+            s = str(exe.resolve())
+    elif p.is_file():
+        s = str(p.resolve())
+    if s not in seen:
+        seen.add(s)
+        out.append(s)
 
-    on_path = shutil.which("adb")
-    if on_path:
-        return on_path
+
+def _adb_candidates_from_where_windows() -> list[str]:
+    out: list[str] = []
+    try:
+        proc = subprocess.run(
+            ["cmd", "/c", "where", "adb"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except OSError:
+        return out
+    for line in (proc.stdout or "").splitlines():
+        line = line.strip().strip('"')
+        if line and Path(line).is_file():
+            out.append(str(Path(line).resolve()))
+    return out
+
+
+def iter_adb_candidates(cli_adb: str | None = None) -> list[str]:
+    """
+    Ordered adb.exe paths to try (first working wins in list_adb_devices).
+    Jenkins/interactive CMD often differ on PATH; we also probe ANDROID_HOME and `where adb` on Windows.
+    """
+    seen_set: set[str] = set()
+    out: list[str] = []
+
+    if cli_adb:
+        _add_adb_candidate(seen_set, out, cli_adb)
+
+    for env in ("ADB", "ADB_PATH"):
+        _add_adb_candidate(seen_set, out, os.environ.get(env, "").strip().strip('"'))
+
+    w = shutil.which("adb")
+    _add_adb_candidate(seen_set, out, w)
 
     name = _adb_filename()
     for root_env in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
         root = os.environ.get(root_env, "").strip().strip('"')
-        if not root:
-            continue
-        cand = Path(root) / "platform-tools" / name
-        if cand.is_file():
-            return str(cand.resolve())
+        if root:
+            _add_adb_candidate(seen_set, out, str(Path(root) / "platform-tools" / name))
 
     if os.name == "nt":
         local = os.environ.get("LOCALAPPDATA", "").strip()
         if local:
-            cand = Path(local) / "Android" / "Sdk" / "platform-tools" / name
-            if cand.is_file():
-                return str(cand.resolve())
+            _add_adb_candidate(
+                seen_set,
+                out,
+                str(Path(local) / "Android" / "Sdk" / "platform-tools" / name),
+            )
+        for p in _adb_candidates_from_where_windows():
+            _add_adb_candidate(seen_set, out, p)
 
-    return None
+    return out
+
+
+def _enriched_env_for_adb() -> dict[str, str]:
+    """Prepend SDK platform-tools to PATH so adb and its DLLs resolve like an interactive shell."""
+    env = os.environ.copy()
+    extra_prefix: list[str] = []
+    for root_env in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
+        root = os.environ.get(root_env, "").strip().strip('"')
+        if root:
+            pt = str(Path(root) / "platform-tools")
+            if Path(pt).is_dir():
+                extra_prefix.append(pt)
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA", "").strip()
+        if local:
+            pt = str(Path(local) / "Android" / "Sdk" / "platform-tools")
+            if Path(pt).is_dir():
+                extra_prefix.append(pt)
+    if extra_prefix:
+        old = env.get("PATH", "")
+        env["PATH"] = os.pathsep.join(extra_prefix) + os.pathsep + old
+    return env
 
 
 def _safe_segment(name: str) -> str:
@@ -106,25 +162,36 @@ def suite_and_flow(flow_path: Path, repo: Path) -> tuple[str, str]:
         return "", flow_path.name
 
 
-def list_adb_devices() -> list[str]:
-    adb_exe = resolve_adb_path()
-    if not adb_exe:
+def list_adb_devices(*, cli_adb: str | None = None) -> list[str]:
+    candidates = iter_adb_candidates(cli_adb)
+    if not candidates:
         logger.error(
             "adb not found. Install platform-tools, set ANDROID_HOME to the SDK root, "
-            "or set ADB to the full path of adb.exe (e.g. %%ANDROID_HOME%%\\platform-tools\\adb.exe)."
+            "add platform-tools to PATH, pass --adb, or set ADB to the full path of adb.exe."
         )
         return []
-    logger.info("Using adb: %s", adb_exe)
-    try:
-        out = subprocess.run(
-            [adb_exe, "devices"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-        logger.error("adb devices failed: %s", e)
+    env = _enriched_env_for_adb()
+    last_err: Exception | None = None
+    for adb_exe in candidates:
+        logger.info("Trying adb: %s", adb_exe)
+        try:
+            proc = subprocess.run(
+                [adb_exe, "devices"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+                env=env,
+            )
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as e:
+            last_err = e
+            logger.warning("adb not runnable (%s): %s", adb_exe, e)
+            continue
+        out = proc
+        logger.info("Using adb: %s", adb_exe)
+        break
+    else:
+        logger.error("adb devices failed after trying %s candidate(s): %s", len(candidates), last_err)
         return []
     serials: list[str] = []
     for line in out.stdout.splitlines():
@@ -370,6 +437,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not recreate Excel; append only (e.g. printing suite after non-printing in same job).",
     )
+    p.add_argument(
+        "--adb",
+        type=Path,
+        default=None,
+        help="Full path to adb.exe (recommended for Jenkins if PATH lacks platform-tools).",
+    )
     return p.parse_args()
 
 
@@ -411,7 +484,8 @@ def main() -> int:
         logger.error("No flows to run (check %s)", args.flows_file)
         return 1
 
-    devices = args.devices if args.devices else list_adb_devices()
+    adb_cli = str(args.adb.resolve()) if args.adb else None
+    devices = args.devices if args.devices else list_adb_devices(cli_adb=adb_cli)
     if not devices:
         logger.error("No Android devices in 'adb devices'")
         return 1
