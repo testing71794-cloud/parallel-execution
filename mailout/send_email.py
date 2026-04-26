@@ -76,12 +76,30 @@ def send_execution_report_email(
         logger.error("Excel attachment missing: %s", excel_path)
         return False
 
+    smtp_user = getenv_any("SMTP_USER", "SENDER_EMAIL", "GMAIL_USER")
     smtp_server = getenv_any("SMTP_SERVER", "SMTP_HOST")
+    # Gmail: if user set but host missing, use standard Gmail SMTP (app password in SMTP_PASS).
+    if not smtp_server and smtp_user and "@" in smtp_user and smtp_user.lower().rstrip().endswith(
+        ("@gmail.com", "@googlemail.com")
+    ):
+        smtp_server = "smtp.gmail.com"
+        logger.info("Defaulting SMTP server to smtp.gmail.com (Gmail sender)")
+
     smtp_port_raw = getenv_any("SMTP_PORT", default="587")
-    smtp_user = getenv_any("SMTP_USER", "SENDER_EMAIL")
-    smtp_pass = getenv_any("SMTP_PASS", "SENDER_PASSWORD")
-    sender = getenv_any("SENDER_EMAIL", "SMTP_USER")
-    receiver = getenv_any("RECEIVER_EMAIL", "MAIL_TO")
+    smtp_pass = getenv_any(
+        "SMTP_PASS",
+        "SMTP_PASSWORD",
+        "SENDER_PASSWORD",
+        "GMAIL_APP_PASSWORD",
+    )
+    sender = getenv_any("SENDER_EMAIL", "SMTP_USER", "GMAIL_USER")
+    receiver = getenv_any(
+        "RECEIVER_EMAIL",
+        "MAIL_TO",
+        "EMAIL_RECIPIENTS",
+        "RECIPIENT",
+        "ORCH_MAIL_TO",
+    )
 
     subj = subject or getenv_any(
         "ORCH_MAIL_SUBJECT", default="Automation Execution Report with AI Analysis"
@@ -93,7 +111,10 @@ def send_execution_report_email(
 
     if not smtp_server or not smtp_user or not smtp_pass or not receiver:
         logger.warning(
-            "Email skipped: set SMTP_SERVER/SMTP_HOST, SMTP_USER, SMTP_PASS, RECEIVER_EMAIL/MAIL_TO"
+            "Email skipped: set at minimum SMTP_USER (or SENDER_EMAIL), "
+            "SMTP_PASS (or SMTP_PASSWORD), RECEIVER_EMAIL (or MAIL_TO), and "
+            "SMTP_SERVER (or omit for @gmail.com to default to smtp.gmail.com). "
+            "Gmail: use an App Password, not the normal account password."
         )
         return False
 
