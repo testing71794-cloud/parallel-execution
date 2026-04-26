@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Remove artifacts from prior runs so Excel and logs only reflect the current execution.
+Auto-cleanup before each orchestrated run so logs, JUnit, and Excel never leak
+from previous executions. Missing paths are ignored (no failure).
 
-Deletes:
-  - <repo>/logs/  (orchestrator + per-device Maestro logs/JUnit from this runner)
-  - <repo>/build-summary/  (including final_execution_report.xlsx and other summary files)
+Deletes (under repo root when present):
+  logs/, build-summary/, test-results/, maestro-report/, reports/
+  final_execution_report.xlsx (repo root)
 
-Safe to run before execution/run_parallel_devices.py.
-Does not modify Maestro flow YAML.
+Also prints: CLEANUP COMPLETED
 """
 from __future__ import annotations
 
@@ -19,38 +19,53 @@ from pathlib import Path
 
 logger = logging.getLogger("orch.cleanup")
 
+FOLDERS = (
+    "logs",
+    "build-summary",
+    "test-results",
+    "maestro-report",
+    "reports",
+)
+
+FILES = (
+    "final_execution_report.xlsx",
+)
+
 
 def cleanup_for_new_run(repo_root: Path) -> None:
     repo_root = repo_root.resolve()
-    logs = repo_root / "logs"
-    summary = repo_root / "build-summary"
 
-    if logs.is_dir():
+    for name in FOLDERS:
+        path = repo_root / name
+        if not path.exists():
+            continue
+        if not path.is_dir():
+            logger.warning("Skip cleanup (not a directory): %s", path)
+            continue
         try:
-            shutil.rmtree(logs, ignore_errors=False)
-            logger.info("Removed logs directory: %s", logs)
+            shutil.rmtree(path, ignore_errors=False)
+            logger.info("Removed directory: %s", path)
         except OSError as e:
-            logger.error("Could not remove logs: %s", e)
-            raise
+            logger.warning("Could not remove directory %s: %s — continuing", path, e)
 
-    if summary.is_dir():
+    for name in FILES:
+        path = repo_root / name
+        if not path.is_file():
+            continue
         try:
-            shutil.rmtree(summary, ignore_errors=False)
-            logger.info("Removed build-summary directory: %s", summary)
+            path.unlink()
+            logger.info("Removed file: %s", path)
         except OSError as e:
-            logger.error("Could not remove build-summary: %s", e)
-            raise
+            logger.warning("Could not remove file %s: %s — continuing", path, e)
 
-    # Explicit final report at repo root (if ever used there)
-    loose = repo_root / "final_execution_report.xlsx"
-    if loose.is_file():
-        loose.unlink()
-        logger.info("Removed %s", loose)
+    logger.info("Cleanup completed")
+    print("[INFO] Cleanup completed", flush=True)
+    print("CLEANUP COMPLETED", flush=True)
 
 
 def main() -> int:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    p = argparse.ArgumentParser(description="Clean logs and build-summary before a parallel run")
+    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+    p = argparse.ArgumentParser(description="Remove prior run artifacts (safe if paths missing)")
     p.add_argument(
         "--repo-root",
         type=Path,
@@ -58,10 +73,7 @@ def main() -> int:
         help="Repository root",
     )
     args = p.parse_args()
-    try:
-        cleanup_for_new_run(args.repo_root)
-    except OSError:
-        return 1
+    cleanup_for_new_run(args.repo_root)
     return 0
 
 

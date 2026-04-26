@@ -90,7 +90,11 @@ def send_execution_report_email(
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     root = Path(os.environ.get("WORKSPACE", os.getcwd())).resolve()
-    excel = root / "build-summary" / "final_execution_report.xlsx"
+    excel = root / "final_execution_report.xlsx"
+    if not excel.is_file():
+        legacy = root / "build-summary" / "final_execution_report.xlsx"
+        if legacy.is_file():
+            excel = legacy
     return 0 if send_execution_report_email(excel) else 1
 
 

@@ -1,4 +1,4 @@
-// Strip common mistake: parameter value "OPENROUTER_CREDENTIALS_ID = OPENROUTER_API_KEY" (Jenkins would look up that full string as credential ID).
+// Strip common mistake: parameter value "OPENROUTER_CREDENTIALS_ID = OPENROUTER_API_KEY"
 def normalizeOpenRouterCredsId = { Object raw ->
     if (raw == null) {
         return ''
@@ -17,7 +17,6 @@ def normalizeOpenRouterCredsId = { Object raw ->
     return s
 }
 
-// Bind Jenkins Secret text → OPENROUTER_API_KEY for Python / Maestro (optional).
 def withOpenRouterCredentials = { String credsId, Closure action ->
     def id = normalizeOpenRouterCredsId(credsId)
     if (id) {
@@ -36,23 +35,41 @@ pipeline {
         choice(
             name: 'DEVICES_AGENT',
             choices: ['devices', 'built-in'],
-            description: 'devices = your PC with USB phones'
+            description: 'devices = agent with USB phones / adb'
         )
         string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'App package id for Maestro/app launch checks')
-        string(name: 'MAESTRO_CMD', defaultValue: 'maestro.bat', description: 'Maestro launcher (e.g. maestro.bat).')
-        string(name: 'MAESTRO_HOME', defaultValue: 'C:\\Users\\HP\\maestro\\maestro\\bin', description: 'Folder containing maestro.bat.')
-        string(name: 'ANDROID_HOME', defaultValue: 'C:\\Users\\HP\\AppData\\Local\\Android\\Sdk', description: 'Android SDK root.')
-        string(name: 'JAVA_HOME_OVERRIDE', defaultValue: '', description: 'Optional JDK for Maestro (MAESTRO_JAVA_HOME).')
-        booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run non-printing flows')
-        booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run printing flows')
-        booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Test OpenRouter + run intelligent_platform failure analysis')
-        booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send final summary email')
-        booleanParam(name: 'CLEAR_STATE', defaultValue: true, description: 'Clear app state in suite runners')
-        booleanParam(name: 'RETRY_FAILED', defaultValue: false, description: 'Reserved for future retry logic')
+        string(name: 'MAESTRO_CMD', defaultValue: 'maestro.bat', description: 'Maestro launcher (e.g. maestro.bat)')
+        string(name: 'MAESTRO_HOME', defaultValue: 'C:\\Users\\HP\\maestro\\maestro\\bin', description: 'Folder containing maestro.bat (optional if maestro is on PATH)')
+        string(name: 'ANDROID_HOME', defaultValue: 'C:\\Users\\HP\\AppData\\Local\\Android\\Sdk', description: 'Android SDK root')
+        string(name: 'JAVA_HOME_OVERRIDE', defaultValue: '', description: 'Optional JDK for Maestro (MAESTRO_JAVA_HOME)')
+        booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run non-printing flows (Python parallel orchestrator)')
+        booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run printing flows (Python parallel orchestrator)')
+        booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Per-flow OpenRouter AI (429: 3 tries, 5s backoff)')
+        booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send email with final_execution_report.xlsx')
         string(
             name: 'OPENROUTER_CREDENTIALS_ID',
             defaultValue: 'OPENROUTER_API_KEY',
-            description: 'Jenkins "Secret text" credential ID only (e.g. OPENROUTER_API_KEY). Injects as OPENROUTER_API_KEY. Do not paste the whole parameter line. Leave empty to use env already set on the agent.'
+            description: 'Jenkins Secret text credential ID → OPENROUTER_API_KEY'
+        )
+        string(
+            name: 'SMTP_CREDENTIALS_ID',
+            defaultValue: '',
+            description: 'Optional Jenkins Username/Password ID for SMTP (username=sender, password=app password). If empty, uses SMTP_* env on the agent.'
+        )
+        string(
+            name: 'MAIL_TO_OVERRIDE',
+            defaultValue: '',
+            description: 'Optional RECEIVER_EMAIL override (defaults to SMTP user when using SMTP_CREDENTIALS_ID)'
+        )
+        string(
+            name: 'SMTP_SERVER',
+            defaultValue: 'smtp.gmail.com',
+            description: 'SMTP host when using SMTP_CREDENTIALS_ID or agent env'
+        )
+        string(
+            name: 'SMTP_PORT',
+            defaultValue: '587',
+            description: 'SMTP port'
         )
     }
 
@@ -69,14 +86,8 @@ pipeline {
         githubPush()
     }
 
-    environment {
-        NON_PRINTING_EXIT_CODE = '0'
-        PRINTING_EXIT_CODE = '0'
-        ANY_TEST_FAILED = '0'
-    }
-
     stages {
-        stage('Fetch Code from GitHub') {
+        stage('Checkout Code') {
             agent { label 'built-in' }
             steps {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
@@ -95,18 +106,6 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    if exist reports rmdir /s /q reports
-                    if exist status rmdir /s /q status
-                    if exist collected-artifacts rmdir /s /q collected-artifacts
-                    if exist build-summary rmdir /s /q build-summary
-                    if exist .maestro rmdir /s /q .maestro
-                    if exist temp-runners rmdir /s /q temp-runners
-                    if exist ai-doctor/artifacts rmdir /s /q ai-doctor/artifacts
-                    if exist automation_with_testcases/logs rmdir /s /q automation_with_testcases\\logs
-                    if exist automation_with_testcases/results rmdir /s /q automation_with_testcases\\results
-                    del /q detected_devices.txt 2>nul
-                    del /q *.flag 2>nul
-                    del /q *.failed 2>nul
                     python -m pip install --upgrade pip || (echo 1> install_failed.flag & exit /b 1)
                     python -m pip install -r scripts/requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
                     if exist package.json (
@@ -117,13 +116,12 @@ pipeline {
                         call npm ci || call npm install || (echo 1> ..\\install_failed.flag & exit /b 1)
                         cd ..
                     )
-                    if not exist build-summary mkdir build-summary
                     """
                 }
             }
         }
 
-        stage('Environment Precheck') {
+        stage('Environment Validation') {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
@@ -145,6 +143,18 @@ pipeline {
                             """
                         }
                     }
+                }
+            }
+        }
+
+        stage('Cleanup Previous Execution') {
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
+                    python execution/cleanup_previous_run.py --repo-root "${env.WORKSPACE}" || (echo 1> cleanup_failed.flag & exit /b 1)
+                    """
                 }
             }
         }
@@ -173,7 +183,7 @@ pipeline {
             }
         }
 
-        stage('Execute Non Printing Flows') {
+        stage('Execute Non-Printing Flows (Parallel)') {
             when { expression { return params.RUN_NON_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -187,12 +197,18 @@ pipeline {
                         }
                         if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
                         if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
+                        def mh = params.MAESTRO_HOME?.trim()
+                        def mc = params.MAESTRO_CMD?.trim() ?: 'maestro.bat'
+                        def maestroExe = mh ? "${mh}\\${mc}" : mc
+                        def noAi = params.RUN_AI_ANALYSIS ? '' : '--no-ai'
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(envList) {
                                 bat """
                                 cd /d "${env.WORKSPACE}"
                                 where java
-                                call scripts/run_suite_parallel_same_machine.bat nonprinting "Non printing flows" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> nonprinting_failed.flag)
+                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/nonprinting_flows.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noAi}
+                                if errorlevel 1 echo 1> orch_nonprinting_failed.flag
+                                exit /b 0
                                 """
                             }
                         }
@@ -201,41 +217,7 @@ pipeline {
             }
         }
 
-        stage('Validate Non Printing Artifacts') {
-            when { expression { return params.RUN_NON_PRINTING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python scripts/validate_suite_artifacts.py nonprinting "${env.WORKSPACE}" || (echo 1> nonprinting_no_results.flag)
-                    if not exist status\\nonprinting__*.txt (echo 1> nonprinting_no_results.flag)
-                    if not exist reports\\nonprinting\\results\\*.csv (echo 1> nonprinting_no_results.flag)
-                    if not exist reports\\nonprinting\\logs\\*.log (echo 1> nonprinting_no_results.flag)
-                    """
-                }
-            }
-        }
-
-        stage('Generate Excel Report for Non Printing') {
-            when { expression { return params.RUN_NON_PRINTING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/generate_excel_report.py status reports/nonprinting_summary nonprinting || (echo 1> nonprinting_report_failed.flag)
-                            """
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Execute Printing Flows on Physical Devices') {
+        stage('Execute Printing Flows (Parallel)') {
             when { expression { return params.RUN_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -249,12 +231,19 @@ pipeline {
                         }
                         if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
                         if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
+                        def mh = params.MAESTRO_HOME?.trim()
+                        def mc = params.MAESTRO_CMD?.trim() ?: 'maestro.bat'
+                        def maestroExe = mh ? "${mh}\\${mc}" : mc
+                        def noAi = params.RUN_AI_ANALYSIS ? '' : '--no-ai'
+                        def noPrime = (params.RUN_NON_PRINTING && params.RUN_PRINTING) ? '--no-prime' : ''
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(envList) {
                                 bat """
                                 cd /d "${env.WORKSPACE}"
                                 where java
-                                call scripts/run_suite_parallel_same_machine.bat printing "Printing Flow" "" "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> printing_failed.flag)
+                                python execution/run_parallel_devices.py --repo-root "${env.WORKSPACE}" --flows-file execution/printing_flows.txt --maestro "${maestroExe}" --config config.yaml --excel-out final_execution_report.xlsx --no-clean ${noPrime} ${noAi}
+                                if errorlevel 1 echo 1> orch_printing_failed.flag
+                                exit /b 0
                                 """
                             }
                         }
@@ -263,145 +252,88 @@ pipeline {
             }
         }
 
-        stage('Validate Printing Artifacts') {
-            when { expression { return params.RUN_PRINTING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python scripts/validate_suite_artifacts.py printing "${env.WORKSPACE}" || (echo 1> printing_no_results.flag)
-                    if not exist status\\printing__*.txt (echo 1> printing_no_results.flag)
-                    if not exist reports\\printing\\results\\*.csv (echo 1> printing_no_results.flag)
-                    if not exist reports\\printing\\logs\\*.log (echo 1> printing_no_results.flag)
-                    """
-                }
-            }
-        }
-
-        stage('Generate Excel Report for Printing') {
-            when { expression { return params.RUN_PRINTING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/generate_excel_report.py status reports/printing_summary printing || (echo 1> printing_report_failed.flag)
-                            """
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Test AI Connection') {
-            when { expression { return params.RUN_AI_ANALYSIS } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/test_ai_connection.py
-                            if exist build-summary\\ai_status.txt ( type build-summary\\ai_status.txt ) else ( echo No ai_status.txt )
-                            """
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('AI Failure Analysis + Smart Retry') {
-            when { expression { return params.RUN_AI_ANALYSIS } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            if not exist build-summary\\ai_status.txt echo AI_STATUS=FILE_MISSING > build-summary\\ai_status.txt
-                            call scripts/run_ai_analysis.bat || (echo 1> ai_failed.flag)
-                            """
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Build Summary') {
+        stage('Generate Final Summary') {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
                     if not exist build-summary mkdir build-summary
-                    python scripts/generate_build_summary.py status build-summary || (echo 1> summary_failed.flag)
-                    if exist scripts\\generate_final_report.py (
-                        python scripts/generate_final_report.py . status build-summary\\final_execution_report.xlsx
-                    ) else if exist build-summary\\final_execution_report.xlsx (
-                        echo final_execution_report already from generate_excel merge.
-                    ) else (
-                        echo No generate_final_report.py; Excel merge should exist from per-suite report.
-                    )
+                    python scripts/summarize_final_excel.py final_execution_report.xlsx build-summary/execution_counts.txt || (echo 1> summary_failed.flag)
+                    if exist build-summary\\execution_counts.txt type build-summary\\execution_counts.txt
                     """
                 }
             }
         }
 
-        stage('Send Final Email') {
+        stage('Send Email') {
             when { expression { return params.SEND_FINAL_EMAIL } }
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    withEnv([
-                        'SMTP_SERVER=smtp.gmail.com',
-                        'SMTP_PORT=587',
-                        'SMTP_USER=kodaksmilechina@gmail.com',
-                        'SENDER_EMAIL=kodaksmilechina@gmail.com',
-                        'SENDER_PASSWORD=gabq yztc ztmt vvhm',
-                        'MAIL_TO=kodaksmilechina@gmail.com',
-                        'RECEIVER_EMAIL=kodaksmilechina@gmail.com',
-                        'SMTP_USE_TLS=1',
-                        'SMTP_SSL=0',
-                        'PYTHONIOENCODING=utf-8'
-                    ]) {
-                        bat """
-                        cd /d "${env.WORKSPACE}"
-                        if exist scripts\\send_execution_email.py ( python scripts\\send_execution_email.py || ( echo 1>email_failed.flag & exit /b 0 ) ) else ( echo send_execution_email.py not found. )
-                        """
+                    script {
+                        def smtpId = params.SMTP_CREDENTIALS_ID?.trim()
+                        def mailTo = params.MAIL_TO_OVERRIDE?.trim()
+                        def smtpServer = params.SMTP_SERVER?.trim() ?: 'smtp.gmail.com'
+                        def smtpPort = params.SMTP_PORT?.trim() ?: '587'
+                        if (smtpId) {
+                            withCredentials([usernamePassword(credentialsId: smtpId, usernameVariable: 'SMTP_JENKINS_USER', passwordVariable: 'SMTP_JENKINS_PASS')]) {
+                                def receiver = mailTo ?: env.SMTP_JENKINS_USER
+                                withEnv([
+                                    "SMTP_SERVER=${smtpServer}",
+                                    "SMTP_PORT=${smtpPort}",
+                                    "SMTP_USER=${env.SMTP_JENKINS_USER}",
+                                    "SMTP_PASS=${env.SMTP_JENKINS_PASS}",
+                                    "SENDER_EMAIL=${env.SMTP_JENKINS_USER}",
+                                    "RECEIVER_EMAIL=${receiver}",
+                                    'PYTHONIOENCODING=utf-8',
+                                ]) {
+                                    bat """
+                                    cd /d "${env.WORKSPACE}"
+                                    python mailout/send_email.py || (echo 1> email_failed.flag)
+                                    """
+                                }
+                            }
+                        } else {
+                            withEnv([
+                                "SMTP_SERVER=${smtpServer}",
+                                "SMTP_PORT=${smtpPort}",
+                                'PYTHONIOENCODING=utf-8',
+                            ]) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                python mailout/send_email.py || (echo 1> email_failed.flag)
+                                """
+                            }
+                        }
                     }
                 }
             }
         }
 
-        stage('Archive Reports & Artifacts') {
+        stage('Archive Reports') {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    archiveArtifacts artifacts: 'reports/**, status/**, collected-artifacts/**, build-summary/**, .maestro/screenshots/**, ai-doctor/artifacts/**, detected_devices.txt, automation_with_testcases/reports/**, automation_with_testcases/logs/**, automation_with_testcases/results/**, *.flag, *.failed', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'logs/**, reports/**, build-summary/**, final_execution_report.xlsx, detected_devices.txt, *.flag, *.failed', allowEmptyArchive: true
                 }
             }
         }
 
-        stage('Finalize Build Result') {
+        stage('Finalize Build') {
             agent { label params.DEVICES_AGENT }
             steps {
                 script {
                     def unstableFlags = [
-                        'nonprinting_failed.flag', 'nonprinting_no_results.flag', 'nonprinting_report_failed.flag',
-                        'printing_failed.flag', 'printing_no_results.flag', 'printing_report_failed.flag',
-                        'summary_failed.flag', 'ai_failed.flag', 'email_failed.flag', 'pipeline_failed.flag',
+                        'orch_nonprinting_failed.flag',
+                        'orch_printing_failed.flag',
+                        'summary_failed.flag',
+                        'email_failed.flag',
+                        'pipeline_failed.flag',
                     ]
                     def u = false
                     unstableFlags.each { f -> if (fileExists(f)) { u = true } }
-                    if (fileExists('install_failed.flag') || fileExists('precheck_failed.flag') || fileExists('device_detection_failed.flag')) {
+                    if (fileExists('install_failed.flag') || fileExists('precheck_failed.flag') || fileExists('device_detection_failed.flag') || fileExists('cleanup_failed.flag')) {
                         currentBuild.result = 'FAILURE'
                     } else if (u) {
                         currentBuild.result = 'UNSTABLE'

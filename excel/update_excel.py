@@ -1,6 +1,6 @@
 """
-Thread-safe updates to final_execution_report.xlsx.
-Fresh run: prime_workbook() creates a new file with headers only; append_result_row() adds rows.
+Thread-safe Excel for parallel orchestration.
+Each run: cleanup + prime_workbook() → fresh headers only → append rows for this run only.
 """
 from __future__ import annotations
 
@@ -14,15 +14,15 @@ from openpyxl.styles import Font
 
 logger = logging.getLogger("orch.excel")
 
-# Matches stakeholder report (column "Status", not "Test Status")
 HEADERS = [
     "Timestamp",
-    "Device Name",
-    "Flow Name",
+    "Suite",
+    "Flow",
+    "Device",
     "Status",
-    "Failure Message",
+    "Exit Code",
+    "Log Path",
     "AI Analysis",
-    "Duration",
 ]
 
 _file_locks: dict[str, threading.Lock] = {}
@@ -38,23 +38,39 @@ def _lock_for(path: Path) -> threading.Lock:
 
 
 def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Accept legacy key "Test Status" as "Status"."""
+    """Map legacy column names from older orchestrator versions."""
     out = dict(row)
+    if "Flow" not in out and "Flow Name" in out:
+        out["Flow"] = out.get("Flow Name", "")
+    if "Device" not in out and "Device Name" in out:
+        out["Device"] = out.get("Device Name", "")
     if "Status" not in out and "Test Status" in out:
         out["Status"] = out.get("Test Status", "")
+    if "Log Path" not in out and "Log" in out:
+        out["Log Path"] = out.get("Log", "")
+    if "Log Path" not in out and "Failure Message" in out:
+        pass
+    if "Exit Code" not in out:
+        out.setdefault("Exit Code", "")
+    if "Suite" not in out:
+        out.setdefault("Suite", "")
+    if "AI Analysis" not in out:
+        out.setdefault("AI Analysis", "")
+    out.setdefault("Log Path", "")
     return out
 
 
 def prime_workbook(excel_path: Path, *, file_lock: threading.Lock | None = None) -> None:
-    """
-    Create a brand-new workbook with header row only (call once per run, after cleanup).
-    """
+    """New workbook: headers only (after cleanup, no prior rows)."""
     excel_path = excel_path.resolve()
     excel_path.parent.mkdir(parents=True, exist_ok=True)
     lock = file_lock or _lock_for(excel_path)
     with lock:
         if excel_path.is_file():
-            excel_path.unlink()
+            try:
+                excel_path.unlink()
+            except OSError as e:
+                logger.warning("Could not delete existing Excel %s: %s", excel_path, e)
         wb = Workbook()
         ws = wb.active
         ws.title = "Results"
@@ -62,7 +78,7 @@ def prime_workbook(excel_path: Path, *, file_lock: threading.Lock | None = None)
         for c in ws[1]:
             c.font = Font(bold=True)
         wb.save(excel_path)
-        logger.info("Primed new Excel workbook: %s", excel_path)
+        logger.info("Primed new Excel: %s", excel_path)
 
 
 def append_result_row(
@@ -71,9 +87,6 @@ def append_result_row(
     *,
     file_lock: threading.Lock | None = None,
 ) -> None:
-    """
-    Append one data row. Workbook must already exist (use prime_workbook first).
-    """
     excel_path = excel_path.resolve()
     excel_path.parent.mkdir(parents=True, exist_ok=True)
     row = _normalize_row(row)
@@ -83,7 +96,7 @@ def append_result_row(
 
     with lock:
         if not excel_path.is_file():
-            logger.warning("Excel missing; creating with headers (unexpected — run prime_workbook)")
+            logger.warning("Excel missing; recreating headers")
             wb = Workbook()
             ws = wb.active
             ws.title = "Results"
@@ -102,8 +115,8 @@ def append_result_row(
         wb.save(excel_path)
         logger.info(
             "Excel updated | flow=%s | device=%s | status=%s",
-            row.get("Flow Name"),
-            row.get("Device Name"),
+            row.get("Flow"),
+            row.get("Device"),
             row.get("Status"),
         )
 

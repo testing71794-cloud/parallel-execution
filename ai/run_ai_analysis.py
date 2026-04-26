@@ -161,6 +161,7 @@ def analyze_flow_failure(
         },
     ]
 
+    # HTTP 429: up to 3 attempts total, 5s backoff between retries (enterprise rate limits).
     last_err = ""
     for attempt in range(3):
         try:
@@ -181,13 +182,14 @@ def analyze_flow_failure(
             last_err = str(e)
             logger.warning("OpenRouter error attempt %s: %s", attempt + 1, e)
             if code == 429 and attempt < 2:
+                logger.warning("HTTP 429 from OpenRouter; retry %s/3 after 5s", attempt + 1)
                 time.sleep(5)
                 continue
             break
         except urllib.error.HTTPError as e:
             last_err = str(e)
             if e.code == 429 and attempt < 2:
-                logger.warning("HTTP 429; retry in 5s")
+                logger.warning("HTTP 429; retry %s/3 after 5s", attempt + 1)
                 time.sleep(5)
                 continue
             break

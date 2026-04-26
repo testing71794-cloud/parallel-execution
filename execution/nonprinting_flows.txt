@@ -1,0 +1,14 @@
+# Non-printing suite — one path per line, relative to repo root. Order = execution order per device.
+
+Non printing flows/flow1.yaml
+Non printing flows/flow1b.yaml
+Non printing flows/flow2.yaml
+Non printing flows/flow3.yaml
+Non printing flows/flow4.yaml
+Non printing flows/flow5.yaml
+Non printing flows/flow6.yaml
+Non printing flows/flow7.yaml
+Non printing flows/Flow8_Precut_Different_Photo_Single_From_Album.yaml
+Non printing flows/Flow8_Precut_Different_Photo_Two_From_Album.yaml
+Non printing flows/Flow8_Precut_Same_Photo_From_Album -swap.yaml
+Non printing flows/Flow8_Precut_Swap.yaml

@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-Parallel multi-device Maestro orchestration:
-- One thread per device (flows sequential within the thread)
-- JUnit + log per flow; JUnit file removed before each run for a clean parse
-- AI after each non-PASS (optional); PASS rows get explicit N/A in AI column
-- Thread-safe Excel: cleanup + prime fresh workbook, then append rows
-- Optional email after all devices complete
+Parallel multi-device Maestro orchestration (production).
 
-Does not modify Maestro YAML flows.
+Before anything else: auto cleanup (logs, reports, build-summary, …) unless --no-clean.
+Per device: parallel thread. Per device: flows run sequentially.
 
-Maestro CLI: global --device before test (see docs/MAESTRO_OFFICIAL_REFERENCE.md).
+Per flow artifacts (no reuse from prior runs):
+  logs/<device_serial>/<flow_stem>/junit.xml
+  logs/<device_serial>/<flow_stem>/maestro.log
+
+Excel: fresh file each run (prime after cleanup), columns include AI Analysis, live Timestamp.
+
+Does not modify Maestro YAML.
+
+CLI: maestro --device <serial> test <flow> --config config.yaml --format junit --output <junit.xml>
 """
 from __future__ import annotations
 
@@ -21,8 +25,8 @@ import shutil
 import subprocess
 import sys
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
@@ -42,8 +46,20 @@ from mailout.send_email import send_execution_report_email  # noqa: E402
 logger = logging.getLogger("orch.parallel")
 
 
-def _safe_device_dir(name: str) -> str:
+def _safe_segment(name: str) -> str:
     return re.sub(r"[^\w\-.]+", "_", name)
+
+
+def suite_and_flow(flow_path: Path, repo: Path) -> tuple[str, str]:
+    """Suite = first path segment under repo (e.g. Non printing flows); Flow = yaml file name."""
+    try:
+        rel = flow_path.resolve().relative_to(repo.resolve())
+        parts = rel.parts
+        if len(parts) >= 2:
+            return parts[0], parts[-1]
+        return "", rel.name
+    except ValueError:
+        return "", flow_path.name
 
 
 def list_adb_devices() -> list[str]:
@@ -134,17 +150,17 @@ def run_maestro_flow(
     log_path: Path,
     repo: Path,
 ) -> int:
-    junit_out.parent.mkdir(parents=True, exist_ok=True)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    flow_run_dir = junit_out.parent
+    flow_run_dir.mkdir(parents=True, exist_ok=True)
+
     if junit_out.is_file():
         try:
             junit_out.unlink()
-            logger.debug("Removed stale JUnit: %s", junit_out)
         except OSError as e:
-            logger.warning("Could not remove stale JUnit %s: %s", junit_out, e)
+            logger.warning("Could not remove stale junit.xml %s: %s", junit_out, e)
 
     cmd = build_maestro_cmd(maestro, device_id, flow_path, config_path, junit_out)
-    logger.info("Flow started | device=%s | flow=%s", device_id, flow_path.name)
+    logger.info("Flow started | %s | %s", flow_path.name, device_id)
     logger.debug("CMD %s", cmd)
     try:
         with open(log_path, "w", encoding="utf-8", errors="replace") as log_f:
@@ -158,20 +174,15 @@ def run_maestro_flow(
                 shell=False,
             )
         code = int(proc.returncode)
-        logger.info(
-            "Flow completed | device=%s | flow=%s | exit=%s",
-            device_id,
-            flow_path.name,
-            code,
-        )
+        logger.info("Flow completed | %s | %s | exit=%s", flow_path.name, device_id, code)
         return code
     except subprocess.TimeoutExpired:
         log_path.write_text("Maestro subprocess timeout\n", encoding="utf-8")
-        logger.error("Flow timeout | device=%s | flow=%s", device_id, flow_path.name)
+        logger.error("Flow timeout | %s | %s", flow_path.name, device_id)
         return 124
     except Exception as e:
         log_path.write_text(f"Maestro launch error: {e}\n", encoding="utf-8")
-        logger.error("Flow launch error | device=%s | %s", device_id, e)
+        logger.error("Flow launch error | %s | %s", device_id, e)
         return 1
 
 
@@ -185,24 +196,31 @@ def device_worker(
     excel_path: Path,
     excel_lock: threading.Lock,
     use_ai: bool,
+    outcome_lock: threading.Lock,
+    shared_outcomes: list[str],
 ) -> None:
-    log_base = repo / "logs" / _safe_device_dir(device_id)
-    log_base.mkdir(parents=True, exist_ok=True)
     device_name = resolve_device_name(repo, device_id)
+    logger.info("Device %s detected (%s)", device_id, device_name)
+    print(f"[INFO] Device {device_id} detected ({device_name})", flush=True)
+
+    log_base = repo / "logs" / _safe_segment(device_id)
 
     for flow_path in flows:
-        stem = _safe_device_dir(flow_path.stem)
-        junit_path = log_base / f"{stem}_junit.xml"
-        log_path = log_base / f"{stem}.log"
+        stem = _safe_segment(flow_path.stem)
+        flow_run_dir = log_base / stem
+        flow_run_dir.mkdir(parents=True, exist_ok=True)
+        junit_path = flow_run_dir / "junit.xml"
+        log_path = flow_run_dir / "maestro.log"
+
+        suite, flow_file = suite_and_flow(flow_path, repo)
         try:
-            flow_display = str(flow_path.resolve().relative_to(repo.resolve()))
+            flow_rel = str(flow_path.resolve().relative_to(repo.resolve()))
         except ValueError:
-            flow_display = flow_path.name
+            flow_rel = flow_path.name
 
-        print(f"Running Flow: {flow_display} on {device_id}", flush=True)
-        logger.info("Running Flow: %s on %s (%s)", flow_display, device_id, device_name)
+        print(f"[INFO] Running {flow_file} on {device_id}", flush=True)
+        logger.info("Running %s on device %s", flow_rel, device_id)
 
-        t0 = time.perf_counter()
         try:
             rc = run_maestro_flow(
                 maestro,
@@ -214,13 +232,10 @@ def device_worker(
                 repo,
             )
         except Exception as e:
-            logger.exception("Unexpected error running Maestro: %s", e)
+            logger.exception("Unexpected Maestro error: %s", e)
             rc = 1
 
-        duration_s = time.perf_counter() - t0
-        duration_str = f"{duration_s:.2f}s"
-
-        status, test_name, failure_msg = extract_junit_summary(junit_path, flow_display)
+        status, test_name, failure_msg = extract_junit_summary(junit_path, flow_rel)
         if rc != 0 and status == "PASS":
             status = "FAIL"
             failure_msg = (failure_msg or "") + f"\nMaestro exit code: {rc}"
@@ -231,12 +246,8 @@ def device_worker(
         if status.upper() == "PASS":
             ai_text = "N/A — passed"
         elif use_ai:
-            logger.info(
-                "AI triggered | device=%s | flow=%s | status=%s",
-                device_id,
-                flow_display,
-                status,
-            )
+            logger.info("AI triggered | %s | %s | status=%s", flow_file, device_id, status)
+            print(f"[INFO] AI triggered | {flow_file} | {device_id}", flush=True)
             excerpt = read_log_tail(log_path)
             try:
                 ai_text = analyze_flow_failure(
@@ -250,25 +261,33 @@ def device_worker(
                 ai_text = "AI Analysis Failed"
             if not (ai_text or "").strip():
                 ai_text = "AI Analysis Failed"
+            logger.info("AI result received | %s | %s", flow_file, device_id)
+            print(f"[INFO] AI result received | {flow_file} | {device_id}", flush=True)
         else:
             ai_text = "AI disabled (--no-ai)"
 
-        print(f"AI Result ({device_id} / {flow_display}): {ai_text}", flush=True)
+        print(f"[INFO] AI Result ({device_id} / {flow_file}): {ai_text[:200]!s}", flush=True)
 
+        ts = datetime.now().replace(microsecond=0).isoformat()
         row = {
-            "Timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
-            "Device Name": device_name,
-            "Flow Name": flow_display,
+            "Timestamp": ts,
+            "Suite": suite,
+            "Flow": flow_file,
+            "Device": f"{device_name} ({device_id})",
             "Status": status,
-            "Failure Message": failure_msg[:8000] if failure_msg else "",
+            "Exit Code": str(rc),
+            "Log Path": str(log_path.resolve()),
             "AI Analysis": ai_text,
-            "Duration": duration_str,
         }
         try:
             append_result_row(excel_path, row, file_lock=excel_lock)
-            logger.info("Excel updated | device=%s | flow=%s", device_name, flow_display)
+            logger.info("Excel updated | %s | %s", flow_file, device_id)
+            print(f"[INFO] Excel updated | {flow_file} | {device_id}", flush=True)
         except Exception as e:
             logger.error("Excel append failed: %s", e)
+
+        with outcome_lock:
+            shared_outcomes.append(status.upper())
 
 
 def parse_args() -> argparse.Namespace:
@@ -284,7 +303,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--excel-out",
         type=Path,
-        default=REPO_ROOT / "build-summary" / "final_execution_report.xlsx",
+        default=REPO_ROOT / "final_execution_report.xlsx",
     )
     p.add_argument("--no-ai", action="store_true")
     p.add_argument("--send-email", action="store_true")
@@ -292,7 +311,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--no-clean",
         action="store_true",
-        help="Do not delete logs/ and build-summary/ before this run",
+        help="Skip auto-delete of logs, reports, build-summary, etc.",
+    )
+    p.add_argument(
+        "--no-prime",
+        action="store_true",
+        help="Do not recreate Excel; append only (e.g. printing suite after non-printing in same job).",
     )
     return p.parse_args()
 
@@ -300,7 +324,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     logging.basicConfig(
         level=logging.DEBUG if _orch_debug() else logging.INFO,
-        format="%(asctime)s %(levelname)s [%(threadName)s] %(message)s",
+        format="[%(levelname)s] %(message)s",
     )
     args = parse_args()
     repo = args.repo_root.resolve()
@@ -314,6 +338,10 @@ def main() -> int:
         logger.error("No Android devices in 'adb devices'")
         return 1
 
+    for d in devices:
+        logger.info("Device %s detected", d)
+        print(f"[INFO] Device {d} detected", flush=True)
+
     config_path = args.config if args.config.is_absolute() else repo / args.config
     maestro_arg = args.maestro if args.maestro.is_absolute() else Path(args.maestro)
     maestro = maestro_arg
@@ -324,21 +352,22 @@ def main() -> int:
     excel_path = args.excel_out if args.excel_out.is_absolute() else repo / args.excel_out
 
     excel_lock = threading.Lock()
+    outcome_lock = threading.Lock()
+    shared_outcomes: list[str] = []
     use_ai = not args.no_ai
 
     if not args.no_clean:
-        try:
-            cleanup_for_new_run(repo)
-        except OSError as e:
-            logger.error("Cleanup failed: %s", e)
-            return 1
+        cleanup_for_new_run(repo)
     else:
         logger.warning("Skipping pre-run cleanup (--no-clean)")
 
     excel_path.parent.mkdir(parents=True, exist_ok=True)
-    prime_workbook(excel_path, file_lock=excel_lock)
+    if not args.no_prime:
+        prime_workbook(excel_path, file_lock=excel_lock)
+    elif not excel_path.is_file():
+        logger.warning("Excel missing with --no-prime; priming new workbook")
+        prime_workbook(excel_path, file_lock=excel_lock)
 
-    logger.info("Devices: %s", devices)
     logger.info("Flows (%s): %s", len(flows), [f.name for f in flows])
 
     with ThreadPoolExecutor(max_workers=len(devices), thread_name_prefix="device") as ex:
@@ -353,6 +382,8 @@ def main() -> int:
                 excel_path=excel_path,
                 excel_lock=excel_lock,
                 use_ai=use_ai,
+                outcome_lock=outcome_lock,
+                shared_outcomes=shared_outcomes,
             )
             for d in devices
         ]
@@ -371,7 +402,11 @@ def main() -> int:
         send_execution_report_email(excel_path)
 
     logger.info("Done. Report: %s", excel_path)
-    print(f"Final Excel: {excel_path}", flush=True)
+    print(f"[INFO] Final Excel: {excel_path}", flush=True)
+
+    if shared_outcomes and any(s != "PASS" for s in shared_outcomes):
+        logger.warning("Run finished with one or more non-PASS results (see Excel)")
+        return 1
     return 0
 
 
