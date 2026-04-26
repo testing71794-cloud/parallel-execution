@@ -21,6 +21,17 @@ if str(REPO) not in sys.path:
 
 OUT = REPO / "build-summary" / "ai_status.txt"
 USER_PROMPT = "Reply with OK only."
+# Must be >10: some free models use budget fast and return empty + finish_reason=length at low caps.
+PREFLIGHT_MAX_TOKENS = int(
+    (os.environ.get("OPENROUTER_TEST_MAX_TOKENS", "") or "128").strip() or 128
+)
+PREFLIGHT_429_RETRIES = max(
+    0, min(5, int((os.environ.get("OPENROUTER_TEST_429_RETRIES", "") or "3").strip() or 3))
+)
+PREFLIGHT_429_BACKOFF_SEC = max(
+    1.0,
+    float((os.environ.get("OPENROUTER_TEST_429_BACKOFF_SEC", "") or "5").strip() or 5.0),
+)
 DEFAULT_BASE = "https://openrouter.ai/api/v1"
 
 
@@ -82,6 +93,24 @@ def _fallback_model() -> str:
         return (os.environ.get("OPENROUTER_MODEL_FALLBACK_1", "") or "").strip() or (
             "meta-llama/llama-3.3-70b-instruct:free"
         )
+
+
+def _fallback2_model() -> str:
+    """Optional third model when config fallback_2 is 'rules' (not an API id)."""
+    try:
+        from intelligent_platform import config
+
+        s = (config.openrouter_model_fallback_2() or "").strip()
+        if s and s.lower() != "rules":
+            return s
+    except Exception:
+        pass
+    s = (os.environ.get("OPENROUTER_MODEL_FALLBACK_2", "") or "").strip()
+    if s and s.lower() != "rules":
+        return s
+    return (os.environ.get("OPENROUTER_TEST_MODEL_3", "") or "").strip() or (
+        "qwen/qwen-2.5-7b-instruct:free"
+    )
 
 
 def _message_text(choice: dict) -> str:
@@ -152,23 +181,26 @@ def _http_headers(key: str) -> dict[str, str]:
     }
 
 
-def _payload(model: str) -> dict[str, Any]:
+def _payload(model: str, *, max_tokens: int | None = None) -> dict[str, Any]:
+    mt = PREFLIGHT_MAX_TOKENS if max_tokens is None else max(16, int(max_tokens))
     return {
         "model": model,
         "messages": [{"role": "user", "content": USER_PROMPT}],
-        "max_tokens": 10,
+        "max_tokens": mt,
         "temperature": 0,
     }
 
 
-def _single_post(model: str, key: str) -> dict[str, Any]:
+def _single_post(
+    model: str, key: str, *, max_tokens: int | None = None
+) -> dict[str, Any]:
     """
     One HTTP POST. Returns keys: kind, code (HTTP status or None), detail, text (if assistant).
     kind: success_ok | success_bad_reply | http_error | empty_body | bad_json
           | top_level_error | no_choices | empty_message
     """
     url = _chat_url()
-    body = json.dumps(_payload(model)).encode("utf-8")
+    body = json.dumps(_payload(model, max_tokens=max_tokens)).encode("utf-8")
     req = urllib.request.Request(
         url, data=body, headers=_http_headers(key), method="POST"
     )
@@ -309,26 +341,30 @@ def _write(
 def _build_model_list() -> list[str]:
     m1 = (_primary_model() or "").strip()
     m2 = (_fallback_model() or "").strip()
-    if m1.lower() == "rules" or m2.lower() == "rules":
-        pass
+    m3 = (_fallback2_model() or "").strip()
     out: list[str] = []
-    for m in (m1, m2):
+    for m in (m1, m2, m3):
         t = (m or "").strip()
         if not t or t.lower() == "rules":
             continue
         if t not in out:
             out.append(t)
     if not out:
-        out = ["openrouter/free", "meta-llama/llama-3.3-70b-instruct:free"]
+        out = [
+            "openrouter/free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "qwen/qwen-2.5-7b-instruct:free",
+        ]
     return out
 
 
 def _run_one_model(model: str, key: str) -> tuple[str, str]:
     """
     Returns ("ok", "") on success, ("next", err_detail) to try next model, ("auth", 401 message) to stop.
-    Implements: 5xx -> retry same model once, then return next.
+    Implements: 5xx -> retry same model once; 429 -> backoff retries; empty_message+length -> retry w/ more tokens.
     """
     last: str = ""
+    rate_429: str = ""
     for attempt in range(2):
         r = _single_post(model, key)
         kind = r.get("kind")
@@ -352,7 +388,19 @@ def _run_one_model(model: str, key: str) -> tuple[str, str]:
             if c in (402, 403):
                 return "next", f"HTTP {c} (account/provider/permission): {detail}"
             if c == 429:
-                return "next", f"HTTP 429 (rate limit): {detail}"
+                # Same model, exponential-ish backoff (OpenRouter free tier often 429s).
+                rate_429 = detail
+                for rj in range(PREFLIGHT_429_RETRIES):
+                    wait = PREFLIGHT_429_BACKOFF_SEC * (1.0 + 0.5 * rj)
+                    _debug(f"429 model={model} wait={wait:.1f}s try {rj+1}/{PREFLIGHT_429_RETRIES}")
+                    time.sleep(wait)
+                    r2 = _single_post(model, key)
+                    if r2.get("kind") == "success_ok":
+                        return "ok", (r2.get("text") or "")
+                    if (r2.get("code") or 0) != 429:
+                        d2 = (r2.get("detail") or "").strip() or f"kind={r2.get('kind')!r}"
+                        return "next", d2
+                return "next", f"HTTP 429 (rate limit) after {PREFLIGHT_429_RETRIES} waits: {rate_429 or detail}"
             if 500 <= c < 600 and attempt == 0:
                 _debug(f"5xx retry model={model} code={c}")
                 time.sleep(1.5)
@@ -361,6 +409,10 @@ def _run_one_model(model: str, key: str) -> tuple[str, str]:
             if 500 <= c < 600:
                 return "next", f"HTTP {c} after one retry: {last or detail}"
             return "next", detail
+        if kind == "empty_message" and "finish_reason='length'" in (detail or ""):
+            r3 = _single_post(model, key, max_tokens=max(256, PREFLIGHT_MAX_TOKENS * 2))
+            if r3.get("kind") == "success_ok":
+                return "ok", (r3.get("text") or "")
         if kind in (
             "empty_body",
             "bad_json",
