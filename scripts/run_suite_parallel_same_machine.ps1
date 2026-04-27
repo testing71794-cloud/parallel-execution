@@ -11,6 +11,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Add-AdbFromEnvToPath {
+    if ([string]::IsNullOrWhiteSpace($env:ADB_HOME)) { return }
+    $d = $env:ADB_HOME.Trim()
+    if (-not (Test-Path -LiteralPath (Join-Path $d "adb.exe"))) { return }
+    $parts = @()
+    if ($env:Path) { $parts = $env:Path -split ';' }
+    if ($parts -contains $d -or $parts -contains $d.TrimEnd('\')) { return }
+    $env:Path = $d + ";" + $env:Path
+}
+
 function Write-Section([string]$Text) {
     Write-Host ""
     Write-Host "====================================="
@@ -31,6 +41,9 @@ function Read-DeviceIds([string]$RepoRoot) {
     }
     if ($devices.Count -gt 0) { return $devices | Select-Object -Unique }
 
+    if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
+        throw "adb not on PATH. Set ADB_HOME / ANDROID_HOME (platform-tools) in Jenkins, or use scripts that call set_maestro_java.bat."
+    }
     $adbOutput = & adb devices
     if ($LASTEXITCODE -ne 0) { throw "adb devices failed" }
 
@@ -122,12 +135,23 @@ function Run-ShardAllBatch(
 
     Write-Section "$Label $flowName on devices"
     foreach ($d in $Devices) { Write-Host " - $d" }
+    Write-Host "Maestro output streams to (tail for live progress): $batchLog"
+    Write-Host "This step can run many minutes; the Jenkins console stays quiet until Maestro exits."
 
-    $args = @("test","--device",$deviceList,"--shard-all",$shardCount.ToString())
+    # --device is global: before `test` (https://docs.maestro.dev/maestro-cli/maestro-cli-commands-and-options)
+    $args = @(
+        "--device", $deviceList,
+        "test",
+        "--shard-all", $shardCount.ToString()
+    )
     if (-not [string]::IsNullOrWhiteSpace($IncludeTag)) {
-        $args += @("--include-tags",$IncludeTag)
+        $args += @("--include-tags", $IncludeTag)
     }
     $args += @($flowPath)
+    $configPath = Join-Path $RepoRoot "config.yaml"
+    if (Test-Path -LiteralPath $configPath) {
+        $args += @("--config", $configPath)
+    }
 
     $argsString = ($args | ForEach-Object { Quote-Arg $_ }) -join " "
     $prettyCmd = "$MaestroCmd $argsString"
@@ -157,6 +181,10 @@ function Run-ShardAllBatch(
     $cmdLine = "$MaestroCmd $argsString >> " + (Quote-Arg $batchLog) + " 2>>&1"
     cmd.exe /d /c $cmdLine
     $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0 -and (Test-Path -LiteralPath $batchLog)) {
+        Write-Host "[INFO] Maestro failed (exit $exitCode). Last 50 lines of $batchLog :"
+        Get-Content -LiteralPath $batchLog -Tail 50 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+    }
 
     $status = if ($exitCode -eq 0) { "PASS" } else { "FAIL" }
     $reason = if ($exitCode -eq 0) { "OK" } else { "MAESTRO_BATCH_FAILED" }
@@ -198,7 +226,17 @@ New-Item -ItemType Directory -Force -Path $ReportsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ResultsDir | Out-Null
 
+Add-AdbFromEnvToPath
 $devices = Read-DeviceIds -RepoRoot $RepoRoot
+try {
+    if (Get-Command adb -ErrorAction SilentlyContinue) {
+        $null = & adb start-server 2>&1
+    } else {
+        Write-Host "[WARN] adb not on PATH after ADB_HOME; skipping start-server. Set ANDROID_HOME / ADB in Jenkins if needed."
+    }
+} catch {
+    Write-Host "[WARN] adb start-server: $($_.Exception.Message)"
+}
 $restoreAutofill = ($env:AUTOFILL_RESTORE_AFTER_TEST -match '^(?i:1|true|yes|on)$')
 $deviceAutofillState = @{}
 Write-Host ""

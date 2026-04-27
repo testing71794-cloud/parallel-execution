@@ -29,9 +29,7 @@ for /f "skip=1 tokens=1,2" %%A in ('adb devices') do (
 ) > "%OUT_FILE%"
 
 set /a COUNT=0
-
-REM FIXED LINE (quotes added)
-for /f %%A in ("%OUT_FILE%") do set /a COUNT+=1
+for /f "usebackq delims=" %%A in ("%OUT_FILE%") do set /a COUNT+=1
 
 echo.
 echo Devices detected: !COUNT!
