@@ -146,7 +146,7 @@ function Wait-ParallelWithHeartbeat {
         [string]$FlowName,
         [string]$Suite,
         [string]$ReportsDir,
-        [int]$HeartbeatSeconds = 20
+        [int]$HeartbeatSeconds = 10
     )
     $safeFlow = $FlowName.Replace(' ', '_')
     while ($true) {
