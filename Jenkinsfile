@@ -40,8 +40,8 @@ pipeline {
     parameters {
         choice(
             name: 'DEVICES_AGENT',
-            choices: ['devices', 'built-in'],
-            description: 'devices = your PC with USB phones'
+            choices: ['devices', 'my-pc-devices'],
+            description: 'Label of the Jenkins agent connected to real USB phones. Default: devices'
         )
         string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'App package id for Maestro/app launch checks')
         string(name: 'MAESTRO_CMD', defaultValue: 'maestro.bat', description: 'Maestro launcher (e.g. maestro.bat).')
@@ -142,6 +142,7 @@ pipeline {
                         if (params.ANDROID_HOME?.trim()) {
                             envList << "ANDROID_HOME=${params.ANDROID_HOME}"
                             envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
                         }
                         withEnv(envList) {
                             bat """
@@ -170,6 +171,7 @@ pipeline {
                         if (params.ANDROID_HOME?.trim()) {
                             envList << "ANDROID_HOME=${params.ANDROID_HOME}"
                             envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
                         }
                         withEnv(envList) {
                             bat """
@@ -197,6 +199,7 @@ pipeline {
                         if (params.ANDROID_HOME?.trim()) {
                             envList << "ANDROID_HOME=${params.ANDROID_HOME}"
                             envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
                         }
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(envList) {
@@ -261,6 +264,7 @@ pipeline {
                         if (params.ANDROID_HOME?.trim()) {
                             envList << "ANDROID_HOME=${params.ANDROID_HOME}"
                             envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
                         }
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(envList) {
