@@ -139,6 +139,28 @@ function Invoke-ParallelRunOne {
     return $pList
 }
 
+function Invoke-SequentialRunOne {
+    param(
+        [string]$RepoRoot,
+        [string]$Suite,
+        [System.IO.FileInfo]$flow,
+        [string[]]$devices,
+        [string]$AppId,
+        [string]$ClearState,
+        [string]$maestroLaunch,
+        [string]$IncludeTag
+    )
+    $fn = $flow.BaseName
+    $results = [System.Collections.ArrayList]::new()
+    foreach ($dev in $devices) {
+        $p = Start-RunOneOnDevice -RepoRoot $RepoRoot -Suite $Suite -FlowPath $flow.FullName -DeviceId $dev -AppId $AppId -ClearState $ClearState -MaestroPath $maestroLaunch -TagOrEmpty $IncludeTag
+        Write-Host "Launched run_one (PID=$($p.Id)) device=$dev [SEQUENTIAL] -> reports\$Suite\logs\${fn}_$($dev -replace '[^\w\-\.]', '_').log"
+        if (-not $p.HasExited) { $p.WaitForExit() }
+        [void]$results.Add($p)
+    }
+    return $results
+}
+
 function Wait-ParallelWithHeartbeat {
     param(
         [System.Collections.ArrayList]$Processes,
@@ -233,14 +255,20 @@ if (-not $flowFiles -or $flowFiles.Count -eq 0) { Write-Host "ERROR: No yaml flo
 
 $overallFailed = $false
 $retryRows = [System.Collections.ArrayList]::new()
+$parallelByDevice = $Suite -match '^(?i:nonprinting)$'
+Write-Host ("Execution mode: {0}" -f $(if ($parallelByDevice) { "PARALLEL PER DEVICE (nonprinting)" } else { "SEQUENTIAL PER DEVICE (printing/other)" }))
 
 foreach ($flow in $flowFiles) {
     $flowName = $flow.BaseName
-    Write-Section "Running $flowName on all devices in parallel (run_one_flow on each serial)"
+    Write-Section "Running $flowName on devices"
     foreach ($d in $devices) { Write-Host "  device $d" }
 
-    $pList = Invoke-ParallelRunOne -RepoRoot $RepoRoot -Suite $Suite -flow $flow -devices $devices -AppId $AppId -ClearState $ClearState -maestroLaunch $maestroLaunch -IncludeTag $IncludeTag
-    Wait-ParallelWithHeartbeat -Processes $pList -Devices $devices -FlowName $flowName -Suite $Suite -ReportsDir $ReportsDir
+    if ($parallelByDevice) {
+        $pList = Invoke-ParallelRunOne -RepoRoot $RepoRoot -Suite $Suite -flow $flow -devices $devices -AppId $AppId -ClearState $ClearState -maestroLaunch $maestroLaunch -IncludeTag $IncludeTag
+        Wait-ParallelWithHeartbeat -Processes $pList -Devices $devices -FlowName $flowName -Suite $Suite -ReportsDir $ReportsDir
+    } else {
+        $pList = Invoke-SequentialRunOne -RepoRoot $RepoRoot -Suite $Suite -flow $flow -devices $devices -AppId $AppId -ClearState $ClearState -maestroLaunch $maestroLaunch -IncludeTag $IncludeTag
+    }
     $batchCode = 0
     foreach ($px in $pList) {
         $ex = if ($null -ne $px.ExitCode) { [int]$px.ExitCode } else { 1 }
@@ -252,8 +280,12 @@ foreach ($flow in $flowFiles) {
 
     if ($batchCode -ne 0 -and $RetryCount -gt 0) {
         Write-Section "Retry: $flowName (same devices, another parallel batch)"
-        $p2 = Invoke-ParallelRunOne -RepoRoot $RepoRoot -Suite $Suite -flow $flow -devices $devices -AppId $AppId -ClearState $ClearState -maestroLaunch $maestroLaunch -IncludeTag $IncludeTag
-        Wait-ParallelWithHeartbeat -Processes $p2 -Devices $devices -FlowName $flowName -Suite $Suite -ReportsDir $ReportsDir
+        if ($parallelByDevice) {
+            $p2 = Invoke-ParallelRunOne -RepoRoot $RepoRoot -Suite $Suite -flow $flow -devices $devices -AppId $AppId -ClearState $ClearState -maestroLaunch $maestroLaunch -IncludeTag $IncludeTag
+            Wait-ParallelWithHeartbeat -Processes $p2 -Devices $devices -FlowName $flowName -Suite $Suite -ReportsDir $ReportsDir
+        } else {
+            $p2 = Invoke-SequentialRunOne -RepoRoot $RepoRoot -Suite $Suite -flow $flow -devices $devices -AppId $AppId -ClearState $ClearState -maestroLaunch $maestroLaunch -IncludeTag $IncludeTag
+        }
         $r2 = 0
         foreach ($px in $p2) {
             $ex = if ($null -ne $px.ExitCode) { [int]$px.ExitCode } else { 1 }
