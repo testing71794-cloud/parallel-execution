@@ -1,7 +1,7 @@
 param(
-    [Parameter(Mandatory=$true)][string]$RepoRoot,
-    [Parameter(Mandatory=$true)][string]$Suite,
-    [Parameter(Mandatory=$true)][string]$FlowDir,
+    [Parameter(Mandatory = $true)][string]$RepoRoot,
+    [Parameter(Mandatory = $true)][string]$Suite,
+    [Parameter(Mandatory = $true)][string]$FlowDir,
     [string]$IncludeTag = "",
     [string]$AppId = "",
     [string]$ClearState = "true",
@@ -15,9 +15,8 @@ function Add-AdbFromEnvToPath {
     if ([string]::IsNullOrWhiteSpace($env:ADB_HOME)) { return }
     $d = $env:ADB_HOME.Trim()
     if (-not (Test-Path -LiteralPath (Join-Path $d "adb.exe"))) { return }
-    $parts = @()
-    if ($env:Path) { $parts = $env:Path -split ';' }
-    if ($parts -contains $d -or $parts -contains $d.TrimEnd('\')) { return }
+    if ($env:Path -and ($env:Path -split ';') -contains $d) { return }
+    if ($env:Path -and ($env:Path -split ';') -contains $d.TrimEnd('\')) { return }
     $env:Path = $d + ";" + $env:Path
 }
 
@@ -28,180 +27,116 @@ function Write-Section([string]$Text) {
     Write-Host "====================================="
 }
 
-function Read-DeviceIds([string]$RepoRoot) {
-    $devices = @()
-    $detectedFile = Join-Path $RepoRoot "detected_devices.txt"
-    if (Test-Path -LiteralPath $detectedFile) {
-        $lines = Get-Content -LiteralPath $detectedFile -ErrorAction SilentlyContinue |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -and $_ -notmatch '^(List of devices attached|Devices detected:|Device list saved to:)' }
-        foreach ($line in $lines) {
-            if ($line -match '^\S+$') { $devices += $line }
-        }
-    }
-    if ($devices.Count -gt 0) { return $devices | Select-Object -Unique }
-
-    if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
-        throw "adb not on PATH. Set ADB_HOME / ANDROID_HOME (platform-tools) in Jenkins, or use scripts that call set_maestro_java.bat."
-    }
-    $adbOutput = & adb devices
-    if ($LASTEXITCODE -ne 0) { throw "adb devices failed" }
-
-    foreach ($line in $adbOutput) {
-        if ($line -match '^(?<id>\S+)\s+device$') { $devices += $matches['id'] }
-    }
-    return $devices | Select-Object -Unique
-}
-
-function Disable-AutofillForDevice([string]$DeviceId) {
-    $original = "unknown"
-    try {
-        $raw = & adb -s $DeviceId shell settings get secure autofill_service 2>$null
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($raw)) {
-            $original = ($raw | Select-Object -First 1).ToString().Trim()
-        }
-    } catch {
-        Write-Host "[WARN] Device $DeviceId - failed reading autofill_service: $($_.Exception.Message)"
-    }
-
-    Write-Host "[INFO] Device $DeviceId - autofill_service before change: $original"
-
-    try {
-        & adb -s $DeviceId shell settings put secure autofill_service null 1>$null 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[INFO] Device $DeviceId - autofill disabled (autofill_service=null)"
-        } else {
-            Write-Host "[WARN] Device $DeviceId - could not disable autofill_service, continuing"
-        }
-    } catch {
-        Write-Host "[WARN] Device $DeviceId - autofill disable command failed: $($_.Exception.Message)"
-    }
-
-    foreach ($pkg in @("com.samsung.android.samsungpassautofill", "com.samsung.android.authfw")) {
-        try {
-            & adb -s $DeviceId shell cmd package disable-user --user 0 $pkg 1>$null 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "[INFO] Device $DeviceId - Samsung package disabled: $pkg"
-            } else {
-                Write-Host "[WARN] Device $DeviceId - Samsung package not disabled/supported: $pkg"
-            }
-        } catch {
-            Write-Host "[WARN] Device $DeviceId - Samsung package disable failed ($pkg): $($_.Exception.Message)"
-        }
-    }
-
-    return $original
-}
-
-function Restore-AutofillForDevice([string]$DeviceId, [string]$OriginalService) {
-    if ([string]::IsNullOrWhiteSpace($OriginalService) -or $OriginalService -eq "unknown") {
-        Write-Host "[WARN] Device $DeviceId - no original autofill_service captured; skip restore"
-        return
-    }
-    try {
-        & adb -s $DeviceId shell settings put secure autofill_service $OriginalService 1>$null 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[INFO] Device $DeviceId - autofill_service restored to $OriginalService"
-        } else {
-            Write-Host "[WARN] Device $DeviceId - failed to restore autofill_service"
-        }
-    } catch {
-        Write-Host "[WARN] Device $DeviceId - autofill restore failed: $($_.Exception.Message)"
-    }
-}
-
 function Quote-Arg([string]$s) {
     if ($null -eq $s) { return '""' }
-    return '"' + ($s -replace '"','""') + '"'
+    return '"' + ($s -replace '"', '""') + '"'
 }
 
-function Run-ShardAllBatch(
-    [string]$RepoRoot,
-    [string]$Suite,
-    [System.IO.FileInfo]$Flow,
-    [string[]]$Devices,
-    [string]$IncludeTag,
-    [string]$MaestroCmd,
-    [string]$Label,
-    [string]$ReportsDir
-) {
-    $flowName = $Flow.BaseName
-    $flowPath = $Flow.FullName
-    $safeFlow = $flowName.Replace(' ', '_')
-    $batchLog = Join-Path (Join-Path $ReportsDir "logs") ("{0}_{1}.log" -f $safeFlow, $Label.ToLower())
-    $batchCsv = Join-Path (Join-Path $ReportsDir "results") ("{0}_{1}.csv" -f $safeFlow, $Label.ToLower())
-    $deviceList = ($Devices -join ",")
-    $shardCount = $Devices.Count
+function Resolve-MaestroLauncherPath {
+    # Required: use MAESTRO_HOME\maestro.bat|maestro.cmd (per Jenkins: do not depend on bare maestro in PATH)
+    if ([string]::IsNullOrWhiteSpace($env:MAESTRO_HOME)) {
+        throw "MAESTRO_HOME is not set. Set the Jenkins `MAESTRO_HOME` parameter to the folder that contains `maestro.bat`."
+    }
+    $h = $env:MAESTRO_HOME.Trim()
+    $bat = Join-Path $h "maestro.bat"
+    if (Test-Path -LiteralPath $bat) { return (Resolve-Path -LiteralPath $bat).Path }
+    $cmdf = Join-Path $h "maestro.cmd"
+    if (Test-Path -LiteralPath $cmdf) { return (Resolve-Path -LiteralPath $cmdf).Path }
+    throw "maestro.bat / maestro.cmd not found under MAESTRO_HOME: $h"
+}
 
-    Write-Section "$Label $flowName on devices"
-    foreach ($d in $Devices) { Write-Host " - $d" }
-    Write-Host "Maestro output streams to (tail for live progress): $batchLog"
-    Write-Host "This step can run many minutes; the Jenkins console stays quiet until Maestro exits."
+function Get-AuthorizedSerialsFromAdb {
+    $out = [System.Collections.Generic.List[string]]::new()
+    if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
+        throw "adb not on PATH. Set ANDROID_HOME/ADB_HOME so platform-tools\adb is available."
+    }
+    $raw = & adb devices
+    if ($LASTEXITCODE -ne 0) { throw "adb devices failed (exit $LASTEXITCODE)" }
+    foreach ($line in $raw) {
+        if ($line -match '^(?<s>\S+)\s+device\s*$') { $out.Add($matches['s'].Trim()) }
+    }
+    return $out
+}
 
-    # --device is global: before `test` (https://docs.maestro.dev/maestro-cli/maestro-cli-commands-and-options)
-    $args = @(
-        "--device", $deviceList,
-        "test",
-        "--shard-all", $shardCount.ToString()
+function Read-DetectedFileSerials([string]$RepoRoot) {
+    $detected = Join-Path $RepoRoot "detected_devices.txt"
+    if (-not (Test-Path -LiteralPath $detected)) { return @() }
+    $lines = Get-Content -LiteralPath $detected -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -and $_ -notmatch '^(List of devices attached|Devices detected:|Device list saved to:)' }
+    $r = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in $lines) { if ($line -match '^\S+$') { if (-not $r.Contains($line)) { $r.Add($line) } } }
+    return $r
+}
+
+function Merge-AndPickDevices {
+    param([string]$RepoRoot)
+    $authorized = [array](Get-AuthorizedSerialsFromAdb)
+    if ($authorized.Count -eq 0) {
+        throw "No Android devices in state 'device' (authorized + ready). Remove or authorize unauthorized devices, fix offline, and reconnect USB."
+    }
+    $fileSerials = [array](Read-DetectedFileSerials -RepoRoot $RepoRoot)
+    if ($fileSerials.Count -eq 0) {
+        return $authorized
+    }
+    $picked = @()
+    foreach ($s in $fileSerials) { if ($authorized -contains $s) { $picked += $s } }
+    if ($picked.Count -eq 0) {
+        throw "detected_devices.txt has no serials that are currently authorized+device in 'adb devices'. Re-run device detection; remove unauthorized or offline."
+    }
+    if ($picked.Count -lt $fileSerials.Count) {
+        $missing = $fileSerials | Where-Object { $picked -notcontains $_ }
+        Write-Host "[WARN] Dropping device serial(s) not in authorized state: $($missing -join ', ')" 
+    }
+    return $picked
+}
+
+function Start-RunOneOnDevice {
+    param(
+        [string]$RepoRoot,
+        [string]$Suite,
+        [string]$FlowPath,
+        [string]$DeviceId,
+        [string]$AppId,
+        [string]$ClearState,
+        [string]$MaestroPath,
+        [string]$TagOrEmpty
     )
-    if (-not [string]::IsNullOrWhiteSpace($IncludeTag)) {
-        $args += @("--include-tags", $IncludeTag)
-    }
-    $args += @($flowPath)
-    $configPath = Join-Path $RepoRoot "config.yaml"
-    if (Test-Path -LiteralPath $configPath) {
-        $args += @("--config", $configPath)
-    }
-
-    $argsString = ($args | ForEach-Object { Quote-Arg $_ }) -join " "
-    $prettyCmd = "$MaestroCmd $argsString"
-
-    New-Item -ItemType Directory -Force -Path (Join-Path $ReportsDir "logs") | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $ReportsDir "results") | Out-Null
-
-    $header = @(
-        "====================================="
-        "RUN SHARD-ALL FLOW BATCH"
-        "====================================="
-        "Timestamp        : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-        "Suite            : $Suite"
-        "Flow path        : $flowPath"
-        "Flow name        : $flowName"
-        "Devices          : $deviceList"
-        "Shard count      : $shardCount"
-        "Include tag      : $IncludeTag"
-        "Maestro cmd      : $prettyCmd"
-        "====================================="
-        ""
+    $runOne = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot "scripts\run_one_flow_on_device.bat"))
+    $t = if ([string]::IsNullOrWhiteSpace($TagOrEmpty)) { "__EMPTY__" } else { $TagOrEmpty }
+    $cmd = "call {0} {1} {2} {3} {4} {5} {6} {7}" -f @(
+        (Quote-Arg $runOne),
+        (Quote-Arg $Suite),
+        (Quote-Arg $FlowPath),
+        (Quote-Arg $DeviceId),
+        (Quote-Arg $AppId),
+        (Quote-Arg $ClearState),
+        (Quote-Arg $MaestroPath),
+        (Quote-Arg $t)
     )
-    Set-Content -LiteralPath $batchLog -Value $header -Encoding UTF8
+    $full = "cd /d " + (Quote-Arg $RepoRoot) + " && " + $cmd
+    return Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $full) -NoNewWindow -PassThru
+}
 
-    # Use cmd redirection directly so Java warnings on stderr are captured in log,
-    # not treated by PowerShell as a terminating NativeCommandError.
-    $cmdLine = "$MaestroCmd $argsString >> " + (Quote-Arg $batchLog) + " 2>>&1"
-    cmd.exe /d /c $cmdLine
-    $exitCode = $LASTEXITCODE
-    if ($exitCode -ne 0 -and (Test-Path -LiteralPath $batchLog)) {
-        Write-Host "[INFO] Maestro failed (exit $exitCode). Last 50 lines of $batchLog :"
-        Get-Content -LiteralPath $batchLog -Tail 50 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+function Invoke-ParallelRunOne {
+    param(
+        [string]$RepoRoot,
+        [string]$Suite,
+        [System.IO.FileInfo]$flow,
+        [string[]]$devices,
+        [string]$AppId,
+        [string]$ClearState,
+        [string]$maestroLaunch,
+        [string]$IncludeTag
+    )
+    $fn = $flow.BaseName
+    $pList = [System.Collections.ArrayList]::new()
+    foreach ($dev in $devices) {
+        $p = Start-RunOneOnDevice -RepoRoot $RepoRoot -Suite $Suite -FlowPath $flow.FullName -DeviceId $dev -AppId $AppId -ClearState $ClearState -MaestroPath $maestroLaunch -TagOrEmpty $IncludeTag
+        [void]$pList.Add($p)
+        Write-Host "Launched run_one (PID=$($p.Id)) device=$dev  -> per-device log/CSV under reports\$Suite\ (e.g. logs\${fn}_$($dev -replace '[^\w\-\.]', '_').log)" 
     }
-
-    $status = if ($exitCode -eq 0) { "PASS" } else { "FAIL" }
-    $reason = if ($exitCode -eq 0) { "OK" } else { "MAESTRO_BATCH_FAILED" }
-
-    "suite,flow,device,status,exit_code,reason,log_file" | Set-Content -LiteralPath $batchCsv -Encoding Ascii
-    foreach ($device in $Devices) {
-        Add-Content -LiteralPath $batchCsv -Value ('{0},{1},{2},{3},{4},{5},"{6}"' -f $Suite, $flowName, $device, $status, $exitCode, $reason, $batchLog)
-        Write-Host ("Device {0} -> ExitCode {1} -> BatchStatus {2} -> Log {3}" -f $device, $exitCode, $status, $batchLog)
-    }
-
-    return [pscustomobject]@{
-        Flow = $flowName
-        Devices = $Devices
-        ExitCode = $exitCode
-        Status = $status
-        LogFile = $batchLog
-    }
+    return $pList
 }
 
 $RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
@@ -213,129 +148,121 @@ $MasterCsv = Join-Path $ReportsDir "all_results.csv"
 $DeviceSummaryCsv = Join-Path $ReportsDir "device_summary.csv"
 $RetryCsv = Join-Path $ReportsDir "retry_summary.csv"
 
-Write-Section "RUN SUITE SAME MACHINE PARALLEL (SHARD-ALL)"
+Write-Section "RUN SUITE SAME MACHINE (PARALLEL PER DEVICE, ONE ADB, MAESTRO PER SERIAL)"
 Write-Host "Repo root: $RepoRoot"
 Write-Host "Flow root: $FlowRoot"
-Write-Host "Maestro cmd: $MaestroCmd"
 Write-Host "Include tag: $IncludeTag"
 Write-Host "Retry count: $RetryCount"
+
+if ([string]::IsNullOrWhiteSpace($AppId)) { Write-Host "ERROR: AppId (APP_PACKAGE) is required"; exit 1 }
+if ([string]::IsNullOrWhiteSpace($ClearState)) { $ClearState = "true" }
+if ([string]::IsNullOrWhiteSpace($MaestroCmd)) { $MaestroCmd = "maestro" }
 
 if (-not (Test-Path -LiteralPath $FlowRoot)) { Write-Host "ERROR: Flow directory not found: $FlowRoot"; exit 1 }
 
 New-Item -ItemType Directory -Force -Path $ReportsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ResultsDir | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $RepoRoot "status") | Out-Null
 
+# --- Single ADB warm (no kill-server, no per-device start-server) ---
 Add-AdbFromEnvToPath
-$devices = Read-DeviceIds -RepoRoot $RepoRoot
-# Adb writes "* daemon not running" to stderr; with PowerShell 5, `& adb start-server` can surface
-# that as a false error. Use cmd so stderr is contained, then wait so devices accept shell commands.
-if (Get-Command adb -ErrorAction SilentlyContinue) {
-    $null = cmd /c "adb start-server 2>nul"
-    $null = cmd /c "adb devices 1>nul 2>nul"
-    Start-Sleep -Seconds 2
-    Write-Host "[INFO] ADB server warmed; autofill step is best-effort (warnings are usually harmless)."
-} else {
-    Write-Host "[WARN] adb not on PATH after ADB_HOME; set ANDROID_HOME / ADB in Jenkins if needed."
-}
-$restoreAutofill = ($env:AUTOFILL_RESTORE_AFTER_TEST -match '^(?i:1|true|yes|on)$')
-$deviceAutofillState = @{}
-Write-Host ""
-Write-Host "Devices found: $($devices.Count)"
-foreach ($d in $devices) { Write-Host " - $d" }
-if ($devices.Count -eq 0) { Write-Host "ERROR: No connected devices found"; exit 1 }
+$null = cmd /c "adb start-server 2>nul"
+$null = cmd /c "adb devices 1>nul 2>nul"
+Start-Sleep -Seconds 2
+Write-Host "[INFO] ADB is ready. Further adb traffic is in run_one_flow (autofill) and Maestro only, not ADB server restarts here."
 
-Write-Section "Disabling Android autofill/password-save prompts (best-effort)"
-$n = 0
-foreach ($d in $devices) {
-    if ($n -gt 0) { Start-Sleep -Milliseconds 400 }
-    $deviceAutofillState[$d] = Disable-AutofillForDevice -DeviceId $d
-    $n++
+try {
+    $devices = [array](Merge-AndPickDevices -RepoRoot $RepoRoot)
+} catch {
+    Write-Host "ERROR: $($_.Exception.Message)"
+    exit 1
 }
+Write-Host ""
+Write-Host "Authorized 'device' serials for this run: $($devices.Count)"
+foreach ($d in $devices) { Write-Host "  - $d" }
+
+$maestroLaunch = $null
+try { $maestroLaunch = Resolve-MaestroLauncherPath } catch { Write-Host "ERROR: $($_.Exception.Message)"; exit 1 }
+Write-Host "Maestro launcher: $maestroLaunch"
 
 $flowFiles = Get-ChildItem -LiteralPath $FlowRoot -Filter *.yaml -File | Sort-Object Name
 if (-not $flowFiles -or $flowFiles.Count -eq 0) { Write-Host "ERROR: No yaml flows found in $FlowRoot"; exit 1 }
 
-if ([string]::IsNullOrWhiteSpace($MaestroCmd)) { $MaestroCmd = "maestro" }
-
 $overallFailed = $false
-$retryRows = @()
+$retryRows = [System.Collections.ArrayList]::new()
 
 foreach ($flow in $flowFiles) {
-    $attempt1 = Run-ShardAllBatch -RepoRoot $RepoRoot -Suite $Suite -Flow $flow -Devices $devices -IncludeTag $IncludeTag -MaestroCmd $MaestroCmd -Label "Running" -ReportsDir $ReportsDir
+    $flowName = $flow.BaseName
+    Write-Section "Running $flowName on all devices in parallel (run_one_flow on each serial)"
+    foreach ($d in $devices) { Write-Host "  device $d" }
 
-    if ($attempt1.ExitCode -ne 0 -and $RetryCount -gt 0) {
-        Write-Section "Retrying failed batch for $($flow.BaseName) on same devices"
-        foreach ($d in $devices) { Write-Host " - $d" }
+    $pList = Invoke-ParallelRunOne -RepoRoot $RepoRoot -Suite $Suite -flow $flow -devices $devices -AppId $AppId -ClearState $ClearState -maestroLaunch $maestroLaunch -IncludeTag $IncludeTag
+    foreach ($px in $pList) { if (-not $px.HasExited) { $px.WaitForExit() } }
+    $batchCode = 0
+    foreach ($px in $pList) {
+        $ex = if ($null -ne $px.ExitCode) { [int]$px.ExitCode } else { 1 }
+        if ($ex -ne 0) { $batchCode = 1 }
+    }
+    if ($batchCode -ne 0) {
+        Write-Host "[INFO] $flowName had at least one device failure. Exit code batch=$batchCode"
+    }
 
-        $retry = Run-ShardAllBatch -RepoRoot $RepoRoot -Suite $Suite -Flow $flow -Devices $devices -IncludeTag $IncludeTag -MaestroCmd $MaestroCmd -Label "Retrying" -ReportsDir $ReportsDir
-
-        foreach ($device in $devices) {
-            $retryRows += [pscustomobject]@{
-                flow = $flow.BaseName
-                device = $device
-                retry_exit_code = $retry.ExitCode
-                retry_status = $retry.Status
-                log_file = $retry.LogFile
-            }
+    if ($batchCode -ne 0 -and $RetryCount -gt 0) {
+        Write-Section "Retry: $flowName (same devices, another parallel batch)"
+        $p2 = Invoke-ParallelRunOne -RepoRoot $RepoRoot -Suite $Suite -flow $flow -devices $devices -AppId $AppId -ClearState $ClearState -maestroLaunch $maestroLaunch -IncludeTag $IncludeTag
+        foreach ($px in $p2) { if (-not $px.HasExited) { $px.WaitForExit() } }
+        $r2 = 0
+        foreach ($px in $p2) {
+            $ex = if ($null -ne $px.ExitCode) { [int]$px.ExitCode } else { 1 }
+            if ($ex -ne 0) { $r2 = 1 }
         }
-
-        if ($retry.ExitCode -ne 0) {
-            $overallFailed = $true
-            Write-Host "Flow $($flow.BaseName) failed after retry"
-        } else {
-            Write-Host "Flow $($flow.BaseName) completed successfully after retry"
-        }
-    } elseif ($attempt1.ExitCode -ne 0) {
+        [void]$retryRows.Add([pscustomobject]@{ flow = $flowName; retry_batch_exit = $r2; devices = ($devices -join ',') })
+        if ($r2 -ne 0) { $overallFailed = $true; Write-Host "Flow $flowName still failed after retry" }
+        else { Write-Host "Flow $flowName passed after retry" }
+    } elseif ($batchCode -ne 0) {
         $overallFailed = $true
-        Write-Host "Flow $($flow.BaseName) failed"
+        Write-Host "Flow $flowName failed (no retry)"
     } else {
-        Write-Host "Flow $($flow.BaseName) completed successfully"
+        Write-Host "Flow $flowName all devices passed"
     }
 }
 
+# ---- Merge CSVs produced by run_one (one file per flow+device) ----
 Write-Section "Merging result files"
-"suite,flow,device,status,exit_code,reason,log_file" | Set-Content -Path $MasterCsv -Encoding Ascii
-$tempCsvs = Get-ChildItem -LiteralPath $ResultsDir -Filter *.csv -File | Sort-Object Name
-if (-not $tempCsvs -or $tempCsvs.Count -eq 0) { Write-Host "ERROR: No result CSV files were produced for suite $Suite"; exit 1 }
+$tempCsvs = Get-ChildItem -LiteralPath $ResultsDir -Filter *.csv -File | Where-Object { $_.Name -notin @('all_results.csv', 'device_summary.csv', 'retry_summary.csv') } | Sort-Object Name
+if (-not $tempCsvs -or $tempCsvs.Count -eq 0) { Write-Host "ERROR: No result CSV files in $ResultsDir (run_one should have written)."; exit 1 }
 
+"suite,flow,device,status,exit_code,reason,log_file" | Set-Content -Path $MasterCsv -Encoding Ascii
 foreach ($csv in $tempCsvs) {
-    $lines = Get-Content -LiteralPath $csv.FullName
-    if ($lines.Count -gt 1) { $lines | Select-Object -Skip 1 | Add-Content -Path $MasterCsv }
+    $ln = Get-Content -LiteralPath $csv.FullName
+    if ($ln.Count -gt 1) { $ln | Select-Object -Skip 1 | ForEach-Object { if ($null -ne $_ -and $_ -match '\S') { Add-Content -Path $MasterCsv -Value $_ } } }
 }
 
-$rows = Import-Csv -LiteralPath $MasterCsv
-$summary = $rows |
-    Group-Object device |
-    ForEach-Object {
+try {
+    $rows = Import-Csv -LiteralPath $MasterCsv
+    $summary = $rows | Group-Object device | ForEach-Object {
         $deviceRows = $_.Group
-        $passCount = @($deviceRows | Where-Object { $_.status -eq 'PASS' }).Count
-        $failCount = @($deviceRows | Where-Object { $_.status -ne 'PASS' }).Count
+        $passCount = @($deviceRows | Where-Object { $_.status -eq 'PASS' -or $_.status -eq 'FLAKY' }).Count
+        $failCount = @($deviceRows | Where-Object { $_.status -ne 'PASS' -and $_.status -ne 'FLAKY' }).Count
+        if ($passCount -eq 0) { $passCount = @($deviceRows | Where-Object { $_.status -like '*PASS*' -or $_.status -like '*FLAKY*' }).Count }
+        if ($failCount -eq 0) { $failCount = $deviceRows.Count - $passCount }
         [pscustomobject]@{
             device = $_.Name
             total_flows = $deviceRows.Count
-            passed = $passCount
-            failed = $failCount
+            passed     = $passCount
+            failed     = $failCount
             overall_status = $(if ($failCount -gt 0) { 'FAIL' } else { 'PASS' })
         }
     } | Sort-Object device
-
-$summary | Export-Csv -LiteralPath $DeviceSummaryCsv -NoTypeInformation
-
+    $summary | Export-Csv -LiteralPath $DeviceSummaryCsv -NoTypeInformation
+} catch {
+    Write-Host "[WARN] Device summary from merged CSV: $($_.Exception.Message)"
+}
 if ($retryRows.Count -gt 0) {
     $retryRows | Export-Csv -LiteralPath $RetryCsv -NoTypeInformation
-    Write-Host "Retry summary file: $RetryCsv"
+    Write-Host "Retry summary: $RetryCsv"
 }
-
-Write-Host "Merged result file: $MasterCsv"
-Write-Host "Device summary file: $DeviceSummaryCsv"
-
-if ($restoreAutofill) {
-    Write-Section "Restoring Android autofill service (best-effort)"
-    foreach ($d in $devices) {
-        $orig = if ($deviceAutofillState.ContainsKey($d)) { [string]$deviceAutofillState[$d] } else { "unknown" }
-        Restore-AutofillForDevice -DeviceId $d -OriginalService $orig
-    }
-}
+Write-Host "Merged: $MasterCsv"
 
 if ($overallFailed) { exit 1 } else { exit 0 }

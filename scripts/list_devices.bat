@@ -13,13 +13,15 @@ echo =========================
 
 del /q "%OUT_FILE%" 2>nul
 
-adb start-server >nul 2>&1 || (
-    echo ERROR: unable to start adb
-    echo Set Jenkins parameter ANDROID_HOME to your SDK root ^(e.g. ...\AppData\Local\Android\Sdk^) so platform-tools is on PATH.
-    where adb 2>nul
+REM No adb start-server / kill here — a single `adb devices` (below) is enough to bring up
+REM the daemon, and the suite runner warms the server again once before test execution.
+where adb 2>nul
+if errorlevel 1 (
+    echo ERROR: adb not on PATH. Set ANDROID_HOME / SDK in Jenkins; ensure set_maestro_java runs first.
     exit /b 1
 )
 
+echo Listing devices ^(only serials in state "device" are written to detected_devices.txt^)...
 adb devices
 
 (

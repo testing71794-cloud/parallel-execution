@@ -34,6 +34,11 @@ if not exist "%PS1%" (
 
 call "%REPO_ROOT%\scripts\set_maestro_java.bat" "%MAESTRO_CMD%" || exit /b 1
 
+if defined MAESTRO_HOME (
+    echo [INFO] PowerShell uses MAESTRO_HOME for Maestro: "%MAESTRO_HOME%maestro.bat" ^(or .cmd^)
+)
+echo [INFO] One ADB warm-up, then run_one in parallel: maestro --device ^<serial^> test ^<flow^>
+
 echo =====================================
 echo RUN SUITE SAME MACHINE PARALLEL
 echo =====================================

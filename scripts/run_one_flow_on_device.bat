@@ -159,13 +159,12 @@ echo === flow1b signup ^(runtime^) ===>> "%LOG_FILE%"
 echo [flow1b] EMAIL=!EMAIL!>> "%LOG_FILE%"
 if defined SIGNUP_RUN_ID echo KODAK_SIGNUP_RUN_ID=!SIGNUP_RUN_ID!>> "%LOG_FILE%"
 
-set "MAESTRO_ARGS=test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=!PASSWORD!"
-set "MAESTRO_ARGS=!MAESTRO_ARGS! "%FLOW_PATH%""
-set "MAESTRO_ARGS=!MAESTRO_ARGS! --device "%DEVICE_ID%""
+set "MAESTRO_ARGS=--device "%DEVICE_ID%" test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=!PASSWORD! "%FLOW_PATH%""
 if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
+rem config.yaml: Maestro loads workspace config from the current directory (REPO); run from repo root
 
 echo Starting Maestro test (flow1b)... (PASSWORD is not written to the log^)>> "%LOG_FILE%"
-echo [flow1b] !MAESTRO_BIN! test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=omitted "%FLOW_PATH%" --device "%DEVICE_ID%">> "%LOG_FILE%"
+echo [flow1b] !MAESTRO_BIN! --device "%DEVICE_ID%" test -e ... "%FLOW_PATH%">> "%LOG_FILE%"
 echo. >> "%LOG_FILE%"
 call "%MAESTRO_BIN%" !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
 set "RUN_EXIT=%ERRORLEVEL%"
@@ -193,9 +192,7 @@ echo [flow1b] EMAIL retry: !EMAIL!>> "%LOG_FILE%"
 if defined SIGNUP_RUN_ID echo KODAK_SIGNUP_RUN_ID retry: !SIGNUP_RUN_ID!>> "%LOG_FILE%"
 echo.>> "%LOG_FILE%"
 echo === Maestro retry (flow1b) ===>> "%LOG_FILE%"
-set "MAESTRO_ARGS=test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=!PASSWORD!"
-set "MAESTRO_ARGS=!MAESTRO_ARGS! "%FLOW_PATH%""
-set "MAESTRO_ARGS=!MAESTRO_ARGS! --device "%DEVICE_ID%""
+set "MAESTRO_ARGS=--device "%DEVICE_ID%" test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=!PASSWORD! "%FLOW_PATH%""
 if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
 call "%MAESTRO_BIN%" !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
 set "RUN_EXIT=%ERRORLEVEL%"
@@ -209,8 +206,8 @@ if "!RUN_EXIT!"=="0" (
 goto :after_flow1b_maestro
 
 :run_maestro_default
-set "MAESTRO_ARGS=test "%FLOW_PATH%" --device "%DEVICE_ID%""
-if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=%MAESTRO_ARGS% --include-tags "%INCLUDE_TAG%""
+set "MAESTRO_ARGS=--device "%DEVICE_ID%" test "%FLOW_PATH%""
+if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
 
 echo Starting Maestro test...>> "%LOG_FILE%"
 echo Command: call "%MAESTRO_BIN%" !MAESTRO_ARGS!>> "%LOG_FILE%"
