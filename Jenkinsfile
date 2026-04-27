@@ -65,7 +65,12 @@ pipeline {
         disableConcurrentBuilds()
         skipDefaultCheckout(true)
         preserveStashes(buildCount: 5)
-        buildDiscarder(logRotator(numToKeepStr: '20'))
+        buildDiscarder(
+            logRotator(
+                numToKeepStr: '10',
+                artifactNumToKeepStr: '5',
+            )
+        )
         timeout(time: 180, unit: 'MINUTES')
     }
 
@@ -100,18 +105,7 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    if exist reports rmdir /s /q reports
-                    if exist status rmdir /s /q status
-                    if exist collected-artifacts rmdir /s /q collected-artifacts
-                    if exist build-summary rmdir /s /q build-summary
-                    if exist .maestro rmdir /s /q .maestro
-                    if exist temp-runners rmdir /s /q temp-runners
-                    if exist ai-doctor/artifacts rmdir /s /q ai-doctor/artifacts
-                    if exist automation_with_testcases/logs rmdir /s /q automation_with_testcases\\logs
-                    if exist automation_with_testcases/results rmdir /s /q automation_with_testcases\\results
-                    del /q detected_devices.txt 2>nul
-                    del /q *.flag 2>nul
-                    del /q *.failed 2>nul
+                    call scripts\\cleanup_c_drive_generated_files.bat PRE "%WORKSPACE%"
                     python -m pip install --upgrade pip || (echo 1> install_failed.flag & exit /b 1)
                     python -m pip install -r scripts/requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
                     if exist package.json (
@@ -372,6 +366,18 @@ pipeline {
             }
         }
 
+        stage('Materialize execution_logs.zip for archive and email') {
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
+                    python -c "import sys; from pathlib import Path; r=Path('.'); sys.path.insert(0, str(r.resolve())); from mailout.send_email import build_execution_logs_zip; z=build_execution_logs_zip(r); print('execution_logs.zip =>', z)"
+                    """
+                }
+            }
+        }
+
         // mailout/send_email.py — user/pass from Jenkins credential "gmail-smtp-kodak" (Gmail + App Password). No secrets in this file.
         stage('Send Final Email') {
             when { expression { return params.SEND_FINAL_EMAIL } }
@@ -409,7 +415,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    archiveArtifacts artifacts: 'reports/**, status/**, collected-artifacts/**, build-summary/**, .maestro/screenshots/**, ai-doctor/artifacts/**, detected_devices.txt, automation_with_testcases/reports/**, automation_with_testcases/logs/**, automation_with_testcases/results/**, *.flag, *.failed', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'build-summary/final_execution_report.xlsx, build-summary/execution_logs.zip, .maestro/screenshots/**, detected_devices.txt', allowEmptyArchive: true
                 }
             }
         }
@@ -432,6 +438,18 @@ pipeline {
                     } else {
                         currentBuild.result = 'SUCCESS'
                     }
+                }
+            }
+        }
+
+        stage('Post-build workspace cleanup (C: agent disk)') {
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    bat """
+                    cd /d "${env.WORKSPACE}"
+                    call scripts\\cleanup_c_drive_generated_files.bat POST "%WORKSPACE%"
+                    """
                 }
             }
         }
