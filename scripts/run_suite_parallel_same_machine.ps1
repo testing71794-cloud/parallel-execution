@@ -228,14 +228,15 @@ New-Item -ItemType Directory -Force -Path $ResultsDir | Out-Null
 
 Add-AdbFromEnvToPath
 $devices = Read-DeviceIds -RepoRoot $RepoRoot
-try {
-    if (Get-Command adb -ErrorAction SilentlyContinue) {
-        $null = & adb start-server 2>&1
-    } else {
-        Write-Host "[WARN] adb not on PATH after ADB_HOME; skipping start-server. Set ANDROID_HOME / ADB in Jenkins if needed."
-    }
-} catch {
-    Write-Host "[WARN] adb start-server: $($_.Exception.Message)"
+# Adb writes "* daemon not running" to stderr; with PowerShell 5, `& adb start-server` can surface
+# that as a false error. Use cmd so stderr is contained, then wait so devices accept shell commands.
+if (Get-Command adb -ErrorAction SilentlyContinue) {
+    $null = cmd /c "adb start-server 2>nul"
+    $null = cmd /c "adb devices 1>nul 2>nul"
+    Start-Sleep -Seconds 2
+    Write-Host "[INFO] ADB server warmed; autofill step is best-effort (warnings are usually harmless)."
+} else {
+    Write-Host "[WARN] adb not on PATH after ADB_HOME; set ANDROID_HOME / ADB in Jenkins if needed."
 }
 $restoreAutofill = ($env:AUTOFILL_RESTORE_AFTER_TEST -match '^(?i:1|true|yes|on)$')
 $deviceAutofillState = @{}
@@ -245,8 +246,11 @@ foreach ($d in $devices) { Write-Host " - $d" }
 if ($devices.Count -eq 0) { Write-Host "ERROR: No connected devices found"; exit 1 }
 
 Write-Section "Disabling Android autofill/password-save prompts (best-effort)"
+$n = 0
 foreach ($d in $devices) {
+    if ($n -gt 0) { Start-Sleep -Milliseconds 400 }
     $deviceAutofillState[$d] = Disable-AutofillForDevice -DeviceId $d
+    $n++
 }
 
 $flowFiles = Get-ChildItem -LiteralPath $FlowRoot -Filter *.yaml -File | Sort-Object Name
