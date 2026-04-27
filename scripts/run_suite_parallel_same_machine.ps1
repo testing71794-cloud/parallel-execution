@@ -161,8 +161,18 @@ function Wait-ParallelWithHeartbeat {
             $state = if ($p.HasExited) { "EXIT:$($p.ExitCode)" } else { "RUN" }
             $lastLine = ""
             if (Test-Path -LiteralPath $logFile) {
-                $tail = Get-Content -LiteralPath $logFile -Tail 1 -ErrorAction SilentlyContinue
-                if ($tail) { $lastLine = $tail[0].Trim() }
+                try {
+                    $tail = Get-Content -LiteralPath $logFile -Tail 1 -ErrorAction Stop
+                    if ($null -ne $tail) {
+                        # Get-Content may return a scalar string for single-line output.
+                        # Accessing [0] on a scalar string yields a char, which has no Trim().
+                        $lineObj = @($tail)[0]
+                        $lastLine = ([string]$lineObj).Trim()
+                    }
+                } catch {
+                    # run_one appends logs concurrently; temporary sharing violations are expected.
+                    $lastLine = "(log temporarily locked)"
+                }
             }
             if ([string]::IsNullOrWhiteSpace($lastLine)) { $lastLine = "(no log line yet)" }
             Write-Host ("  - {0} {1} :: {2}" -f $dev, $state, $lastLine)
