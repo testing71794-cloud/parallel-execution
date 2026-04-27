@@ -13,16 +13,23 @@ echo =========================
 
 del /q "%OUT_FILE%" 2>nul
 
-REM No adb start-server / kill here — a single `adb devices` (below) is enough to bring up
-REM the daemon, and the suite runner warms the server again once before test execution.
 where adb 2>nul
 if errorlevel 1 (
     echo ERROR: adb not on PATH. Set ANDROID_HOME / SDK in Jenkins; ensure set_maestro_java runs first.
     exit /b 1
 )
 
+echo Starting ADB server once...
+adb start-server >nul 2>&1 || (
+    echo ERROR: failed to start adb server. Check USB/debug permissions and Android SDK path.
+    exit /b 1
+)
+
 echo Listing devices ^(only serials in state "device" are written to detected_devices.txt^)...
-adb devices
+adb devices || (
+    echo ERROR: adb devices failed.
+    exit /b 1
+)
 
 (
 for /f "skip=1 tokens=1,2" %%A in ('adb devices') do (
@@ -37,5 +44,8 @@ echo.
 echo Devices detected: !COUNT!
 echo Device list saved to: "%OUT_FILE%"
 
-if !COUNT! LEQ 0 exit /b 1
+if !COUNT! LEQ 0 (
+    echo ERROR: No authorized Android devices found ^(state "device"^). Unauthorized/offline/recovery/sideload are excluded.
+    exit /b 1
+)
 exit /b 0

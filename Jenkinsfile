@@ -21,7 +21,12 @@ def normalizeOpenRouterCredsId = { Object raw ->
 def withOpenRouterCredentials = { Object credsId, Closure action ->
     def id = normalizeOpenRouterCredsId(credsId)
     if (id) {
-        withCredentials([string(credentialsId: id, variable: 'OPENROUTER_API_KEY')]) {
+        try {
+            withCredentials([string(credentialsId: id, variable: 'OPENROUTER_API_KEY')]) {
+                action()
+            }
+        } catch (Exception ex) {
+            echo "[WARN] OpenRouter credential '${id}' missing/invalid. Continuing without AI key: ${ex.message}"
             action()
         }
     } else {
@@ -42,7 +47,7 @@ pipeline {
         string(name: 'MAESTRO_CMD', defaultValue: 'maestro.bat', description: 'Maestro launcher (e.g. maestro.bat).')
         string(name: 'MAESTRO_HOME', defaultValue: 'C:\\Users\\HP\\maestro\\maestro\\bin', description: 'Folder containing maestro.bat.')
         string(name: 'ANDROID_HOME', defaultValue: 'C:\\Users\\HP\\AppData\\Local\\Android\\Sdk', description: 'Android SDK root.')
-        string(name: 'JAVA_HOME_OVERRIDE', defaultValue: '', description: 'Optional JDK for Maestro (MAESTRO_JAVA_HOME).')
+        string(name: 'JAVA_HOME_OVERRIDE', defaultValue: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8', description: 'JDK for Maestro (MAESTRO_JAVA_HOME/JAVA_HOME). Default is jbr-17.0.8.')
         booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run non-printing flows')
         booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run printing flows')
         booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Test OpenRouter + run intelligent_platform failure analysis')
@@ -129,13 +134,15 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     script {
                         def envList = []
-                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "MAESTRO_JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
-                        }
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
                         if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                        }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
@@ -155,13 +162,15 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     script {
                         def envList = []
-                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "MAESTRO_JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
-                        }
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
                         if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                        }
                         withEnv(envList) {
                             bat """
                             cd /d "${env.WORKSPACE}"
@@ -180,13 +189,15 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         def envList = []
-                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "MAESTRO_JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
-                        }
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
                         if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                        }
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(envList) {
                                 bat """
@@ -242,13 +253,15 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         def envList = []
-                        if (params.JAVA_HOME_OVERRIDE?.trim()) {
-                            envList << "MAESTRO_JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "JAVA_HOME=${params.JAVA_HOME_OVERRIDE}"
-                            envList << "PATH+JAVA=${params.JAVA_HOME_OVERRIDE}\\bin"
-                        }
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
                         if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
-                        if (params.ANDROID_HOME?.trim()) { envList << "ANDROID_HOME=${params.ANDROID_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                        }
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(envList) {
                                 bat """
