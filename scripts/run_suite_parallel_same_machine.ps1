@@ -139,6 +139,38 @@ function Invoke-ParallelRunOne {
     return $pList
 }
 
+function Wait-ParallelWithHeartbeat {
+    param(
+        [System.Collections.ArrayList]$Processes,
+        [string[]]$Devices,
+        [string]$FlowName,
+        [string]$Suite,
+        [string]$ReportsDir,
+        [int]$HeartbeatSeconds = 20
+    )
+    $safeFlow = $FlowName.Replace(' ', '_')
+    while ($true) {
+        $running = @($Processes | Where-Object { -not $_.HasExited })
+        if ($running.Count -eq 0) { break }
+        Write-Host "[HEARTBEAT] flow=$FlowName running_procs=$($running.Count) elapsed=$(Get-Date -Format 'HH:mm:ss')"
+        for ($i = 0; $i -lt $Devices.Count; $i++) {
+            $dev = $Devices[$i]
+            $p = $Processes[$i]
+            $safeDev = $dev.Replace(' ', '_')
+            $logFile = Join-Path (Join-Path $ReportsDir "logs") ("{0}_{1}.log" -f $safeFlow, $safeDev)
+            $state = if ($p.HasExited) { "EXIT:$($p.ExitCode)" } else { "RUN" }
+            $lastLine = ""
+            if (Test-Path -LiteralPath $logFile) {
+                $tail = Get-Content -LiteralPath $logFile -Tail 1 -ErrorAction SilentlyContinue
+                if ($tail) { $lastLine = $tail[0].Trim() }
+            }
+            if ([string]::IsNullOrWhiteSpace($lastLine)) { $lastLine = "(no log line yet)" }
+            Write-Host ("  - {0} {1} :: {2}" -f $dev, $state, $lastLine)
+        }
+        Start-Sleep -Seconds $HeartbeatSeconds
+    }
+}
+
 $RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
 $FlowRoot = Join-Path $RepoRoot $FlowDir
 $ReportsDir = Join-Path $RepoRoot ("reports\" + $Suite)
@@ -198,7 +230,7 @@ foreach ($flow in $flowFiles) {
     foreach ($d in $devices) { Write-Host "  device $d" }
 
     $pList = Invoke-ParallelRunOne -RepoRoot $RepoRoot -Suite $Suite -flow $flow -devices $devices -AppId $AppId -ClearState $ClearState -maestroLaunch $maestroLaunch -IncludeTag $IncludeTag
-    foreach ($px in $pList) { if (-not $px.HasExited) { $px.WaitForExit() } }
+    Wait-ParallelWithHeartbeat -Processes $pList -Devices $devices -FlowName $flowName -Suite $Suite -ReportsDir $ReportsDir
     $batchCode = 0
     foreach ($px in $pList) {
         $ex = if ($null -ne $px.ExitCode) { [int]$px.ExitCode } else { 1 }
@@ -211,7 +243,7 @@ foreach ($flow in $flowFiles) {
     if ($batchCode -ne 0 -and $RetryCount -gt 0) {
         Write-Section "Retry: $flowName (same devices, another parallel batch)"
         $p2 = Invoke-ParallelRunOne -RepoRoot $RepoRoot -Suite $Suite -flow $flow -devices $devices -AppId $AppId -ClearState $ClearState -maestroLaunch $maestroLaunch -IncludeTag $IncludeTag
-        foreach ($px in $p2) { if (-not $px.HasExited) { $px.WaitForExit() } }
+        Wait-ParallelWithHeartbeat -Processes $p2 -Devices $devices -FlowName $flowName -Suite $Suite -ReportsDir $ReportsDir
         $r2 = 0
         foreach ($px in $p2) {
             $ex = if ($null -ne $px.ExitCode) { [int]$px.ExitCode } else { 1 }
