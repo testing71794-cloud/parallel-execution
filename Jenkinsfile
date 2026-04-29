@@ -123,22 +123,7 @@ pipeline {
                 deleteDir()
                 unstash 'repo'
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    echo === SAFE DISK CLEANUP PRE ===
-                    call scripts\\safe_disk_cleanup.bat PRE "%WORKSPACE%"
-                    python -m pip install --upgrade pip || (echo 1> install_failed.flag & exit /b 1)
-                    python -m pip install -r scripts/requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
-                    if exist package.json (
-                        call npm ci || call npm install || (echo 1> install_failed.flag & exit /b 1)
-                    )
-                    if exist ai-doctor/package.json (
-                        cd ai-doctor
-                        call npm ci || call npm install || (echo 1> ..\\install_failed.flag & exit /b 1)
-                        cd ..
-                    )
-                    if not exist build-summary mkdir build-summary
-                    """
+                    bat """call scripts\\jenkins_ci_install.bat "${env.WORKSPACE}" """
                 }
             }
         }
@@ -149,12 +134,7 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     script {
                         withEnv(maestroEnvList()) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            where java
-                            java -version
-                            call scripts/precheck_environment.bat "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" || (echo 1> precheck_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                            """
+                            bat """call scripts\\jenkins_ci_precheck.bat "${env.WORKSPACE}" "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" """
                         }
                     }
                 }
@@ -167,17 +147,14 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     script {
                         withEnv(maestroEnvList()) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            call scripts/list_devices.bat || (echo 1> device_detection_failed.flag & echo 1> pipeline_failed.flag & exit /b 1)
-                            """
+                            bat """call scripts\\jenkins_ci_devices.bat "${env.WORKSPACE}" """
                         }
                     }
                 }
             }
         }
 
-        stage('Run ATP Camera Flows') {
+        stage('ATP Camera - flows, validate, Excel') {
             when { expression { return params.RUN_ATP_CAMERA } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -185,7 +162,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Camera "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Camera "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -193,31 +170,7 @@ pipeline {
             }
         }
 
-        stage('Validate ATP Camera Artifacts') {
-            when { expression { return params.RUN_ATP_CAMERA } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_camera"""
-                }
-            }
-        }
-
-        stage('Generate ATP Camera Excel Report') {
-            when { expression { return params.RUN_ATP_CAMERA } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Camera"""
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Run ATP Collage Flows') {
+        stage('ATP Collage - flows, validate, Excel') {
             when { expression { return params.RUN_ATP_COLLAGE } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -225,7 +178,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Collage "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Collage "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -233,31 +186,7 @@ pipeline {
             }
         }
 
-        stage('Validate ATP Collage Artifacts') {
-            when { expression { return params.RUN_ATP_COLLAGE } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_collage"""
-                }
-            }
-        }
-
-        stage('Generate ATP Collage Excel Report') {
-            when { expression { return params.RUN_ATP_COLLAGE } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Collage"""
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Run ATP Connection Flows') {
+        stage('ATP Connection - flows, validate, Excel') {
             when { expression { return params.RUN_ATP_CONNECTION } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -265,7 +194,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Connection "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Connection "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -273,31 +202,7 @@ pipeline {
             }
         }
 
-        stage('Validate ATP Connection Artifacts') {
-            when { expression { return params.RUN_ATP_CONNECTION } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_connection"""
-                }
-            }
-        }
-
-        stage('Generate ATP Connection Excel Report') {
-            when { expression { return params.RUN_ATP_CONNECTION } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Connection"""
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Run ATP Editing Flows') {
+        stage('ATP Editing - flows, validate, Excel') {
             when { expression { return params.RUN_ATP_EDITING } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -305,7 +210,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Editing "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Editing "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -313,31 +218,7 @@ pipeline {
             }
         }
 
-        stage('Validate ATP Editing Artifacts') {
-            when { expression { return params.RUN_ATP_EDITING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_editing"""
-                }
-            }
-        }
-
-        stage('Generate ATP Editing Excel Report') {
-            when { expression { return params.RUN_ATP_EDITING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Editing"""
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Run ATP Onboarding Flows') {
+        stage('ATP Onboarding - flows, validate, Excel') {
             when { expression { return params.RUN_ATP_ONBOARDING } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -345,7 +226,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Onboarding "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Onboarding "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -353,31 +234,7 @@ pipeline {
             }
         }
 
-        stage('Validate ATP Onboarding Artifacts') {
-            when { expression { return params.RUN_ATP_ONBOARDING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_onboarding"""
-                }
-            }
-        }
-
-        stage('Generate ATP Onboarding Excel Report') {
-            when { expression { return params.RUN_ATP_ONBOARDING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Onboarding"""
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Run ATP Precut Flows') {
+        stage('ATP Precut - flows, validate, Excel') {
             when { expression { return params.RUN_ATP_PRECUT } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -385,7 +242,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Precut "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Precut "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -393,31 +250,7 @@ pipeline {
             }
         }
 
-        stage('Validate ATP Precut Artifacts') {
-            when { expression { return params.RUN_ATP_PRECUT } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_precut"""
-                }
-            }
-        }
-
-        stage('Generate ATP Precut Excel Report') {
-            when { expression { return params.RUN_ATP_PRECUT } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Precut"""
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Run ATP Printing Flows') {
+        stage('ATP Printing - flows, validate, Excel') {
             when { expression { return params.RUN_ATP_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -425,7 +258,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Printing "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Printing "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -433,31 +266,7 @@ pipeline {
             }
         }
 
-        stage('Validate ATP Printing Artifacts') {
-            when { expression { return params.RUN_ATP_PRINTING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_printing"""
-                }
-            }
-        }
-
-        stage('Generate ATP Printing Excel Report') {
-            when { expression { return params.RUN_ATP_PRINTING } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Printing"""
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Run ATP Settings Flows') {
+        stage('ATP Settings - flows, validate, Excel') {
             when { expression { return params.RUN_ATP_SETTINGS } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -465,7 +274,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Settings "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Settings "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -473,31 +282,7 @@ pipeline {
             }
         }
 
-        stage('Validate ATP Settings Artifacts') {
-            when { expression { return params.RUN_ATP_SETTINGS } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_settings"""
-                }
-            }
-        }
-
-        stage('Generate ATP Settings Excel Report') {
-            when { expression { return params.RUN_ATP_SETTINGS } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Settings"""
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Run ATP SignUp_Login Flows') {
+        stage('ATP SignUp Login - flows, validate, Excel') {
             when { expression { return params.RUN_ATP_SIGNUP_LOGIN } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -505,32 +290,8 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run SignUp_Login "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all SignUp_Login "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Validate ATP SignUp_Login Artifacts') {
-            when { expression { return params.RUN_ATP_SIGNUP_LOGIN } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_signup_login"""
-                }
-            }
-        }
-
-        stage('Generate ATP SignUp_Login Excel Report') {
-            when { expression { return params.RUN_ATP_SIGNUP_LOGIN } }
-            agent { label params.DEVICES_AGENT }
-            steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel SignUp_Login"""
                         }
                     }
                 }
@@ -550,15 +311,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            echo === GENERATE ATP TESTCASE EXCEL REPORTS ===
-                            if exist build-summary\\atp_suite_labels.json (
-                                python scripts/generate_atp_excel_reports.py . || (echo 1> atp_report_failed.flag)
-                            ) else (
-                                echo [ATP Excel] No atp_suite_labels.json — ATP had no flows or was skipped. OK.
-                            )
-                            """
+                            bat """call scripts\\jenkins_ci_merge_atp.bat "${env.WORKSPACE}" """
                         }
                     }
                 }
@@ -572,12 +325,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/test_ai_connection.py
-                            if exist build-summary\\ai_status.txt ( type build-summary\\ai_status.txt ) else ( echo No ai_status.txt )
-                            """
+                            bat """call scripts\\jenkins_ci_ai_probe.bat "${env.WORKSPACE}" """
                         }
                     }
                 }
@@ -591,12 +339,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            if not exist build-summary\\ai_status.txt echo AI_STATUS=FILE_MISSING > build-summary\\ai_status.txt
-                            call scripts/run_ai_analysis.bat || (echo 1> ai_failed.flag)
-                            """
+                            bat """call scripts\\jenkins_ci_ai_analysis.bat "${env.WORKSPACE}" """
                         }
                     }
                 }
@@ -607,18 +350,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    if not exist build-summary mkdir build-summary
-                    python scripts/generate_build_summary.py status build-summary || (echo 1> summary_failed.flag)
-                    if exist scripts\\generate_final_report.py (
-                        python scripts/generate_final_report.py . status build-summary\\final_execution_report.xlsx
-                    ) else if exist build-summary\\final_execution_report.xlsx (
-                        echo final_execution_report already from generate_excel merge.
-                    ) else (
-                        echo No generate_final_report.py; Excel merge should exist from per-suite report.
-                    )
-                    """
+                    bat """call scripts\\jenkins_ci_build_summary.bat "${env.WORKSPACE}" """
                 }
             }
         }
@@ -627,10 +359,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python -c "import sys; from pathlib import Path; r=Path('.'); sys.path.insert(0, str(r.resolve())); from mailout.send_email import build_execution_logs_zip; z=build_execution_logs_zip(r); print('execution_logs.zip =>', z)"
-                    """
+                    bat """call scripts\\jenkins_ci_zip_logs.bat "${env.WORKSPACE}" """
                 }
             }
         }
@@ -656,11 +385,7 @@ pipeline {
                                 'ORCH_EMAIL_STRICT=1',
                                 "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\build-summary\\final_execution_report.xlsx",
                             ]) {
-                                bat """
-                                cd /d "%WORKSPACE%"
-                                echo Running send_email with Jenkins credential gmail-smtp-kodak ...
-                                python mailout\\send_email.py || (echo 1> email_failed.flag)
-                                """
+                                bat """call scripts\\jenkins_ci_send_email.bat "${env.WORKSPACE}" """
                             }
                         }
                     }
@@ -713,13 +438,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    echo === SAFE DISK CLEANUP POST ===
-                    call scripts\\safe_disk_cleanup.bat POST "%WORKSPACE%"
-                    echo === DISK USAGE REPORT ===
-                    call scripts\\safe_disk_cleanup.bat REPORT "%WORKSPACE%"
-                    """
+                    bat """call scripts\\jenkins_ci_cleanup_post.bat "${env.WORKSPACE}" """
                 }
             }
         }

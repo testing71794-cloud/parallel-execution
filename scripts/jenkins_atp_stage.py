@@ -85,12 +85,23 @@ def cmd_excel(folder: str) -> int:
     return 0
 
 
+def cmd_all(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
+    """One Jenkins stage per folder: run → validate → excel (shrinks CPS bytecode vs 3 stages)."""
+    sid = folder_to_suite_id(folder)
+    print(f"[jenkins_atp_stage] === ATP folder={folder!r} suite={sid!r} ===")
+    rc_run = cmd_run(folder, app, clear_state, maestro_cmd)
+    cmd_validate(sid)
+    cmd_excel(folder)
+    return rc_run
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print(
             "Usage: jenkins_atp_stage.py run <Folder> <APP_PACKAGE> <CLEAR_STATE> <MAESTRO_CMD>\n"
             "       jenkins_atp_stage.py validate <suite_id>\n"
-            "       jenkins_atp_stage.py excel <Folder>",
+            "       jenkins_atp_stage.py excel <Folder>\n"
+            "       jenkins_atp_stage.py all <Folder> <APP_PACKAGE> <CLEAR_STATE> <MAESTRO_CMD>",
             file=sys.stderr,
         )
         return 2
@@ -110,6 +121,11 @@ def main() -> int:
             print("excel: need Folder", file=sys.stderr)
             return 2
         return cmd_excel(sys.argv[2])
+    if op == "all":
+        if len(sys.argv) < 6:
+            print("all: need Folder APP CLEAR_STATE MAESTRO_CMD", file=sys.stderr)
+            return 2
+        return cmd_all(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
     print(f"Unknown op: {op}", file=sys.stderr)
     return 2
 
