@@ -185,11 +185,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                echo === RUN ATP CAMERA FLOWS ===
-                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Camera" || (echo 1> atp_camera_failed.flag)
-                                """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Camera "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -202,13 +198,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python scripts/validate_suite_artifacts.py atp_camera "${env.WORKSPACE}" || (echo 1> atp_camera_no_results.flag)
-                    if not exist status\\atp_camera__*.txt (echo 1> atp_camera_no_results.flag)
-                    if not exist reports\\atp_camera\\results\\*.csv (echo 1> atp_camera_no_results.flag)
-                    if not exist reports\\atp_camera\\logs\\*.log (echo 1> atp_camera_no_results.flag)
-                    """
+                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_camera"""
                 }
             }
         }
@@ -220,11 +210,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/generate_excel_report.py status reports/atp_camera_summary atp_camera Camera --skip-if-empty || (echo 1> atp_camera_report_failed.flag)
-                            """
+                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Camera"""
                         }
                     }
                 }
@@ -239,11 +225,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                echo === RUN ATP COLLAGE FLOWS ===
-                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Collage" || (echo 1> atp_collage_failed.flag)
-                                """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Collage "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -256,13 +238,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python scripts/validate_suite_artifacts.py atp_collage "${env.WORKSPACE}" || (echo 1> atp_collage_no_results.flag)
-                    if not exist status\\atp_collage__*.txt (echo 1> atp_collage_no_results.flag)
-                    if not exist reports\\atp_collage\\results\\*.csv (echo 1> atp_collage_no_results.flag)
-                    if not exist reports\\atp_collage\\logs\\*.log (echo 1> atp_collage_no_results.flag)
-                    """
+                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_collage"""
                 }
             }
         }
@@ -274,11 +250,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/generate_excel_report.py status reports/atp_collage_summary atp_collage Collage --skip-if-empty || (echo 1> atp_collage_report_failed.flag)
-                            """
+                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Collage"""
                         }
                     }
                 }
@@ -293,11 +265,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                echo === RUN ATP CONNECTION FLOWS ===
-                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Connection" || (echo 1> atp_connection_failed.flag)
-                                """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Connection "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -310,13 +278,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python scripts/validate_suite_artifacts.py atp_connection "${env.WORKSPACE}" || (echo 1> atp_connection_no_results.flag)
-                    if not exist status\\atp_connection__*.txt (echo 1> atp_connection_no_results.flag)
-                    if not exist reports\\atp_connection\\results\\*.csv (echo 1> atp_connection_no_results.flag)
-                    if not exist reports\\atp_connection\\logs\\*.log (echo 1> atp_connection_no_results.flag)
-                    """
+                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_connection"""
                 }
             }
         }
@@ -328,11 +290,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/generate_excel_report.py status reports/atp_connection_summary atp_connection Connection --skip-if-empty || (echo 1> atp_connection_report_failed.flag)
-                            """
+                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Connection"""
                         }
                     }
                 }
@@ -347,11 +305,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                echo === RUN ATP EDITING FLOWS ===
-                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Editing" || (echo 1> atp_editing_failed.flag)
-                                """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Editing "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -364,13 +318,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python scripts/validate_suite_artifacts.py atp_editing "${env.WORKSPACE}" || (echo 1> atp_editing_no_results.flag)
-                    if not exist status\\atp_editing__*.txt (echo 1> atp_editing_no_results.flag)
-                    if not exist reports\\atp_editing\\results\\*.csv (echo 1> atp_editing_no_results.flag)
-                    if not exist reports\\atp_editing\\logs\\*.log (echo 1> atp_editing_no_results.flag)
-                    """
+                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_editing"""
                 }
             }
         }
@@ -382,11 +330,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/generate_excel_report.py status reports/atp_editing_summary atp_editing Editing --skip-if-empty || (echo 1> atp_editing_report_failed.flag)
-                            """
+                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Editing"""
                         }
                     }
                 }
@@ -401,11 +345,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                echo === RUN ATP ONBOARDING FLOWS ===
-                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Onboarding" || (echo 1> atp_onboarding_failed.flag)
-                                """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Onboarding "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -418,13 +358,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python scripts/validate_suite_artifacts.py atp_onboarding "${env.WORKSPACE}" || (echo 1> atp_onboarding_no_results.flag)
-                    if not exist status\\atp_onboarding__*.txt (echo 1> atp_onboarding_no_results.flag)
-                    if not exist reports\\atp_onboarding\\results\\*.csv (echo 1> atp_onboarding_no_results.flag)
-                    if not exist reports\\atp_onboarding\\logs\\*.log (echo 1> atp_onboarding_no_results.flag)
-                    """
+                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_onboarding"""
                 }
             }
         }
@@ -436,11 +370,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/generate_excel_report.py status reports/atp_onboarding_summary atp_onboarding Onboarding --skip-if-empty || (echo 1> atp_onboarding_report_failed.flag)
-                            """
+                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Onboarding"""
                         }
                     }
                 }
@@ -455,11 +385,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                echo === RUN ATP PRECUT FLOWS ===
-                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Precut" || (echo 1> atp_precut_failed.flag)
-                                """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Precut "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -472,13 +398,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python scripts/validate_suite_artifacts.py atp_precut "${env.WORKSPACE}" || (echo 1> atp_precut_no_results.flag)
-                    if not exist status\\atp_precut__*.txt (echo 1> atp_precut_no_results.flag)
-                    if not exist reports\\atp_precut\\results\\*.csv (echo 1> atp_precut_no_results.flag)
-                    if not exist reports\\atp_precut\\logs\\*.log (echo 1> atp_precut_no_results.flag)
-                    """
+                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_precut"""
                 }
             }
         }
@@ -490,11 +410,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/generate_excel_report.py status reports/atp_precut_summary atp_precut Precut --skip-if-empty || (echo 1> atp_precut_report_failed.flag)
-                            """
+                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Precut"""
                         }
                     }
                 }
@@ -509,11 +425,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                echo === RUN ATP PRINTING FLOWS ===
-                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Printing" || (echo 1> atp_printing_failed.flag)
-                                """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Printing "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -526,13 +438,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python scripts/validate_suite_artifacts.py atp_printing "${env.WORKSPACE}" || (echo 1> atp_printing_no_results.flag)
-                    if not exist status\\atp_printing__*.txt (echo 1> atp_printing_no_results.flag)
-                    if not exist reports\\atp_printing\\results\\*.csv (echo 1> atp_printing_no_results.flag)
-                    if not exist reports\\atp_printing\\logs\\*.log (echo 1> atp_printing_no_results.flag)
-                    """
+                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_printing"""
                 }
             }
         }
@@ -544,11 +450,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/generate_excel_report.py status reports/atp_printing_summary atp_printing Printing --skip-if-empty || (echo 1> atp_printing_report_failed.flag)
-                            """
+                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Printing"""
                         }
                     }
                 }
@@ -563,11 +465,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                echo === RUN ATP SETTINGS FLOWS ===
-                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Settings" || (echo 1> atp_settings_failed.flag)
-                                """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run Settings "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -580,13 +478,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python scripts/validate_suite_artifacts.py atp_settings "${env.WORKSPACE}" || (echo 1> atp_settings_no_results.flag)
-                    if not exist status\\atp_settings__*.txt (echo 1> atp_settings_no_results.flag)
-                    if not exist reports\\atp_settings\\results\\*.csv (echo 1> atp_settings_no_results.flag)
-                    if not exist reports\\atp_settings\\logs\\*.log (echo 1> atp_settings_no_results.flag)
-                    """
+                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_settings"""
                 }
             }
         }
@@ -598,11 +490,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/generate_excel_report.py status reports/atp_settings_summary atp_settings Settings --skip-if-empty || (echo 1> atp_settings_report_failed.flag)
-                            """
+                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel Settings"""
                         }
                     }
                 }
@@ -617,11 +505,7 @@ pipeline {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             withEnv(maestroEnvList()) {
-                                bat """
-                                cd /d "${env.WORKSPACE}"
-                                echo === RUN ATP SIGNUP_LOGIN FLOWS ===
-                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "SignUp_Login" || (echo 1> atp_signup_login_failed.flag)
-                                """
+                                bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py run SignUp_Login "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
                         }
                     }
@@ -634,13 +518,7 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    bat """
-                    cd /d "${env.WORKSPACE}"
-                    python scripts/validate_suite_artifacts.py atp_signup_login "${env.WORKSPACE}" || (echo 1> atp_signup_login_no_results.flag)
-                    if not exist status\\atp_signup_login__*.txt (echo 1> atp_signup_login_no_results.flag)
-                    if not exist reports\\atp_signup_login\\results\\*.csv (echo 1> atp_signup_login_no_results.flag)
-                    if not exist reports\\atp_signup_login\\logs\\*.log (echo 1> atp_signup_login_no_results.flag)
-                    """
+                    bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py validate atp_signup_login"""
                 }
             }
         }
@@ -652,11 +530,7 @@ pipeline {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
-                            bat """
-                            cd /d "${env.WORKSPACE}"
-                            if not exist build-summary mkdir build-summary
-                            python scripts/generate_excel_report.py status reports/atp_signup_login_summary atp_signup_login SignUp_Login --skip-if-empty || (echo 1> atp_signup_login_report_failed.flag)
-                            """
+                            bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py excel SignUp_Login"""
                         }
                     }
                 }
