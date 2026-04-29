@@ -50,7 +50,7 @@ pipeline {
         string(name: 'JAVA_HOME_OVERRIDE', defaultValue: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8', description: 'JDK for Maestro (MAESTRO_JAVA_HOME/JAVA_HOME). Default is jbr-17.0.8.')
         booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run non-printing flows')
         booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run printing flows')
-        booleanParam(name: 'RUN_ATP_TESTCASES', defaultValue: true, description: 'Run ATP TestCase Flows (recursive yaml under ATP TestCase Flows/)')
+        booleanParam(name: 'RUN_ATP_TESTCASES', defaultValue: true, description: 'Run ATP TestCase Flows (one Jenkins stage per top-level folder under ATP TestCase Flows/)')
         booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Test OpenRouter + run intelligent_platform failure analysis')
         booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send final summary email')
         booleanParam(name: 'CLEAR_STATE', defaultValue: true, description: 'Clear app state in suite runners')
@@ -313,7 +313,7 @@ pipeline {
             }
         }
 
-        stage('Run ATP TestCase Flows') {
+        stage('Run ATP Camera Flows') {
             when { expression { return params.RUN_ATP_TESTCASES } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -334,8 +334,256 @@ pipeline {
                             withEnv(envList) {
                                 bat """
                                 cd /d "${env.WORKSPACE}"
-                                echo === RUN ATP TESTCASE FLOWS ===
-                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> atp_failed.flag)
+                                echo === RUN ATP CAMERA FLOWS ===
+                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Camera" || (echo 1> atp_failed.flag)
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Run ATP Collage Flows') {
+            when { expression { return params.RUN_ATP_TESTCASES } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        def envList = []
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
+                        }
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                echo === RUN ATP COLLAGE FLOWS ===
+                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Collage" || (echo 1> atp_failed.flag)
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Run ATP Connection Flows') {
+            when { expression { return params.RUN_ATP_TESTCASES } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        def envList = []
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
+                        }
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                echo === RUN ATP CONNECTION FLOWS ===
+                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Connection" || (echo 1> atp_failed.flag)
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Run ATP Editing Flows') {
+            when { expression { return params.RUN_ATP_TESTCASES } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        def envList = []
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
+                        }
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                echo === RUN ATP EDITING FLOWS ===
+                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Editing" || (echo 1> atp_failed.flag)
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Run ATP Onboarding Flows') {
+            when { expression { return params.RUN_ATP_TESTCASES } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        def envList = []
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
+                        }
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                echo === RUN ATP ONBOARDING FLOWS ===
+                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Onboarding" || (echo 1> atp_failed.flag)
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Run ATP Precut Flows') {
+            when { expression { return params.RUN_ATP_TESTCASES } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        def envList = []
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
+                        }
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                echo === RUN ATP PRECUT FLOWS ===
+                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Precut" || (echo 1> atp_failed.flag)
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Run ATP Printing Flows') {
+            when { expression { return params.RUN_ATP_TESTCASES } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        def envList = []
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
+                        }
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                echo === RUN ATP PRINTING FLOWS ===
+                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Printing" || (echo 1> atp_failed.flag)
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Run ATP Settings Flows') {
+            when { expression { return params.RUN_ATP_TESTCASES } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        def envList = []
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
+                        }
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                echo === RUN ATP SETTINGS FLOWS ===
+                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "Settings" || (echo 1> atp_failed.flag)
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Run ATP SignUp_Login Flows') {
+            when { expression { return params.RUN_ATP_TESTCASES } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        def envList = []
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
+                        }
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                echo === RUN ATP SIGNUP_LOGIN FLOWS ===
+                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" "SignUp_Login" || (echo 1> atp_failed.flag)
                                 """
                             }
                         }

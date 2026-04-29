@@ -1,11 +1,13 @@
-# ATP TestCase Flows — recursive Maestro runs (folder name = logical suite for reporting).
+# ATP TestCase Flows - recursive Maestro runs (folder name = logical suite for reporting).
 # Does not modify existing run_suite_parallel_same_machine.ps1 (Printing / Non-printing unchanged).
 
 param(
     [Parameter(Mandatory = $true)][string]$RepoRoot,
     [string]$AppId = "",
     [string]$ClearState = "true",
-    [string]$MaestroCmd = ""
+    [string]$MaestroCmd = "",
+    # Optional: run only this child folder under "ATP TestCase Flows" (e.g. Camera, SignUp_Login). Empty = all folders.
+    [string]$AtpSubfolder = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -130,25 +132,71 @@ function Get-AtpSuiteId([string]$folderName) {
     return "atp_$t"
 }
 
+function Merge-AtpSuiteLabelsJson {
+    param(
+        [Parameter(Mandatory = $true)][string]$LabelsPath,
+        [Parameter(Mandatory = $true)][hashtable]$NewLabels,
+        [Parameter(Mandatory = $true)][bool]$MergeExisting
+    )
+    $bsDir = Split-Path -Parent $LabelsPath
+    if (-not (Test-Path -LiteralPath $bsDir)) {
+        New-Item -ItemType Directory -Force -Path $bsDir | Out-Null
+    }
+    $h = @{}
+    if ($MergeExisting -and (Test-Path -LiteralPath $LabelsPath)) {
+        try {
+            $o = Get-Content -LiteralPath $LabelsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($null -ne $o) {
+                foreach ($p in $o.PSObject.Properties) {
+                    $h[$p.Name] = [string]$p.Value
+                }
+            }
+        } catch {
+            Write-Host "[ATP] WARN: could not read existing labels JSON, rewriting: $($_.Exception.Message)"
+        }
+    }
+    foreach ($k in $NewLabels.Keys) {
+        $h[$k] = $NewLabels[$k]
+    }
+    $h | ConvertTo-Json -Compress | Set-Content -LiteralPath $LabelsPath -Encoding UTF8
+}
+
 $RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
 $atpRoot = Join-Path $RepoRoot "ATP TestCase Flows"
+$subTrim = if ($null -eq $AtpSubfolder) { "" } else { $AtpSubfolder.Trim() }
+$singleFolderMode = -not [string]::IsNullOrWhiteSpace($subTrim)
 
-Write-Section "ATP TestCase Flows"
+Write-Section $(if ($singleFolderMode) { "ATP TestCase Flows - $subTrim" } else { "ATP TestCase Flows (all folders)" })
 Write-Host "Repo root: $RepoRoot"
 Write-Host "ATP root:  $atpRoot"
+if ($singleFolderMode) { Write-Host "Subfolder: $subTrim" }
 
 if (-not (Test-Path -LiteralPath $atpRoot)) {
-    Write-Host "[ATP] SKIP: folder not found — ATP TestCase Flows"
+    Write-Host "[ATP] SKIP: folder not found - ATP TestCase Flows"
     exit 0
 }
 
-$flowFiles = @(Get-ChildItem -LiteralPath $atpRoot -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object { @('.yaml', '.yml') -contains $_.Extension.ToLowerInvariant() } |
-    Sort-Object FullName)
-
-if (-not $flowFiles -or $flowFiles.Count -eq 0) {
-    Write-Host "[ATP] SKIP: no .yaml/.yml files under ATP TestCase Flows"
-    exit 0
+if ($singleFolderMode) {
+    $folderRoot = Join-Path $atpRoot $subTrim
+    if (-not (Test-Path -LiteralPath $folderRoot)) {
+        Write-Host "[ATP] SKIP: subfolder not found: $subTrim"
+        exit 0
+    }
+    $flowFiles = @(Get-ChildItem -LiteralPath $folderRoot -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { @('.yaml', '.yml') -contains $_.Extension.ToLowerInvariant() } |
+        Sort-Object FullName)
+    if (-not $flowFiles -or $flowFiles.Count -eq 0) {
+        Write-Host "[ATP] SKIP: no .yaml/.yml under ATP TestCase Flows\$subTrim"
+        exit 0
+    }
+} else {
+    $flowFiles = @(Get-ChildItem -LiteralPath $atpRoot -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { @('.yaml', '.yml') -contains $_.Extension.ToLowerInvariant() } |
+        Sort-Object FullName)
+    if (-not $flowFiles -or $flowFiles.Count -eq 0) {
+        Write-Host "[ATP] SKIP: no .yaml/.yml files under ATP TestCase Flows"
+        exit 0
+    }
 }
 
 if ([string]::IsNullOrWhiteSpace($AppId)) {
@@ -158,8 +206,11 @@ if ([string]::IsNullOrWhiteSpace($AppId)) {
 if ([string]::IsNullOrWhiteSpace($ClearState)) { $ClearState = "true" }
 
 Add-AdbFromEnvToPath
-$null = cmd /c "adb start-server 2>nul"
-$null = cmd /c "adb devices 1>nul 2>nul"
+# Avoid cmd.exe redirection inside PowerShell (StreamAlreadyRedirected on some hosts).
+if (Get-Command adb -ErrorAction SilentlyContinue) {
+    try { adb start-server 2>&1 | Out-Null } catch { }
+    try { adb devices 2>&1 | Out-Null } catch { }
+}
 Start-Sleep -Seconds 1
 
 try {
@@ -204,8 +255,8 @@ foreach ($flow in $flowFiles) {
 $bs = Join-Path $RepoRoot "build-summary"
 New-Item -ItemType Directory -Force -Path $bs | Out-Null
 $labelsPath = Join-Path $bs "atp_suite_labels.json"
-$labels | ConvertTo-Json -Compress | Set-Content -LiteralPath $labelsPath -Encoding UTF8
-Write-Host "[ATP] Wrote suite labels: $labelsPath"
+Merge-AtpSuiteLabelsJson -LabelsPath $labelsPath -NewLabels $labels -MergeExisting $singleFolderMode
+Write-Host "[ATP] Updated suite labels: $labelsPath (merge=$singleFolderMode)"
 
 if ($overallFailed) {
     Write-Host "[ATP] Completed with failures."
