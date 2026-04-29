@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Validate that a suite (nonprinting | printing) produced status and/or report artifacts.
+Validate that a suite (nonprinting | printing | atp_*) produced status and/or report artifacts.
 Exit 0 if any expected files exist; exit 1 if the suite had no retrievable output (aligns with Jenkins *no_results.flag).
 """
 from __future__ import annotations
@@ -9,6 +9,11 @@ import sys
 from pathlib import Path
 
 VALID = frozenset({"nonprinting", "printing"})
+
+
+def _is_atp_suite(suite: str) -> bool:
+    """ATP suites use ids like atp_camera, atp_signup_login (see run_atp_testcase_flows.ps1)."""
+    return suite.startswith("atp_") and len(suite) > 4
 
 
 def _collect(
@@ -35,13 +40,16 @@ def _collect(
 def main() -> int:
     if len(sys.argv) != 3:
         print(
-            "Usage: python scripts/validate_suite_artifacts.py <nonprinting|printing> <workspace_root>",
+            "Usage: python scripts/validate_suite_artifacts.py <nonprinting|printing|atp_*> <workspace_root>",
             file=sys.stderr,
         )
         return 2
     suite = sys.argv[1].strip().lower()
-    if suite not in VALID:
-        print(f"Unknown suite: {suite!r} (expected nonprinting|printing)", file=sys.stderr)
+    if suite not in VALID and not _is_atp_suite(suite):
+        print(
+            f"Unknown suite: {suite!r} (expected nonprinting|printing|atp_*)",
+            file=sys.stderr,
+        )
         return 2
     root = Path(sys.argv[2]).resolve()
     n_status, n_csv, n_log = _collect(root, suite)
