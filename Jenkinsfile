@@ -154,7 +154,7 @@ pipeline {
             }
         }
 
-        stage('ATP Camera - flows, validate, Excel') {
+        stage('Camera') {
             when { expression { return params.RUN_ATP_CAMERA } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -170,7 +170,7 @@ pipeline {
             }
         }
 
-        stage('ATP Collage - flows, validate, Excel') {
+        stage('Collage') {
             when { expression { return params.RUN_ATP_COLLAGE } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -186,7 +186,7 @@ pipeline {
             }
         }
 
-        stage('ATP Connection - flows, validate, Excel') {
+        stage('Connection') {
             when { expression { return params.RUN_ATP_CONNECTION } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -202,7 +202,7 @@ pipeline {
             }
         }
 
-        stage('ATP Editing - flows, validate, Excel') {
+        stage('Editing') {
             when { expression { return params.RUN_ATP_EDITING } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -218,7 +218,7 @@ pipeline {
             }
         }
 
-        stage('ATP Onboarding - flows, validate, Excel') {
+        stage('Onboarding') {
             when { expression { return params.RUN_ATP_ONBOARDING } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -234,7 +234,7 @@ pipeline {
             }
         }
 
-        stage('ATP Precut - flows, validate, Excel') {
+        stage('Precut') {
             when { expression { return params.RUN_ATP_PRECUT } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -250,7 +250,7 @@ pipeline {
             }
         }
 
-        stage('ATP Printing - flows, validate, Excel') {
+        stage('Printing') {
             when { expression { return params.RUN_ATP_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -266,7 +266,7 @@ pipeline {
             }
         }
 
-        stage('ATP Settings - flows, validate, Excel') {
+        stage('Settings') {
             when { expression { return params.RUN_ATP_SETTINGS } }
             agent { label params.DEVICES_AGENT }
             steps {
@@ -282,7 +282,7 @@ pipeline {
             }
         }
 
-        stage('ATP SignUp Login - flows, validate, Excel') {
+        stage('SignUp_Login') {
             when { expression { return params.RUN_ATP_SIGNUP_LOGIN } }
             agent { label params.DEVICES_AGENT }
             steps {

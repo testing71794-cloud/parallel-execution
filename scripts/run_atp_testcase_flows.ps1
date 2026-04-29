@@ -46,27 +46,42 @@ function Resolve-MaestroLauncherPath {
 }
 
 function Get-AuthorizedSerialsFromAdb {
-    $out = [System.Collections.Generic.List[string]]::new()
+    # PS 5.1: native stdout can be a single [string] when only one line — foreach would iterate CHARS.
+    # Always split into lines before matching, and use List[string] explicitly.
+    $serialList = New-Object System.Collections.Generic.List[string]
     if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
         throw "adb not on PATH."
     }
-    $raw = & adb devices
+    # Capture stdout/stderr first so $LASTEXITCODE reflects adb (not Out-String).
+    $raw = & adb devices 2>&1
     if ($LASTEXITCODE -ne 0) { throw "adb devices failed (exit $LASTEXITCODE)" }
-    foreach ($line in $raw) {
-        if ($line -match '^(?<s>\S+)\s+device\s*$') { $out.Add($matches['s'].Trim()) }
+    $text = if ($null -eq $raw) {
+        ""
+    } elseif ($raw -is [System.Array]) {
+        ($raw | ForEach-Object { "$_" }) -join "`n"
+    } else {
+        [string]$raw
     }
-    return $out
+    foreach ($line in ($text -split "`r?`n")) {
+        $line = $line.Trim()
+        if ($line -match '^(?<s>\S+)\s+device\s*$') { [void]$serialList.Add([string]$matches['s'].Trim()) }
+    }
+    return $serialList
 }
 
 function Read-DetectedFileSerials([string]$R) {
     $detected = Join-Path $R "detected_devices.txt"
     if (-not (Test-Path -LiteralPath $detected)) { return @() }
-    $lines = Get-Content -LiteralPath $detected -ErrorAction SilentlyContinue |
-        ForEach-Object { $_.Trim() } |
-        Where-Object { $_ -and $_ -notmatch '^(List of devices attached|Devices detected:|Device list saved to:)' }
-    $r = [System.Collections.Generic.List[string]]::new()
-    foreach ($line in $lines) { if ($line -match '^\S+$') { if (-not $r.Contains($line)) { $r.Add($line) } } }
-    return $r
+    # PS 5.1: Get-Content returns a single [string] for a one-line file — foreach would iterate CHARS.
+    $lines = @(Get-Content -LiteralPath $detected -ErrorAction SilentlyContinue | ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -and $_ -notmatch '^(List of devices attached|Devices detected:|Device list saved to:)' })
+    $serialList = New-Object System.Collections.Generic.List[string]
+    foreach ($line in $lines) {
+        if ($line -match '^\S+$') {
+            if (-not $serialList.Contains($line)) { [void]$serialList.Add([string]$line) }
+        }
+    }
+    return $serialList.ToArray()
 }
 
 function Merge-AndPickDevices {
