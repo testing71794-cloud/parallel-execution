@@ -42,7 +42,6 @@ def main() -> int:
             str(out_dir),
             sid,
             lab,
-            "--skip-if-empty",
         ]
         print(f"[ATP Excel] suite={sid!r} label={lab!r}")
         p = subprocess.run(cmd, cwd=str(root))

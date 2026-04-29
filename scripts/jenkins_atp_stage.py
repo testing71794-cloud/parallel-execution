@@ -68,6 +68,8 @@ def cmd_excel(folder: str) -> int:
     (REPO / "build-summary").mkdir(parents=True, exist_ok=True)
     out_dir = REPO / "reports" / f"{sid}_summary"
     py = sys.executable
+    # Do NOT pass --skip-if-empty: failed runs may have no parsable status rows yet we still
+    # must merge into final_execution_report.xlsx (generate_excel_report writes placeholder rows).
     p = subprocess.run(
         [
             py,
@@ -76,7 +78,6 @@ def cmd_excel(folder: str) -> int:
             str(out_dir),
             sid,
             label,
-            "--skip-if-empty",
         ],
         cwd=str(REPO),
     )
