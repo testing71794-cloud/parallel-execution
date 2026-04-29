@@ -1,0 +1,42 @@
+appId: com.kodaksmile
+name: TC_ON_03_Find and connect printer
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Common setup: skip account creation and reach onboarding/home path- runFlow: ../../elements/loadElements.yaml
+
+# Step 2: action=tapOn; target=I'll do it later; input=None; expected=Terms screen appears
+- runFlow: ../../flows/I will do it later.yaml
+- waitForAnimationToEnd
+
+# Step 3: action=tapOn; target=Terms checkbox; input=None; expected=Checkbox selected
+- runFlow: ../../flows/Agree Term and Condition.yaml
+
+# Step 5: action=verify; target=Welcome screen; input=None; expected=Find My Printer and Find My Camera options visible
+- assertVisible: "Welcome"
+- assertVisible: "Which device would you like to connect?"
+- tapOn: "Find My Printer"
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
+- tapOn: "Find My Printer"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- assertVisible: "Search Again"
+
+

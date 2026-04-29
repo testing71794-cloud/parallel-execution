@@ -1,0 +1,69 @@
+appId: com.kodaksmile
+name: TC_SE_07_Quick Tips - Connect printer
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Common setup: skip account creation and reach onboarding/home path
+- runFlow: ../../flows/I will do it later.yaml
+- runFlow: ../../flows/Agree Term and Condition.yaml
+- runFlow: ../../flows/permissionsFlow.yaml
+- runFlow: ../../flows/Onboarding Welcome Screen.yaml
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
+- runFlow: ../../flows/onboardingSkip.yaml
+
+- waitForAnimationToEnd
+- assertVisible: ${output.home.titleText}
+- assertVisible:
+    id: "settingImageView"
+- tapOn:
+    id: "settingImageView"
+
+- waitForAnimationToEnd
+
+# ATP steps for traceability: SE_07 - Quick Tips - Connect printer
+# Step 1: action=tapOn; target=Quick Tips; input=None; expected=Quick Tips page displayed
+- tapOn: "Quick Tips"
+- waitForAnimationToEnd
+
+# Step 2: action=tapOn; target=How to connect my printer; input=None; expected=Printer connection info screen
+- tapOn: "How to connect my printer"
+- waitForAnimationToEnd
+
+# Step 3: action=tapOn; target=Search Again; input=None; expected=Device search initiated
+- tapOn: "Search Again"
+- waitForAnimationToEnd
+
+# Step 4: action=verify; target=Search screen; input=None; expected=Printer search in progress
+# Assert Printer Searching Screen
+
+# Instruction texts
+- assertVisible: "Make sure your \nprinter is turned on"
+
+- assertVisible: "Plug your printer into a power source"
+
+- scrollUntilVisible:
+    element: "Place your printer\nclose to your\nmobile device"
+
+
+# Buttons / Actions
+- assertVisible: "Search Again"
+
+
+- assertVisible: "Contact support"
+
+

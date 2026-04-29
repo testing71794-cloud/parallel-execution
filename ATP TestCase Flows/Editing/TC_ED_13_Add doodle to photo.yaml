@@ -1,0 +1,49 @@
+appId: com.kodaksmile
+name: TC_ED_13_Add doodle to photo
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Common setup: skip account creation and reach onboarding/home path
+- runFlow: ../../flows/I will do it later.yaml
+- runFlow: ../../flows/Agree Term and Condition.yaml
+- runFlow: ../../flows/Onboarding Welcome Screen.yaml
+- runFlow: ../../flows/Swipe to continue.yaml
+- runFlow: ../../flows/permissionsFlow.yaml
+
+- runFlow: ../../flows/openAlbum.yaml
+- runFlow: ../../flows/Edit.yaml
+
+# ATP steps for traceability: ED_13 - Add doodle to photo
+# Step 1: action=executeTestCase; target=ED_01; input=None; expected=Edit mode active
+# TODO: Map ATP action 'executeTestCase' if this step is not already covered by reusable flows.
+
+# Step 2: action=tapOn; target=Doodle; input=None; expected=Doodle tool selected
+- tapOn: "Doodle"
+- waitForAnimationToEnd
+
+# Step 3: action=draw; target=Canvas; input=Draw stroke; expected=Brush stroke appears on canvas
+# TODO: Map ATP action 'draw' if this step is not already covered by reusable flows.
+
+# Step 4: action=tapOn; target=Undo; input=None; expected=Last stroke removed
+- tapOn: "Undo"
+- waitForAnimationToEnd
+
+# Step 5: action=tapOn; target=Color option; input=None; expected=Brush color changed
+- tapOn: "Color option"
+- waitForAnimationToEnd
+
+# Step 6: action=adjustSlider; target=Brush size slider; input=Increase; expected=Brush size increased
+# TODO: Map ATP action 'adjustSlider' if this step is not already covered by reusable flows.
+
+# Step 7: action=draw; target=Canvas; input=Draw thicker stroke; expected=Thicker stroke appears
+# TODO: Map ATP action 'draw' if this step is not already covered by reusable flows.
+
+# Step 8: action=tapOn; target=Done; input=None; expected=Doodle saved on photo
+- tapOn: "Done"
+- waitForAnimationToEnd
+

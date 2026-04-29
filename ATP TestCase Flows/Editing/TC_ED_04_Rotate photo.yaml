@@ -1,0 +1,46 @@
+appId: com.kodaksmile
+name: TC_ED_04_Rotate photo
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Common setup: skip account creation and reach onboarding/home path
+- runFlow: ../../flows/I will do it later.yaml
+- runFlow: ../../flows/Agree Term and Condition.yaml
+- runFlow: ../../flows/Onboarding Welcome Screen.yaml
+- runFlow: ../../flows/Swipe to continue.yaml
+- runFlow: ../../flows/permissionsFlow.yaml
+
+- runFlow: ../../flows/openAlbum.yaml
+- runFlow: ../../flows/Edit.yaml
+
+# ATP steps for traceability: ED_04 - Rotate photo
+# Step 1: action=executeTestCase; target=ED_01; input=None; expected=Edit mode active
+# TODO: Map ATP action 'executeTestCase' if this step is not already covered by reusable flows.
+
+# Step 2: action=tapOn; target=Rotate; input=None; expected=Rotate tool selected
+- tapOn: "Rotate"
+- waitForAnimationToEnd
+
+# Step 3: action=tapOn; target=Left 90; input=None; expected=Photo rotates 90° counter-clockwise
+- tapOn: "Left 90"
+- waitForAnimationToEnd
+
+# Step 4: action=tapOn; target=Right 90; input=None; expected=Photo rotates 90° clockwise
+- tapOn: "Right 90"
+- waitForAnimationToEnd
+
+# Step 5: action=adjustSlider; target=Rotation slider; input=15 degrees; expected=Photo rotates by slider amount
+# TODO: Map ATP action 'adjustSlider' if this step is not already covered by reusable flows.
+
+# Step 6: action=drag; target=Photo canvas; input=Adjust position; expected=Photo position adjusted
+# TODO: Map ATP action 'drag' if this step is not already covered by reusable flows.
+
+# Step 7: action=tapOn; target=Done; input=None; expected=Rotation saved
+- tapOn: "Done"
+- waitForAnimationToEnd
+

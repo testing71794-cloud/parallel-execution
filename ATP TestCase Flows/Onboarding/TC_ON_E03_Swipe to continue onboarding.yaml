@@ -1,0 +1,27 @@
+appId: com.kodaksmile
+name: TC_ON_E03_Swipe to continue onboarding
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Common setup: skip account creation and reach onboarding/home path
+- runFlow: ../../flows/I will do it later.yaml
+- runFlow: ../../flows/Agree Term and Condition.yaml
+- runFlow: ../../flows/Onboarding Welcome Screen.yaml
+- runFlow: ../../flows/Swipe to continue.yaml
+- runFlow: ../../flows/permissionsFlow.yaml
+
+# ATP steps for traceability: ON_E03 - Swipe to continue onboarding
+# Step 1: action=navigateTo; target=Onboarding first screen; input=None; expected=First onboarding screen displayed
+# TODO: Map ATP action 'navigateTo' if this step is not already covered by reusable flows.
+
+# Step 2: action=swipeLeft; target=Onboarding screen; input=None; expected=Next onboarding screen displayed
+# TODO: Map ATP action 'swipeLeft' if this step is not already covered by reusable flows.
+
+# Step 3: action=verify; target=None; input=None; expected=Bluetooth/printer instructions visible
+# TODO: Map ATP action 'verify' if this step is not already covered by reusable flows.
+

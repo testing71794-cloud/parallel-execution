@@ -1,0 +1,105 @@
+TestCaseID,Module,TestCaseTitle,GeneratedFlowPath,StepCount
+SU_01,SignUp_Login,Skip account creation,ATP TestCase Flows/SignUp_Login/TC_SU_01_Skip account creation.yaml,4
+SU_02,SignUp_Login,Create account (valid),ATP TestCase Flows/SignUp_Login/TC_SU_02_Create account (valid).yaml,15
+SU_03,SignUp_Login,Create account - invalid email (no @),ATP TestCase Flows/SignUp_Login/TC_SU_03_Create account - invalid email (no @).yaml,6
+SU_03B,SignUp_Login,Create account - invalid email (no domain),ATP TestCase Flows/SignUp_Login/TC_SU_03B_Create account - invalid email (no domain).yaml,4
+SU_03C,SignUp_Login,Create account - invalid email (spaces),ATP TestCase Flows/SignUp_Login/TC_SU_03C_Create account - invalid email (spaces).yaml,4
+SU_04,SignUp_Login,Create account - password too short,ATP TestCase Flows/SignUp_Login/TC_SU_04_Create account - password too short.yaml,5
+SU_04B,SignUp_Login,Create account - password no uppercase,ATP TestCase Flows/SignUp_Login/TC_SU_04B_Create account - password no uppercase.yaml,4
+SU_04C,SignUp_Login,Create account - password no lowercase,ATP TestCase Flows/SignUp_Login/TC_SU_04C_Create account - password no lowercase.yaml,4
+SU_05,SignUp_Login,Create account - DOB current date,ATP TestCase Flows/SignUp_Login/TC_SU_05_Create account - DOB current date.yaml,3
+SU_05B,SignUp_Login,Create account - DOB future date,ATP TestCase Flows/SignUp_Login/TC_SU_05B_Create account - DOB future date.yaml,3
+SU_E01,SignUp_Login,Create account - empty name,ATP TestCase Flows/SignUp_Login/TC_SU_E01_Create account - empty name.yaml,4
+SU_E02,SignUp_Login,Create account - empty email,ATP TestCase Flows/SignUp_Login/TC_SU_E02_Create account - empty email.yaml,3
+SU_E03,SignUp_Login,Create account - terms unchecked,ATP TestCase Flows/SignUp_Login/TC_SU_E03_Create account - terms unchecked.yaml,4
+SU_06,SignUp_Login,Login with valid credentials,ATP TestCase Flows/SignUp_Login/TC_SU_06_Login with valid credentials.yaml,11
+SU_07,SignUp_Login,Login with wrong password,ATP TestCase Flows/SignUp_Login/TC_SU_07_Login with wrong password.yaml,8
+SU_07B,SignUp_Login,Login with non-existent email,ATP TestCase Flows/SignUp_Login/TC_SU_07B_Login with non-existent email.yaml,5
+SU_08,SignUp_Login,Forgot password flow,ATP TestCase Flows/SignUp_Login/TC_SU_08_Forgot password flow.yaml,16
+ON_01,Onboarding,View welcome screen,ATP TestCase Flows/Onboarding/TC_ON_01_View welcome screen.yaml,5
+ON_02,Onboarding,Skip onboarding,ATP TestCase Flows/Onboarding/TC_ON_02_Skip onboarding.yaml,5
+ON_03,Onboarding,Find and connect printer,ATP TestCase Flows/Onboarding/TC_ON_03_Find and connect printer.yaml,9
+ON_03B,Onboarding,Printer not found,ATP TestCase Flows/Onboarding/TC_ON_03B_Printer not found.yaml,5
+ON_04,Onboarding,Find and connect camera,ATP TestCase Flows/Onboarding/TC_ON_04_Find and connect camera.yaml,7
+ON_05,Onboarding,Print my first picture,ATP TestCase Flows/Onboarding/TC_ON_05_Print my first picture.yaml,7
+ON_05B,Onboarding,Print first picture - empty gallery,ATP TestCase Flows/Onboarding/TC_ON_05B_Print first picture - empty gallery.yaml,3
+ON_06,Onboarding,Go to homepage after connection,ATP TestCase Flows/Onboarding/TC_ON_06_Go to homepage after connection.yaml,6
+ON_07,Onboarding,Take a picture from onboarding,ATP TestCase Flows/Onboarding/TC_ON_07_Take a picture from onboarding.yaml,8
+ON_E01,Onboarding,Back button on onboarding,ATP TestCase Flows/Onboarding/TC_ON_E01_Back button on onboarding.yaml,2
+ON_E02,Onboarding,Bluetooth disabled during search,ATP TestCase Flows/Onboarding/TC_ON_E02_Bluetooth disabled during search.yaml,3
+ON_E03,Onboarding,Swipe to continue onboarding,ATP TestCase Flows/Onboarding/TC_ON_E03_Swipe to continue onboarding.yaml,3
+CO_01,Connection,Connect via onboarding,ATP TestCase Flows/Connection/TC_CO_01_Connect via onboarding.yaml,8
+CO_02,Connection,Connect via gallery,ATP TestCase Flows/Connection/TC_CO_02_Connect via gallery.yaml,5
+CO_03,Connection,Connect via Quick Tips,ATP TestCase Flows/Connection/TC_CO_03_Connect via Quick Tips.yaml,7
+CO_04,Connection,Connect via print preview,ATP TestCase Flows/Connection/TC_CO_04_Connect via print preview.yaml,7
+CO_E01,Connection,Disconnect device,ATP TestCase Flows/Connection/TC_CO_E01_Disconnect device.yaml,5
+CO_E02,Connection,Reconnect after disconnect,ATP TestCase Flows/Connection/TC_CO_E02_Reconnect after disconnect.yaml,4
+CO_E03,Connection,Connection - device out of range,ATP TestCase Flows/Connection/TC_CO_E03_Connection - device out of range.yaml,3
+CO_E04,Connection,Device powered off during use,ATP TestCase Flows/Connection/TC_CO_E04_Device powered off during use.yaml,3
+PR_01,Printing,Print single photo,ATP TestCase Flows/Printing/TC_PR_01_Print single photo.yaml,7
+PR_02,Printing,Print multiple copies,ATP TestCase Flows/Printing/TC_PR_02_Print multiple copies.yaml,8
+PR_03,Printing,Print multiple different photos,ATP TestCase Flows/Printing/TC_PR_03_Print multiple different photos.yaml,8
+PR_04,Printing,Print collage photo,ATP TestCase Flows/Printing/TC_PR_04_Print collage photo.yaml,14
+PR_05,Printing,Print precut - same photo,ATP TestCase Flows/Printing/TC_PR_05_Print precut - same photo.yaml,12
+PR_06,Printing,Print precut - different photos (select one),ATP TestCase Flows/Printing/TC_PR_06_Print precut - different photos (select one).yaml,11
+PR_07,Printing,Print precut - different photos (select two),ATP TestCase Flows/Printing/TC_PR_07_Print precut - different photos (select two).yaml,11
+PR_E01,Printing,Print with no paper,ATP TestCase Flows/Printing/TC_PR_E01_Print with no paper.yaml,5
+PR_E02,Printing,Print during active job,ATP TestCase Flows/Printing/TC_PR_E02_Print during active job.yaml,4
+PR_E03,Printing,Print with paper jam,ATP TestCase Flows/Printing/TC_PR_E03_Print with paper jam.yaml,2
+PR_E04,Printing,Print - printer overheated,ATP TestCase Flows/Printing/TC_PR_E04_Print - printer overheated.yaml,2
+PR_E05,Printing,Cancel print job,ATP TestCase Flows/Printing/TC_PR_E05_Cancel print job.yaml,4
+PR_E06,Printing,Printer disconnects during print,ATP TestCase Flows/Printing/TC_PR_E06_Printer disconnects during print.yaml,5
+ED_01,Editing,Enter edit photo mode,ATP TestCase Flows/Editing/TC_ED_01_Enter edit photo mode.yaml,4
+ED_02,Editing,Apply filter to photo,ATP TestCase Flows/Editing/TC_ED_02_Apply filter to photo.yaml,8
+ED_03,Editing,Edit photo fit/crop,ATP TestCase Flows/Editing/TC_ED_03_Edit photo fit crop.yaml,6
+ED_04,Editing,Rotate photo,ATP TestCase Flows/Editing/TC_ED_04_Rotate photo.yaml,7
+ED_05,Editing,Adjust brightness,ATP TestCase Flows/Editing/TC_ED_05_Adjust brightness.yaml,5
+ED_06,Editing,Adjust contrast,ATP TestCase Flows/Editing/TC_ED_06_Adjust contrast.yaml,5
+ED_07,Editing,Adjust warmth,ATP TestCase Flows/Editing/TC_ED_07_Adjust warmth.yaml,5
+ED_08,Editing,Adjust saturation,ATP TestCase Flows/Editing/TC_ED_08_Adjust saturation.yaml,5
+ED_09,Editing,Adjust highlights,ATP TestCase Flows/Editing/TC_ED_09_Adjust highlights.yaml,5
+ED_10,Editing,Adjust shadows,ATP TestCase Flows/Editing/TC_ED_10_Adjust shadows.yaml,5
+ED_11,Editing,Add stickers to photo,ATP TestCase Flows/Editing/TC_ED_11_Add stickers to photo.yaml,10
+ED_12,Editing,Add text to photo,ATP TestCase Flows/Editing/TC_ED_12_Add text to photo.yaml,12
+ED_13,Editing,Add doodle to photo,ATP TestCase Flows/Editing/TC_ED_13_Add doodle to photo.yaml,8
+ED_14,Editing,Erase doodle from photo,ATP TestCase Flows/Editing/TC_ED_14_Erase doodle from photo.yaml,6
+ED_15,Editing,Add frame to photo,ATP TestCase Flows/Editing/TC_ED_15_Add frame to photo.yaml,7
+ED_16,Editing,Add AR video to photo,ATP TestCase Flows/Editing/TC_ED_16_Add AR video to photo.yaml,7
+ED_17,Editing,Scan AR video on printed photo,ATP TestCase Flows/Editing/TC_ED_17_Scan AR video on printed photo.yaml,6
+ED_E01,Editing,Cancel edit without saving,ATP TestCase Flows/Editing/TC_ED_E01_Cancel edit without saving.yaml,5
+ED_E02,Editing,Multiple edits combined,ATP TestCase Flows/Editing/TC_ED_E02_Multiple edits combined.yaml,7
+ED_E03,Editing,Edit very large image,ATP TestCase Flows/Editing/TC_ED_E03_Edit very large image.yaml,4
+CA_01,Camera,Enter camera mode,ATP TestCase Flows/Camera/TC_CA_01_Enter camera mode.yaml,6
+CA_02,Camera,Capture and print photo,ATP TestCase Flows/Camera/TC_CA_02_Capture and print photo.yaml,7
+CA_03,Camera,Capture selfie photo,ATP TestCase Flows/Camera/TC_CA_03_Capture selfie photo.yaml,5
+CA_04,Camera,Capture photo with flash,ATP TestCase Flows/Camera/TC_CA_04_Capture photo with flash.yaml,10
+CA_05,Camera,Capture photo with filter,ATP TestCase Flows/Camera/TC_CA_05_Capture photo with filter.yaml,6
+CA_06,Camera,Close camera view,ATP TestCase Flows/Camera/TC_CA_06_Close camera view.yaml,3
+CA_07,Camera,AR scan from camera,ATP TestCase Flows/Camera/TC_CA_07_AR scan from camera.yaml,5
+CA_E01,Camera,Camera with permission denied,ATP TestCase Flows/Camera/TC_CA_E01_Camera with permission denied.yaml,3
+CA_E02,Camera,Rapid photo capture,ATP TestCase Flows/Camera/TC_CA_E02_Rapid photo capture.yaml,5
+CA_E03,Camera,Camera with low storage,ATP TestCase Flows/Camera/TC_CA_E03_Camera with low storage.yaml,3
+CA_E04,Camera,Rapid camera switching,ATP TestCase Flows/Camera/TC_CA_E04_Rapid camera switching.yaml,5
+SE_01,Settings,Access Settings page,ATP TestCase Flows/Settings/TC_SE_01_Access Settings page.yaml,3
+SE_02,Settings,View connection status,ATP TestCase Flows/Settings/TC_SE_02_View connection status.yaml,5
+SE_03,Settings,Access Connect screen from settings,ATP TestCase Flows/Settings/TC_SE_03_Access Connect screen from settings.yaml,4
+SE_04,Settings,Access Buy KODAK paper link,ATP TestCase Flows/Settings/TC_SE_04_Access Buy KODAK paper link.yaml,3
+SE_05,Settings,Access Quick Tips,ATP TestCase Flows/Settings/TC_SE_05_Access Quick Tips.yaml,4
+SE_06,Settings,Quick Tips - Welcome to Kodak Smile,ATP TestCase Flows/Settings/TC_SE_06_Quick Tips - Welcome to Kodak Smile.yaml,4
+SE_07,Settings,Quick Tips - Connect printer,ATP TestCase Flows/Settings/TC_SE_07_Quick Tips - Connect printer.yaml,5
+SE_08,Settings,Quick Tips - Close printer connection,ATP TestCase Flows/Settings/TC_SE_08_Quick Tips - Close printer connection.yaml,4
+SE_09,Settings,Quick Tips - Load paper (Printer),ATP TestCase Flows/Settings/TC_SE_09_Quick Tips - Load paper (Printer).yaml,5
+SE_10,Settings,Quick Tips - Connect camera,ATP TestCase Flows/Settings/TC_SE_10_Quick Tips - Connect camera.yaml,4
+SE_11,Settings,Quick Tips - Close camera connection,ATP TestCase Flows/Settings/TC_SE_11_Quick Tips - Close camera connection.yaml,4
+SE_12,Settings,Quick Tips - Load paper (Camera),ATP TestCase Flows/Settings/TC_SE_12_Quick Tips - Load paper (Camera).yaml,5
+SE_13,Settings,Access Support email,ATP TestCase Flows/Settings/TC_SE_13_Access Support email.yaml,4
+SE_14,Settings,Access Legal/Privacy Policy,ATP TestCase Flows/Settings/TC_SE_14_Access Legal Privacy Policy.yaml,3
+SE_15,Settings,Access About Us,ATP TestCase Flows/Settings/TC_SE_15_Access About Us.yaml,4
+SE_16,Settings,Access Social Accounts,ATP TestCase Flows/Settings/TC_SE_16_Access Social Accounts.yaml,3
+SE_17,Settings,Facebook Sign In,ATP TestCase Flows/Settings/TC_SE_17_Facebook Sign In.yaml,9
+SE_18,Settings,Facebook Sign Out,ATP TestCase Flows/Settings/TC_SE_18_Facebook Sign Out.yaml,5
+SE_19,Settings,Return from Social Accounts,ATP TestCase Flows/Settings/TC_SE_19_Return from Social Accounts.yaml,3
+SE_20,Settings,Access Sign Up from Settings,ATP TestCase Flows/Settings/TC_SE_20_Access Sign Up from Settings.yaml,3
+SE_21,Settings,Display App Version,ATP TestCase Flows/Settings/TC_SE_21_Display App Version.yaml,2
+SE_E01,Settings,Settings - No network connection,ATP TestCase Flows/Settings/TC_SE_E01_Settings - No network connection.yaml,3
+SE_E02,Settings,Facebook login cancelled,ATP TestCase Flows/Settings/TC_SE_E02_Facebook login cancelled.yaml,4

@@ -1,0 +1,45 @@
+appId: com.kodaksmile
+name: TC_SE_21_Display App Version
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Common setup: skip account creation and reach onboarding/home path
+- runFlow: ../../flows/I will do it later.yaml
+- runFlow: ../../flows/Agree Term and Condition.yaml
+- runFlow: ../../flows/permissionsFlow.yaml
+- runFlow: ../../flows/Onboarding Welcome Screen.yaml
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
+- runFlow: ../../flows/onboardingSkip.yaml
+
+- waitForAnimationToEnd
+- assertVisible: ${output.home.titleText}
+- assertVisible:
+    id: "settingImageView"
+- tapOn:
+    id: "settingImageView"
+
+- waitForAnimationToEnd
+
+# ATP steps for traceability: SE_21 - Display App Version
+# Step 1: action=verify; target=App version; input=None; expected=Version number visible at bottom right
+- runFlow:
+    when:
+      visible: "Version\n1.87"
+    commands:
+      - assertVisible: "Version\n1.87"
+

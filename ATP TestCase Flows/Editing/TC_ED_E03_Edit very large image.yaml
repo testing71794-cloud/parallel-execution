@@ -1,0 +1,35 @@
+appId: com.kodaksmile
+name: TC_ED_E03_Edit very large image
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Common setup: skip account creation and reach onboarding/home path
+- runFlow: ../../flows/I will do it later.yaml
+- runFlow: ../../flows/Agree Term and Condition.yaml
+- runFlow: ../../flows/Onboarding Welcome Screen.yaml
+- runFlow: ../../flows/Swipe to continue.yaml
+- runFlow: ../../flows/permissionsFlow.yaml
+
+- runFlow: ../../flows/openAlbum.yaml
+- runFlow: ../../flows/Edit.yaml
+
+# ATP steps for traceability: ED_E03 - Edit very large image
+# Step 1: action=precondition; target=None; input=High-res photo (4K+); expected=Large image in gallery
+# Precondition: High-res photo (4K+)
+
+# Step 2: action=tapOn; target=Large photo; input=None; expected=Photo loads (may take time)
+- tapOn: "Large photo"
+- waitForAnimationToEnd
+
+# Step 3: action=tapOn; target=Edit; input=None; expected=Edit mode opens without crash
+- tapOn: "Edit"
+- waitForAnimationToEnd
+
+# Step 4: action=applyEdit; target=Any tool; input=None; expected=Edit applies without crash
+# TODO: Map ATP action 'applyEdit' if this step is not already covered by reusable flows.
+

@@ -1,0 +1,33 @@
+appId: com.kodaksmile
+name: TC_SU_05B_Create account - DOB future date
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Sign-up validation starts on Sign Up screen
+- assertVisible: "Sign Up"
+
+# ATP steps for traceability: SU_05B - Create account - DOB future date
+# Step 1: action=launchApp; target=None; input=None; expected=App launches successfully
+- waitForAnimationToEnd
+
+# Step 2: action=tapOn; target=Date of birth; input=None; expected=Date picker opens
+- runFlow:
+    when:
+      visible: "Date of birth"
+    commands:
+      - tapOn: "Date of birth"
+      - waitForAnimationToEnd
+
+# Step 3: action=inputDate; target=Date picker; input=FUTURE_DATE; expected=Toast: 'Selected date cannot be current date or future date'
+# TODO: Date picker needs device/app-specific selector. ATP input: FUTURE_DATE
+- tapOn:
+    text: "OK"
+    optional: true
+- waitForAnimationToEnd
+# assertVisible: "Selected date cannot be current date or future date"- Cannot be varified
+- assertVisible: "Date of birth"

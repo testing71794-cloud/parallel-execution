@@ -50,6 +50,7 @@ pipeline {
         string(name: 'JAVA_HOME_OVERRIDE', defaultValue: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8', description: 'JDK for Maestro (MAESTRO_JAVA_HOME/JAVA_HOME). Default is jbr-17.0.8.')
         booleanParam(name: 'RUN_NON_PRINTING', defaultValue: true, description: 'Run non-printing flows')
         booleanParam(name: 'RUN_PRINTING', defaultValue: true, description: 'Run printing flows')
+        booleanParam(name: 'RUN_ATP_TESTCASES', defaultValue: true, description: 'Run ATP TestCase Flows (recursive yaml under ATP TestCase Flows/)')
         booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Test OpenRouter + run intelligent_platform failure analysis')
         booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send final summary email')
         booleanParam(name: 'CLEAR_STATE', defaultValue: true, description: 'Clear app state in suite runners')
@@ -64,11 +65,13 @@ pipeline {
     options {
         disableConcurrentBuilds()
         skipDefaultCheckout(true)
-        preserveStashes(buildCount: 5)
+        // Keep stash copies low: full repo stashes are large; excludes shrink controller disk use.
+        preserveStashes(buildCount: 2)
         buildDiscarder(
             logRotator(
                 numToKeepStr: '10',
-                artifactNumToKeepStr: '5',
+                // Fewer archived copies of execution_logs.zip / screenshots / Excel on Jenkins home disk.
+                artifactNumToKeepStr: '3',
             )
         )
         timeout(time: 180, unit: 'MINUTES')
@@ -92,7 +95,8 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     deleteDir()
                     checkout scm
-                    stash name: 'repo', includes: '**/*', useDefaultExcludes: false
+                    // Stash sources only: exclude .git, deps, workspace screenshots (.maestro), generated dirs (docs/disk_cleanup_guide.md).
+                    stash name: 'repo', includes: '**/*', excludes: '**/.git/**,**/node_modules/**,**/.maestro/**,**/reports/**,**/build-summary/**,**/status/**,**/logs/**,**/collected-artifacts/**,**/test-results/**,**/maestro-report/**,**/*.zip', useDefaultExcludes: false
                 }
             }
         }
@@ -105,7 +109,8 @@ pipeline {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    call scripts\\cleanup_c_drive_generated_files.bat PRE "%WORKSPACE%"
+                    echo === SAFE DISK CLEANUP PRE ===
+                    call scripts\\safe_disk_cleanup.bat PRE "%WORKSPACE%"
                     python -m pip install --upgrade pip || (echo 1> install_failed.flag & exit /b 1)
                     python -m pip install -r scripts/requirements-python.txt || (echo 1> install_failed.flag & exit /b 1)
                     if exist package.json (
@@ -308,6 +313,59 @@ pipeline {
             }
         }
 
+        stage('Run ATP TestCase Flows') {
+            when { expression { return params.RUN_ATP_TESTCASES } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        def envList = []
+                        def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+                        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+                        envList << "JAVA_HOME=${maestroJava}"
+                        envList << "PATH+JAVA=${maestroJava}\\bin"
+                        if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+                        if (params.ANDROID_HOME?.trim()) {
+                            envList << "ANDROID_HOME=${params.ANDROID_HOME}"
+                            envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
+                            envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
+                        }
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            withEnv(envList) {
+                                bat """
+                                cd /d "${env.WORKSPACE}"
+                                echo === RUN ATP TESTCASE FLOWS ===
+                                call scripts/run_atp_testcase_flows.bat "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" || (echo 1> atp_failed.flag)
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Generate ATP TestCase Excel Reports') {
+            when { expression { return params.RUN_ATP_TESTCASES } }
+            agent { label params.DEVICES_AGENT }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
+                            bat """
+                            cd /d "${env.WORKSPACE}"
+                            echo === GENERATE ATP TESTCASE EXCEL REPORTS ===
+                            if exist build-summary\\atp_suite_labels.json (
+                                python scripts/generate_atp_excel_reports.py . || (echo 1> atp_report_failed.flag)
+                            ) else (
+                                echo [ATP Excel] No atp_suite_labels.json — ATP had no flows or was skipped. OK.
+                            )
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Test AI Connection') {
             when { expression { return params.RUN_AI_ANALYSIS } }
             agent { label params.DEVICES_AGENT }
@@ -427,6 +485,7 @@ pipeline {
                     def unstableFlags = [
                         'nonprinting_failed.flag', 'nonprinting_no_results.flag', 'nonprinting_report_failed.flag',
                         'printing_failed.flag', 'printing_no_results.flag', 'printing_report_failed.flag',
+                        'atp_failed.flag', 'atp_report_failed.flag',
                         'summary_failed.flag', 'ai_failed.flag', 'email_failed.flag', 'pipeline_failed.flag',
                     ]
                     def u = false
@@ -442,13 +501,17 @@ pipeline {
             }
         }
 
+        // Runs after archiveArtifacts: frees agent workspace only (Jenkins archived builds unchanged).
         stage('Post-build workspace cleanup (C: agent disk)') {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     bat """
                     cd /d "${env.WORKSPACE}"
-                    call scripts\\cleanup_c_drive_generated_files.bat POST "%WORKSPACE%"
+                    echo === SAFE DISK CLEANUP POST ===
+                    call scripts\\safe_disk_cleanup.bat POST "%WORKSPACE%"
+                    echo === DISK USAGE REPORT ===
+                    call scripts\\safe_disk_cleanup.bat REPORT "%WORKSPACE%"
                     """
                 }
             }

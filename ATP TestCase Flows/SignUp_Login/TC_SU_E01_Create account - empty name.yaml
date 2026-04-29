@@ -1,0 +1,60 @@
+appId: com.kodaksmile
+name: TC_SU_E01_Create account - empty name
+env:
+  FULL_NAME: ${FULL_NAME || "Nitesh"}
+  EMAIL: ${EMAIL || "kodak_" + String(Date.now()) + "_" + String(Math.floor(Math.random() * 1000000000)) + "@test.com"}
+  PASSWORD: ${PASSWORD || "252546Nm" + String.fromCharCode(35)}
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Sign-up validation starts on Sign Up screen
+- assertVisible: "Sign Up"
+
+# ATP steps for traceability: SU_02 - Create account (valid)
+# Step 1: action=launchApp; target=None; input=None; expected=App launches successfully
+- waitForAnimationToEnd
+
+# Step 2: action=tapOn; target=Full Name; input=None; expected=Cursor appears in Full Name field
+- tapOn: "Full Name"
+- waitForAnimationToEnd
+
+# Step 4: action=tapOn; target=Email; input=None; expected=Cursor appears in Email field
+- tapOn: "Email"
+- inputText: "${EMAIL}"
+- waitForAnimationToEnd
+- hideKeyboard:
+    optional: true
+
+# Step 7: action=inputText; target=Password; input=Password123; expected=Password is entered (masked)
+- tapOn: "Password"
+- inputText: "Password123"
+- hideKeyboard:
+    optional: true
+- waitForAnimationToEnd
+
+# Step 8: action=tapOn; target=Date of birth; input=None; expected=Date picker opens
+- tapOn: "Date of birth"
+
+# Year selection
+- tapOn: "2026"
+- scrollUntilVisible:
+    element: "1996"
+    direction: UP
+- tapOn: "1996"
+
+# Confirm DOB
+- tapOn: "OK"
+
+# Step 10: action=tapOn; target=Terms & Conditions checkbox; input=None; expected=Checkbox is selected
+# Terms & Create Account
+- tapOn:
+    id: checkboxTermsCondition
+# Step 4: action=tapOn; target=Create Account; input=None; expected=Error: 'Please enter a valid fullname'
+- assertVisible: "Please enter a valid fullname"
+- waitForAnimationToEnd
+

@@ -1,0 +1,43 @@
+appId: com.kodaksmile
+name: TC_SU_07B_Login with non-existent email
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Navigate to login/forgot password area from signup screen
+- assertVisible: "Sign Up"
+- tapOn: "Log In"
+- waitForAnimationToEnd
+
+# ATP steps for traceability: SU_07B - Login with non-existent email
+# Step 1: action=launchApp; target=None; input=None; expected=App launches successfully
+- waitForAnimationToEnd
+
+# Step 2: action=tapOn; target=Log in; input=None; expected=Login screen appears
+- tapOn: "Log in"
+- waitForAnimationToEnd
+
+# Step 3: action=inputText; target=Email; input=nonexistent@email.com; expected=Email is entered
+- tapOn: "Email"
+- inputText: "nonexistent@email.com"
+- waitForAnimationToEnd
+
+# Step 4: action=inputText; target=Password; input=AnyPassword123; expected=Password is entered
+- tapOn: "Password"
+- inputText: "AnyPassword123"
+- waitForAnimationToEnd
+- hideKeyboard
+# Step 5: action=tapOn; target=Log in; input=None; expected=Pop-up: 'Invalid email or password'
+- tapOn: "Login"
+- waitForAnimationToEnd
+# Step 8: action=tapOn; target=OK; input=None; expected=Pop-up dismissed, login screen shown
+- tapOn: "OK"
+- waitForAnimationToEnd
+- assertVisible: "nonexistent@email.com"
+
+
+

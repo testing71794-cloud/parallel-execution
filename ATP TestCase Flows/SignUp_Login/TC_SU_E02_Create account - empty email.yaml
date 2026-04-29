@@ -1,0 +1,37 @@
+appId: com.kodaksmile
+name: TC_SU_E02_Create account - empty email
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Sign-up validation starts on Sign Up screen
+- assertVisible: "Sign Up"
+
+# ATP steps for traceability: SU_E02 - Create account - empty email
+# Step 1: action=launchApp; target=None; input=None; expected=App launches successfully
+- waitForAnimationToEnd
+
+# Step 2: action=inputText; target=Full Name; input=Test User; expected=Name is entered
+- tapOn: "Full Name"
+- inputText: "Test User"
+- waitForAnimationToEnd
+- hideKeyboard
+# Step 4: action=tapOn; target=Email; input=None; expected=Cursor appears in Email field
+- tapOn: "Email"
+- waitForAnimationToEnd
+- hideKeyboard:
+    optional: true
+
+# Step 7: action=inputText; target=Password; input=Password123; expected=Password is entered (masked)
+- tapOn: "Password"
+- inputText: "Password123"
+- hideKeyboard:
+    optional: true
+- waitForAnimationToEnd
+
+# Step 3: action=tapOn; target=Create Account; input=None; expected=Error: 'Please enter valid email'
+- assertVisible: "Please enter valid email"

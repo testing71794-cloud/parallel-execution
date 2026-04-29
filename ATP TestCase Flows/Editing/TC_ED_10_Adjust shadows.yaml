@@ -1,0 +1,38 @@
+appId: com.kodaksmile
+name: TC_ED_10_Adjust shadows
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Common setup: skip account creation and reach onboarding/home path
+- runFlow: ../../flows/I will do it later.yaml
+- runFlow: ../../flows/Agree Term and Condition.yaml
+- runFlow: ../../flows/Onboarding Welcome Screen.yaml
+- runFlow: ../../flows/Swipe to continue.yaml
+- runFlow: ../../flows/permissionsFlow.yaml
+
+- runFlow: ../../flows/openAlbum.yaml
+- runFlow: ../../flows/Edit.yaml
+
+# ATP steps for traceability: ED_10 - Adjust shadows
+# Step 1: action=executeTestCase; target=ED_01; input=None; expected=Edit mode active
+# TODO: Map ATP action 'executeTestCase' if this step is not already covered by reusable flows.
+
+# Step 2: action=tapOn; target=Shadows; input=None; expected=Shadows tool selected
+- tapOn: "Shadows"
+- waitForAnimationToEnd
+
+# Step 3: action=adjustSlider; target=Shadows slider; input=Increase (right); expected=Dark areas become lighter
+# TODO: Map ATP action 'adjustSlider' if this step is not already covered by reusable flows.
+
+# Step 4: action=adjustSlider; target=Shadows slider; input=Decrease (left); expected=Dark areas become darker
+# TODO: Map ATP action 'adjustSlider' if this step is not already covered by reusable flows.
+
+# Step 5: action=tapOn; target=Done; input=None; expected=Shadows adjustment saved
+- tapOn: "Done"
+- waitForAnimationToEnd
+

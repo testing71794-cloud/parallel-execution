@@ -206,6 +206,17 @@ if "!RUN_EXIT!"=="0" (
 goto :after_flow1b_maestro
 
 :run_maestro_default
+REM TC_ON_E02_* : Bluetooth must be off before the flow — Maestro YAML cannot invoke adb (sandboxed JS).
+echo "%FLOW_NAME%" | findstr /I /C:"TC_ON_E02" >nul 2>&1
+if errorlevel 1 goto :skip_bt_off_for_on_e02
+echo [INFO] Flow %FLOW_NAME% - disabling Bluetooth via adb before Maestro ^(TC_ON_E02^)>> "%LOG_FILE%"
+adb -s "%DEVICE_ID%" shell cmd bluetooth_manager disable >> "%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    adb -s "%DEVICE_ID%" shell svc bluetooth disable >> "%LOG_FILE%" 2>&1
+)
+echo [INFO] Bluetooth disable attempted for TC_ON_E02>> "%LOG_FILE%"
+:skip_bt_off_for_on_e02
+
 set "MAESTRO_ARGS=--device "%DEVICE_ID%" test "%FLOW_PATH%""
 if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
 

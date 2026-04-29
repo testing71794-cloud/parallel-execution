@@ -1,0 +1,51 @@
+appId: com.kodaksmile
+name: TC_SE_16_Access Social Accounts
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
+- runFlow: ../../elements/loadElements.yaml
+
+# Common setup: skip account creation and reach onboarding/home path
+- runFlow: ../../flows/I will do it later.yaml
+- runFlow: ../../flows/Agree Term and Condition.yaml
+- runFlow: ../../flows/permissionsFlow.yaml
+- runFlow: ../../flows/Onboarding Welcome Screen.yaml
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
+- runFlow: ../../flows/onboardingSkip.yaml
+
+- waitForAnimationToEnd
+- assertVisible: ${output.home.titleText}
+- assertVisible:
+    id: "settingImageView"
+- tapOn:
+    id: "settingImageView"
+
+- waitForAnimationToEnd
+
+# ATP steps for traceability: SE_16 - Access Social Accounts
+# Step 1: action=tapOn; target=Social Accounts; input=None; expected=Social Accounts screen displayed
+- tapOn: "Social Accounts"
+- waitForAnimationToEnd
+
+# Step 2: action=verify; target=Social options; input=None; expected=Facebook sign in option visible
+- assertVisible: "Social Accounts"
+- assertVisible: "FACEBOOK"
+- assertVisible: "Sign in"
+
+
+
+
+

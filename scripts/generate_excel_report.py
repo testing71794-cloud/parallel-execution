@@ -458,18 +458,29 @@ def write_csv(path: Path, rows: list[dict], only_status: str | None = None):
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
-        print("Usage: python scripts/generate_excel_report.py <status_dir> <output_dir> <suite_name>")
+    argv = [a for a in sys.argv[1:] if a]
+    skip_if_empty = "--skip-if-empty" in argv
+    argv = [a for a in argv if a != "--skip-if-empty"]
+    if len(argv) < 3:
+        print(
+            "Usage: python scripts/generate_excel_report.py <status_dir> <output_dir> <suite_name> [suite_label] [--skip-if-empty]",
+        )
         return 1
 
-    status_dir = Path(sys.argv[1]).resolve()
-    output_dir = Path(sys.argv[2]).resolve()
-    suite_name = sys.argv[3].strip().lower()
-    suite_label = sys.argv[3].strip()
+    status_dir = Path(argv[0]).resolve()
+    output_dir = Path(argv[1]).resolve()
+    suite_name = argv[2].strip().lower()
+    suite_label = argv[3].strip() if len(argv) > 3 else argv[2].strip()
 
     output_dir.mkdir(parents=True, exist_ok=True)
     use_or = _ai_use_openrouter()
     results = load_results(status_dir, suite_name)
+
+    if not results and skip_if_empty:
+        print(
+            f"[generate_excel_report] Skip: no completed status rows for suite '{suite_name}' (--skip-if-empty).",
+        )
+        return 0
 
     if not results:
         print(
