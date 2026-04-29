@@ -4,11 +4,23 @@ name: TC_PR_03_Print multiple different photos
 - launchApp:
     clearState: true
 - waitForAnimationToEnd
+
+# Load shared identifiers. This file must exist in ../../elements.
 - runFlow: ../../elements/loadElements.yaml
+
+# Common setup: skip account creation and reach onboarding/home path- runFlow: ../../elements/loadElements.yaml
+
+# Step 2: action=tapOn; target=I'll do it later; input=None; expected=Terms screen appears
 - runFlow: ../../flows/I will do it later.yaml
+- waitForAnimationToEnd
+
+# Step 3: action=tapOn; target=Terms checkbox; input=None; expected=Checkbox selected
 - runFlow: ../../flows/Agree Term and Condition.yaml
-- runFlow: ../../flows/permissionsFlow.yaml
-- runFlow: ../../flows/Onboarding Welcome Screen.yaml
+
+# Step 5: action=verify; target=Welcome screen; input=None; expected=Find My Printer and Find My Camera options visible
+- assertVisible: "Welcome"
+- assertVisible: "Which device would you like to connect?"
+- tapOn: "Find My Camera"
 - runFlow:
     when:
       visible: "Swipe to continue"
@@ -20,24 +32,70 @@ name: TC_PR_03_Print multiple different photos
           start: "75%,55%"
           end: "15%,45%"
       - waitForAnimationToEnd
-- runFlow: ../../flows/onboardingSkip.yaml
-- assertVisible: ${output.home.titleText}
-- runFlow: ../../flows/findAndConnectPrinter.yaml
-- runFlow: ../../flows/openAlbum.yaml
-- runFlow: ../../flows/selectThreePhotos.yaml
-- runFlow: ../../flows/printTap.yaml
-- repeat:
-    times: 25
-    commands:
-      - runFlow:
-          when:
-            notVisible: "Print Successful"
-          commands:
-            - runFlow: ../../flows/waitForPrinting.yaml
-            - waitForAnimationToEnd
+- tapOn: "Skip"
+- waitForAnimationToEnd
+# Step 6: action=verify; target=Gallery page; input=None; expected=Gallery/home page displayed
+- assertVisible: "KODAK SMILE"
+- assertVisible: "Connect"
+- assertVisible: "Disconnected"
+- assertVisible:
+    id: "cameraImageView"
 - runFlow:
     when:
-      visible: "All Photos"
+      visible:
+        text: "Connect"
     commands:
-      - assertVisible: "All Photos"
+      - tapOn:
+          text: "Connect"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible:
+        text: "Connect"
+    commands:
+      - tapOn:
+          text: "Connect"
+- tapOn:
+    id: "imageViewGallery"
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      notVisible: "Select Items"
+    commands:
+      - tapOn:
+          id: textViewSelect
       - waitForAnimationToEnd
+- assertVisible: "Select Items"
+- assertVisible: "Collage"
+- waitForAnimationToEnd
+- tapOn:
+    id: imageViewPhoto
+    index: 0
+- waitForAnimationToEnd
+- tapOn:
+    id: imageViewPhoto
+    index: 1
+- waitForAnimationToEnd
+- tapOn:
+    id: imageViewPhoto
+    index: 2
+- waitForAnimationToEnd
+- tapOn: "Print"
+- tapOn:
+    id: "layoutPrinter"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
