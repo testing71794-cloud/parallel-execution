@@ -1,0 +1,77 @@
+appId: com.kodaksmile
+name: TC_COL_17_No_Image_Selected
+---
+# Complete journey: launch -> home -> All Photos -> Select mode -> Collage with zero photos.
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- runFlow: ../../elements/loadElements.yaml
+- waitForAnimationToEnd
+- runFlow: ../../flows/I will do it later.yaml
+- waitForAnimationToEnd
+- runFlow: ../../flows/Agree Term and Condition.yaml
+- waitForAnimationToEnd
+- runFlow: ../../flows/permissionsFlow.yaml
+- waitForAnimationToEnd
+- runFlow: ../../flows/Onboarding Welcome Screen.yaml
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
+- runFlow: ../../flows/onboardingSkip.yaml
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Go to homepage"
+    commands:
+      - tapOn: "Go to homepage"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "KODAK SMILE"
+    timeout: 25000
+- assertVisible: "KODAK SMILE"
+- assertVisible: ${output.home.titleText}
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Allow KODAK SMILE to access photos"
+    commands:
+      - tapOn: "Allow"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Photos Access Required"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+- tapOn: "All Photos"
+- waitForAnimationToEnd
+- assertVisible: "All Photos"
+- assertVisible: "Select"
+- runFlow:
+    when:
+      visible: "Select"
+    commands:
+      - tapOn: "Select"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      notVisible: "Select Items"
+    commands:
+      - tapOn:
+          id: textViewSelect
+      - waitForAnimationToEnd
+- assertVisible: "Select Items"
+- assertVisible: "Collage"
+- waitForAnimationToEnd
+- tapOn: "Collage"
+- waitForAnimationToEnd
+- assertVisible: "Select atleast one image for collage"

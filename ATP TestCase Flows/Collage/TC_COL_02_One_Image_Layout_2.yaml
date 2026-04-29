@@ -1,0 +1,106 @@
+appId: com.kodaksmile
+name: TC_COL_02_One_Image_Layout_2
+---
+# Complete journey: cold launch -> home -> All Photos -> select 1 photo(s) -> Collage -> layout 2 -> Adjust Layout -> Save.
+# Assumes footer on Select Layout reads "N Items selected" for N>1; adjust if the app differs.
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- runFlow: ../../elements/loadElements.yaml
+- waitForAnimationToEnd
+- runFlow: ../../flows/I will do it later.yaml
+- waitForAnimationToEnd
+- runFlow: ../../flows/Agree Term and Condition.yaml
+- waitForAnimationToEnd
+- runFlow: ../../flows/permissionsFlow.yaml
+- waitForAnimationToEnd
+- runFlow: ../../flows/Onboarding Welcome Screen.yaml
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
+- runFlow: ../../flows/onboardingSkip.yaml
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Go to homepage"
+    commands:
+      - tapOn: "Go to homepage"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "KODAK SMILE"
+    timeout: 25000
+- assertVisible: "KODAK SMILE"
+- assertVisible: ${output.home.titleText}
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Allow KODAK SMILE to access photos"
+    commands:
+      - tapOn: "Allow"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Photos Access Required"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+- tapOn: "All Photos"
+- waitForAnimationToEnd
+- assertVisible: "All Photos"
+- assertVisible: "Select"
+- runFlow:
+    when:
+      visible: "Select"
+    commands:
+      - tapOn: "Select"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      notVisible: "Select Items"
+    commands:
+      - tapOn:
+          id: textViewSelect
+      - waitForAnimationToEnd
+- assertVisible: "Select Items"
+- assertVisible: "Collage"
+- waitForAnimationToEnd
+- tapOn:
+    id: imageViewPhoto
+    index: 0
+- waitForAnimationToEnd
+- tapOn: "Collage"
+- waitForAnimationToEnd
+- assertVisible: "Select Layout"
+- assertVisible: "1 Item selected"
+# Collage layout slot 2 (resource id layoutTwoVImage2).
+- tapOn:
+    id: "layoutTwoVImage2"
+- waitForAnimationToEnd
+- assertVisible: "Select Layout"
+- assertVisible: "Next"
+- assertVisible: "1 Item selected"
+- tapOn: "Next"
+- waitForAnimationToEnd
+- assertVisible: "Adjust Layout"
+- assertVisible: "Replace Image"
+- assertVisible: "Save"
+- waitForAnimationToEnd
+- tapOn: "Save"
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Save Photo?"
+    commands:
+      - tapOn: "Save"
+      - waitForAnimationToEnd
+- assertVisible: "KODAK SMILE"
+- assertVisible: "All Photos"

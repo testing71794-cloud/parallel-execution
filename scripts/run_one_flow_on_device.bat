@@ -92,6 +92,7 @@ echo. >> "%LOG_FILE%"
 set "RUN_EXIT=0"
 set "STATUS_VALUE=PASS"
 set "REASON=OK"
+set "MAESTRO_DEVICE_RETRY_USED=0"
 
 if not exist "%FLOW_PATH%" (
     echo ERROR: Flow file not found: %FLOW_PATH%>> "%LOG_FILE%"
@@ -101,14 +102,34 @@ if not exist "%FLOW_PATH%" (
     goto :write_result
 )
 
-adb -s "%DEVICE_ID%" get-state >> "%LOG_FILE%" 2>&1
-if errorlevel 1 (
-    echo ERROR: Device not ready: %DEVICE_ID%>> "%LOG_FILE%"
+REM ---- ADB: ensure server is up (mitigates stale Jenkins adb on Windows) ----
+adb start-server >> "%LOG_FILE%" 2>&1
+
+REM ---- Wait until device reports get-state=device (Jenkins parallel / USB flake) ----
+REM Override: set ADB_DEVICE_WAIT_ATTEMPTS=30 (default 60) x ADB_DEVICE_WAIT_SECS=2 (default 2) ~= 120s max
+if not defined ADB_DEVICE_WAIT_ATTEMPTS set "ADB_DEVICE_WAIT_ATTEMPTS=60"
+if not defined ADB_DEVICE_WAIT_SECS set "ADB_DEVICE_WAIT_SECS=2"
+echo [INFO] Waiting for ADB device %DEVICE_ID% ^(up to %ADB_DEVICE_WAIT_ATTEMPTS% x %ADB_DEVICE_WAIT_SECS%s^)...>> "%LOG_FILE%"
+set /a "_ADB_W=0"
+:adb_wait_device_loop
+set /a "_ADB_W+=1"
+if !_ADB_W! GTR %ADB_DEVICE_WAIT_ATTEMPTS% (
+    echo ERROR: Device not ready after wait: %DEVICE_ID%>> "%LOG_FILE%"
     set "RUN_EXIT=22"
     set "STATUS_VALUE=FAIL"
     set "REASON=DEVICE_NOT_READY"
     goto :write_result
 )
+set "_ADB_STATE="
+for /f "delims=" %%S in ('adb -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _ADB_STATE set "_ADB_STATE=%%S"
+if /I "!_ADB_STATE!"=="device" (
+    echo [INFO] Device %DEVICE_ID% online ^(get-state=device^) after !_ADB_W! attempt(s)>> "%LOG_FILE%"
+    goto :adb_wait_device_done
+)
+echo [WARN] Device %DEVICE_ID% state=!_ADB_STATE! attempt !_ADB_W!/%ADB_DEVICE_WAIT_ATTEMPTS%>> "%LOG_FILE%"
+timeout /t %ADB_DEVICE_WAIT_SECS% /nobreak >nul
+goto :adb_wait_device_loop
+:adb_wait_device_done
 
 echo.>> "%LOG_FILE%"
 echo [INFO] Device %DEVICE_ID% - checking autofill service>> "%LOG_FILE%"
@@ -224,12 +245,64 @@ echo Starting Maestro test...>> "%LOG_FILE%"
 echo Command: call "%MAESTRO_BIN%" !MAESTRO_ARGS!>> "%LOG_FILE%"
 echo. >> "%LOG_FILE%"
 
+REM ---- Default flows: require device online immediately before Maestro; one rerun if ADB drops mid-run (Jenkins logs: device not found / transport) ----
+set "MAESTRO_DEVICE_RETRY_USED=0"
+:maestro_default_attempt
+echo [INFO] ADB get-state before Maestro ^(retry_used=!MAESTRO_DEVICE_RETRY_USED!^)...>> "%LOG_FILE%"
+set /a "_PREM=0"
+:pre_maestro_adb
+set /a "_PREM+=1"
+if !_PREM! GTR 20 (
+    echo ERROR: Device not online before Maestro after 20s: %DEVICE_ID%>> "%LOG_FILE%"
+    set "RUN_EXIT=22"
+    set "STATUS_VALUE=FAIL"
+    set "REASON=DEVICE_NOT_READY"
+    goto :write_result
+)
+set "_PRE_ST="
+for /f "delims=" %%S in ('adb -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _PRE_ST set "_PRE_ST=%%S"
+if /I "!_PRE_ST!"=="device" goto :pre_maestro_adb_ok
+timeout /t 1 /nobreak >nul
+goto :pre_maestro_adb
+:pre_maestro_adb_ok
+
 call "%MAESTRO_BIN%" !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
 set "RUN_EXIT=%ERRORLEVEL%"
-if not "%RUN_EXIT%"=="0" (
-    set "STATUS_VALUE=FAIL"
-    set "REASON=MAESTRO_FAILED"
+if "!RUN_EXIT!"=="0" goto :maestro_default_pass
+
+if "!MAESTRO_DEVICE_RETRY_USED!"=="1" goto :maestro_default_fail
+
+findstr /i /c:"%DEVICE_ID%" "%LOG_FILE%" | findstr /i /c:"not found" >nul
+if errorlevel 1 goto :maestro_default_fail
+
+echo [WARN] Log suggests ADB lost device %DEVICE_ID%; adb start-server, pause, re-wait, then Maestro once more...>> "%LOG_FILE%"
+set "MAESTRO_DEVICE_RETRY_USED=1"
+adb start-server >> "%LOG_FILE%" 2>&1
+timeout /t 5 /nobreak >nul
+set /a "_MRW=0"
+:maestro_retry_wait_dev
+set /a "_MRW+=1"
+if !_MRW! GTR 45 (
+    echo [WARN] Re-wait for device capped at 45x2s; attempting Maestro anyway...>> "%LOG_FILE%"
+    goto :maestro_default_attempt
 )
+set "_MRW_ST="
+for /f "delims=" %%S in ('adb -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _MRW_ST set "_MRW_ST=%%S"
+if /I "!_MRW_ST!"=="device" goto :maestro_default_attempt
+timeout /t 2 /nobreak >nul
+goto :maestro_retry_wait_dev
+
+:maestro_default_pass
+if "!MAESTRO_DEVICE_RETRY_USED!"=="1" (
+    set "STATUS_VALUE=FLAKY"
+    set "REASON=MAESTRO_DEVICE_RETRY_OK"
+)
+goto :after_flow1b_maestro
+
+:maestro_default_fail
+set "STATUS_VALUE=FAIL"
+set "REASON=MAESTRO_FAILED"
+goto :after_flow1b_maestro
 
 :after_flow1b_maestro
 
@@ -251,6 +324,7 @@ if not defined DEVICE_NAME set "DEVICE_NAME=%DEVICE_ID%"
     echo first_log_path=%LOG_FILE%
     echo log_path=%LOG_FILE%
     echo retry_count=!SIGNUP_RETRY_USED!
+    echo maestro_device_reconnect_retry=!MAESTRO_DEVICE_RETRY_USED!
     echo timestamp=%date% %time%
 )
 if /I "%FLOW_NAME%"=="flow1b" if defined EMAIL (
