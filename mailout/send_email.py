@@ -15,6 +15,7 @@ from __future__ import annotations
 import html
 import logging
 import os
+import socket
 import smtplib
 import ssl
 import sys
@@ -911,6 +912,20 @@ def send_execution_report_email(
         return True
     except Exception as e:
         logger.error("Email failed: %s", e)
+        # Windows: [Errno 11001] getaddrinfo failed — SMTP host DNS resolution failed on the agent.
+        if isinstance(e, socket.gaierror) or (
+            isinstance(e, OSError)
+            and (getattr(e, "errno", None) == 11001 or getattr(e, "winerror", None) == 11001)
+        ):
+            logger.error(
+                "SMTP DNS/network: host %r port %s could not be resolved or reached from this machine. "
+                "On the Jenkins agent: verify DNS (e.g. nslookup %s), outbound firewall for TCP %s, "
+                "and proxy/VPN rules. Excel and attachments were prepared; only SMTP send failed.",
+                smtp_server,
+                port,
+                smtp_server,
+                port,
+            )
         return False
 
 
