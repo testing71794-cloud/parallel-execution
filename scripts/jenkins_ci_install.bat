@@ -10,6 +10,7 @@ REM Run sibling .bats from the scripts directory (avoids broken quoting when rep
 pushd "%~dp0"
 if not exist "jenkins_resolve_python.bat" (
   echo ERROR: jenkins_resolve_python.bat not found in %CD%
+  echo ERROR: This file must exist in the repo under scripts\ — commit scripts\jenkins_resolve_python.bat and re-clone or pull.
   popd
   exit /b 1
 )
