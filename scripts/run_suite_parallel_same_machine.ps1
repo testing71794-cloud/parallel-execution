@@ -121,7 +121,7 @@ function Start-RunOneOnDevice {
         (Quote-Arg $MaestroPath),
         (Quote-Arg $t)
     )
-    $full = "cd /d " + (Quote-Arg $RepoRoot) + " && " + $cmd
+    $full = "cd /d " + (Quote-Arg $RepoRoot) + " && " + $cmd + ' <nul'
     return Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $full) -NoNewWindow -PassThru
 }
 

@@ -1,0 +1,25 @@
+appId: com.kodaksmile
+---
+# Select two photos from All Photos (same pattern as selectThreePhotos; used by Precut ATP).
+- runFlow:
+    when:
+      visible: "All Photos"
+    commands:
+      - assertVisible: "All Photos"
+      - tapOn:
+          id: textViewSelect
+      - waitForAnimationToEnd
+      - tapOn:
+          id: imageViewPhoto
+          index: 1
+      - waitForAnimationToEnd
+      - tapOn:
+          id: imageViewPhoto
+          index: 2
+      - waitForAnimationToEnd
+      - assertVisible: "Select Items"
+      - assertVisible:
+          id: textViewPrint
+      - tapOn:
+          id: textViewPrint
+      - waitForAnimationToEnd

@@ -1,6 +1,18 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+goto :script_body
 
+REM Approximate sleep without timeout.exe (Jenkins + non-TTY stdin makes timeout print
+REM "Input redirection is not supported, exiting the process immediately.").
+:sleep_seconds
+set /a "_ss=%~1"
+if !_ss! LSS 1 set "_ss=1"
+if !_ss! GTR 120 set "_ss=120"
+set /a "_ss_ping=!_ss!+1"
+ping 127.0.0.1 -n !_ss_ping! >nul
+exit /b 0
+
+:script_body
 REM Args:
 REM %1 = SUITE
 REM %2 = FLOW_PATH
@@ -128,7 +140,7 @@ if /I "!_ADB_STATE!"=="device" (
     goto :adb_wait_device_done
 )
 echo [WARN] Device %DEVICE_ID% state=!_ADB_STATE! attempt !_ADB_W!/%ADB_DEVICE_WAIT_ATTEMPTS%>> "%LOG_FILE%"
-timeout /t %ADB_DEVICE_WAIT_SECS% /nobreak >nul
+call :sleep_seconds %ADB_DEVICE_WAIT_SECS%
 goto :adb_wait_device_loop
 :adb_wait_device_done
 
@@ -283,7 +295,7 @@ if !_PREM! GTR 20 (
 set "_PRE_ST="
 for /f "delims=" %%S in ('adb -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _PRE_ST set "_PRE_ST=%%S"
 if /I "!_PRE_ST!"=="device" goto :pre_maestro_adb_ok
-timeout /t 1 /nobreak >nul
+call :sleep_seconds 1
 goto :pre_maestro_adb
 :pre_maestro_adb_ok
 
@@ -301,7 +313,7 @@ echo [WARN] Maestro Android driver handshake failed ^(e.g. localhost:7001 Connec
 set "MAESTRO_DRIVER_7001_RETRY=1"
 set "MAESTRO_ARGS=--device "%DEVICE_ID%" test --reinstall-driver "%FLOW_PATH%""
 if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
-timeout /t 3 /nobreak >nul
+call :sleep_seconds 3
 goto :maestro_default_attempt
 :skip_maestro_driver_7001_retry
 
@@ -313,7 +325,7 @@ if errorlevel 1 goto :maestro_default_fail
 echo [WARN] Log suggests ADB lost device %DEVICE_ID%; adb start-server, pause, re-wait, then Maestro once more...>> "%LOG_FILE%"
 set "MAESTRO_DEVICE_RETRY_USED=1"
 adb start-server >> "%LOG_FILE%" 2>&1
-timeout /t 5 /nobreak >nul
+call :sleep_seconds 5
 set /a "_MRW=0"
 :maestro_retry_wait_dev
 set /a "_MRW+=1"
@@ -324,7 +336,7 @@ if !_MRW! GTR 45 (
 set "_MRW_ST="
 for /f "delims=" %%S in ('adb -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _MRW_ST set "_MRW_ST=%%S"
 if /I "!_MRW_ST!"=="device" goto :maestro_default_attempt
-timeout /t 2 /nobreak >nul
+call :sleep_seconds 2
 goto :maestro_retry_wait_dev
 
 :maestro_default_pass
