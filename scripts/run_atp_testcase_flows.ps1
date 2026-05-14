@@ -261,6 +261,7 @@ foreach ($flow in $flowFiles) {
         if ($ex -ne 0) {
             $overallFailed = $true
             Write-Host "  [FAIL] exit=$ex device=$dev flow=$flowBase"
+            Write-Host "  [hint] If Maestro said 'Flow file does not exist', fix runFlow paths from ATP subfolders (use ../../flows/ or ../../elements/ to reach repo root)."
         } else {
             Write-Host "  [OK] exit=$ex device=$dev"
         }
