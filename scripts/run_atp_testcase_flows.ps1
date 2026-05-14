@@ -303,6 +303,13 @@ foreach ($flow in $flowFiles) {
             $logPath = Get-AtpFlowLogPath -RepoRoot $RepoRoot -SuiteId $suiteId -FlowFullPath $flow.FullName -DeviceId $dev
             Write-AtpLogTail -LogPath $logPath -Lines 45
             Write-Host "  [hint] If Maestro said 'Flow file does not exist', fix runFlow paths from ATP subfolders (use ../../flows/ or ../../elements/ to reach repo root)."
+            try {
+                $tailLines = Get-Content -LiteralPath $logPath -Tail 80 -ErrorAction SilentlyContinue
+                $tail = if ($null -eq $tailLines) { "" } else { ($tailLines | ForEach-Object { "$_" }) -join "`n" }
+                if ($tail -and $tail -match '7001' -and $tail -match 'Connection refused') {
+                    Write-Host "  [hint] localhost:7001 refused = Android driver IPC. run_one_flow_on_device retries once with --reinstall-driver. If it still fails: close Maestro Studio on the agent, stop other maestro.exe runs, then re-run."
+                }
+            } catch { }
         } else {
             Write-Host "  [OK] exit=$ex device=$dev"
         }

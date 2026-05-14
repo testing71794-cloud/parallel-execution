@@ -93,6 +93,7 @@ set "RUN_EXIT=0"
 set "STATUS_VALUE=PASS"
 set "REASON=OK"
 set "MAESTRO_DEVICE_RETRY_USED=0"
+set "MAESTRO_DRIVER_7001_RETRY=0"
 
 if not exist "%FLOW_PATH%" (
     echo ERROR: Flow file not found: %FLOW_PATH%>> "%LOG_FILE%"
@@ -266,6 +267,7 @@ echo. >> "%LOG_FILE%"
 
 REM ---- Default flows: require device online immediately before Maestro; one rerun if ADB drops mid-run (Jenkins logs: device not found / transport) ----
 set "MAESTRO_DEVICE_RETRY_USED=0"
+set "MAESTRO_DRIVER_7001_RETRY=0"
 :maestro_default_attempt
 echo [INFO] ADB get-state before Maestro ^(retry_used=!MAESTRO_DEVICE_RETRY_USED!^)...>> "%LOG_FILE%"
 set /a "_PREM=0"
@@ -288,6 +290,20 @@ goto :pre_maestro_adb
 call "%MAESTRO_BIN%" !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
 set "RUN_EXIT=%ERRORLEVEL%"
 if "!RUN_EXIT!"=="0" goto :maestro_default_pass
+
+REM ---- One retry: Android driver IPC (log shows localhost:7001 + Connection refused) — reinstall driver on device ----
+if "!MAESTRO_DRIVER_7001_RETRY!"=="1" goto :skip_maestro_driver_7001_retry
+findstr /i /c:"7001" "%LOG_FILE%" >nul 2>&1
+if errorlevel 1 goto :skip_maestro_driver_7001_retry
+findstr /i /c:"Connection refused" "%LOG_FILE%" >nul 2>&1
+if errorlevel 1 goto :skip_maestro_driver_7001_retry
+echo [WARN] Maestro Android driver handshake failed ^(e.g. localhost:7001 Connection refused^). Retrying once with test --reinstall-driver...>> "%LOG_FILE%"
+set "MAESTRO_DRIVER_7001_RETRY=1"
+set "MAESTRO_ARGS=--device "%DEVICE_ID%" test --reinstall-driver "%FLOW_PATH%""
+if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
+timeout /t 3 /nobreak >nul
+goto :maestro_default_attempt
+:skip_maestro_driver_7001_retry
 
 if "!MAESTRO_DEVICE_RETRY_USED!"=="1" goto :maestro_default_fail
 
@@ -312,7 +328,10 @@ timeout /t 2 /nobreak >nul
 goto :maestro_retry_wait_dev
 
 :maestro_default_pass
-if "!MAESTRO_DEVICE_RETRY_USED!"=="1" (
+if "!MAESTRO_DRIVER_7001_RETRY!"=="1" (
+    set "STATUS_VALUE=FLAKY"
+    set "REASON=MAESTRO_DRIVER_REINSTALL_OK"
+) else if "!MAESTRO_DEVICE_RETRY_USED!"=="1" (
     set "STATUS_VALUE=FLAKY"
     set "REASON=MAESTRO_DEVICE_RETRY_OK"
 )
@@ -344,6 +363,7 @@ if not defined DEVICE_NAME set "DEVICE_NAME=%DEVICE_ID%"
     echo log_path=%LOG_FILE%
     echo retry_count=!SIGNUP_RETRY_USED!
     echo maestro_device_reconnect_retry=!MAESTRO_DEVICE_RETRY_USED!
+    echo maestro_driver_7001_retry=!MAESTRO_DRIVER_7001_RETRY!
     echo timestamp=%date% %time%
 )
 if /I "%FLOW_NAME%"=="flow1b" if defined EMAIL (
