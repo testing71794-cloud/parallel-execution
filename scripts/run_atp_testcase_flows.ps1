@@ -72,8 +72,12 @@ function Get-AuthorizedSerialsFromAdb {
 function Read-DetectedFileSerials([string]$R) {
     $detected = Join-Path $R "detected_devices.txt"
     if (-not (Test-Path -LiteralPath $detected)) { return @() }
-    # PS 5.1: Get-Content returns a single [string] for a one-line file — foreach would iterate CHARS.
-    $lines = @(Get-Content -LiteralPath $detected -ErrorAction SilentlyContinue | ForEach-Object { $_.Trim() } |
+    # UTF8: strip BOM on first line; trim CR/LF and whitespace.
+    $lines = @(Get-Content -LiteralPath $detected -Encoding UTF8 -ErrorAction SilentlyContinue | ForEach-Object {
+            $t = $_.Trim()
+            if ($t.Length -gt 0 -and [int][char]$t[0] -eq 0xFEFF) { $t = $t.Substring(1).Trim() }
+            $t
+        } |
         Where-Object { $_ -and $_ -notmatch '^(List of devices attached|Devices detected:|Device list saved to:)' })
     $serialList = New-Object System.Collections.Generic.List[string]
     foreach ($line in $lines) {
@@ -95,7 +99,13 @@ function Merge-AndPickDevices {
     $picked = @()
     foreach ($s in $fileSerials) { if ($authorized -contains $s) { $picked += $s } }
     if ($picked.Count -eq 0) {
-        throw "detected_devices.txt has no serials currently authorized as device."
+        Write-Host "[ATP] WARN: detected_devices.txt serial(s) not in current 'adb devices': $($fileSerials -join ', ')"
+        Write-Host "[ATP] WARN: falling back to all authorized device(s): $($authorized -join ', ')"
+        return $authorized
+    }
+    if ($picked.Count -lt $fileSerials.Count) {
+        $missing = $fileSerials | Where-Object { $picked -notcontains $_ }
+        Write-Host "[ATP] WARN: dropping stale serial(s) from detected_devices.txt: $($missing -join ', ')"
     }
     return $picked
 }

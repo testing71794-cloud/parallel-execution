@@ -61,9 +61,14 @@ function Get-AuthorizedSerialsFromAdb {
 function Read-DetectedFileSerials([string]$RepoRoot) {
     $detected = Join-Path $RepoRoot "detected_devices.txt"
     if (-not (Test-Path -LiteralPath $detected)) { return @() }
-    $lines = Get-Content -LiteralPath $detected -ErrorAction SilentlyContinue |
-        ForEach-Object { $_.Trim() } |
-        Where-Object { $_ -and $_ -notmatch '^(List of devices attached|Devices detected:|Device list saved to:)' }
+    # PS 5.1: one-line file can return a single [string] — wrap in @() so we never iterate chars.
+    $lines = @(Get-Content -LiteralPath $detected -Encoding UTF8 -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $t = $_.Trim()
+            if ($t.Length -gt 0 -and [int][char]$t[0] -eq 0xFEFF) { $t = $t.Substring(1).Trim() }
+            $t
+        } |
+        Where-Object { $_ -and $_ -notmatch '^(List of devices attached|Devices detected:|Device list saved to:)' })
     $r = [System.Collections.Generic.List[string]]::new()
     foreach ($line in $lines) { if ($line -match '^\S+$') { if (-not $r.Contains($line)) { $r.Add($line) } } }
     return $r
@@ -82,7 +87,9 @@ function Merge-AndPickDevices {
     $picked = @()
     foreach ($s in $fileSerials) { if ($authorized -contains $s) { $picked += $s } }
     if ($picked.Count -eq 0) {
-        throw "detected_devices.txt has no serials that are currently authorized+device in 'adb devices'. Re-run device detection; remove unauthorized or offline."
+        Write-Host "[WARN] detected_devices.txt serial(s) not in current 'adb devices': $($fileSerials -join ', ')"
+        Write-Host "[WARN] falling back to all authorized device(s): $($authorized -join ', ')"
+        return $authorized
     }
     if ($picked.Count -lt $fileSerials.Count) {
         $missing = $fileSerials | Where-Object { $picked -notcontains $_ }
