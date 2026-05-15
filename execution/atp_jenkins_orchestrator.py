@@ -10,6 +10,7 @@ Does not modify Maestro YAML, Excel schema, AI logic, or report layouts.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
