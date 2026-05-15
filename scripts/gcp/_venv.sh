@@ -25,9 +25,30 @@ _gcp_pip_user_install() {
   fi
 }
 
+_gcp_venv_has_pip() {
+  local PY_VENV="$1"
+  "$PY_VENV" -m pip --version >/dev/null 2>&1
+}
+
+_gcp_repair_venv_pip() {
+  local PY_VENV="$1"
+  echo "[gcp-venv] bootstrapping pip in existing venv ($PY_VENV)"
+  if "$PY_VENV" -m ensurepip --upgrade >/dev/null 2>&1 && _gcp_venv_has_pip "$PY_VENV"; then
+    return 0
+  fi
+  if "$PY_VENV" -m ensurepip >/dev/null 2>&1 && _gcp_venv_has_pip "$PY_VENV"; then
+    return 0
+  fi
+  return 1
+}
+
 _gcp_venv_pip_install() {
   local PY_VENV="$1"
   local ROOT="$2"
+  if ! _gcp_venv_has_pip "$PY_VENV"; then
+    echo "[gcp-venv] ERROR: venv python has no pip: $PY_VENV" >&2
+    return 1
+  fi
   export GCP_PYTHON_MODE="${GCP_PYTHON_MODE:-venv}"
   export PY="$PY_VENV"
   export PIP="${PY_VENV%/python}/pip"
@@ -52,14 +73,21 @@ resolve_gcp_python() {
     return 1
   fi
 
-  # Reuse existing venv
+  # Reuse existing venv only when pip is usable (broken venvs lack ensurepip without python*-venv)
   if [[ -x "$VENV_DIR/bin/python" ]]; then
-    _gcp_venv_pip_install "$VENV_DIR/bin/python" "$ROOT"
-    return 0
-  fi
-
-  # Remove broken partial venv from a previous failed run
-  if [[ -d "$VENV_DIR" ]]; then
+    local PY_VENV="$VENV_DIR/bin/python"
+    if _gcp_venv_has_pip "$PY_VENV"; then
+      _gcp_venv_pip_install "$PY_VENV" "$ROOT"
+      return 0
+    fi
+    echo "[gcp-venv] WARN: venv at $VENV_DIR exists but pip is missing"
+    if _gcp_repair_venv_pip "$PY_VENV"; then
+      _gcp_venv_pip_install "$PY_VENV" "$ROOT"
+      return 0
+    fi
+    echo "[gcp-venv] removing broken venv (no pip) at $VENV_DIR"
+    rm -rf "$VENV_DIR"
+  elif [[ -d "$VENV_DIR" ]]; then
     echo "[gcp-venv] removing incomplete venv at $VENV_DIR"
     rm -rf "$VENV_DIR"
   fi
@@ -72,15 +100,27 @@ resolve_gcp_python() {
 
   echo "[gcp-venv] creating venv at $VENV_DIR (boot=$PY_BOOT)"
   if "$PY_BOOT" -m venv "$VENV_DIR" >"$VENV_LOG" 2>&1 && [[ -x "$VENV_DIR/bin/python" ]]; then
-    _gcp_venv_pip_install "$VENV_DIR/bin/python" "$ROOT"
-    return 0
+    local PY_NEW="$VENV_DIR/bin/python"
+    if ! _gcp_venv_has_pip "$PY_NEW"; then
+      _gcp_repair_venv_pip "$PY_NEW" || true
+    fi
+    if _gcp_venv_has_pip "$PY_NEW"; then
+      _gcp_venv_pip_install "$PY_NEW" "$ROOT"
+      return 0
+    fi
+    echo "[gcp-venv] WARN: new venv still has no pip; removing $VENV_DIR"
+    rm -rf "$VENV_DIR"
   fi
 
   # virtualenv module (if installed)
   if "$PY_BOOT" -m virtualenv "$VENV_DIR" >"$VENV_LOG" 2>&1 && [[ -x "$VENV_DIR/bin/python" ]]; then
     echo "[gcp-venv] created venv via python -m virtualenv"
-    _gcp_venv_pip_install "$VENV_DIR/bin/python" "$ROOT"
-    return 0
+    local PY_VE="$VENV_DIR/bin/python"
+    if _gcp_venv_has_pip "$PY_VE" || _gcp_repair_venv_pip "$PY_VE"; then
+      _gcp_venv_pip_install "$PY_VE" "$ROOT"
+      return 0
+    fi
+    rm -rf "$VENV_DIR"
   fi
 
   cat "$VENV_LOG" >&2 || true
