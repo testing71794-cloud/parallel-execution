@@ -272,7 +272,8 @@ def _maestro_driver_host_port(launch_index: int) -> int | None:
     """
     if not _parallel_maestro_isolation_enabled():
         return None
-    if os.environ.get("ATP_MAESTRO_DRIVER_PORTS", "1").strip().lower() in ("0", "false", "no", "off"):
+    # Default off: installed Maestro builds often lack --driver-host-port (needs newer CLI).
+    if os.environ.get("ATP_MAESTRO_DRIVER_PORTS", "0").strip().lower() in ("0", "false", "no", "off"):
         return None
     explicit = (os.environ.get("ATP_MAESTRO_DRIVER_PORT") or "").strip()
     if explicit:
@@ -418,9 +419,18 @@ def _apply_parallel_maestro_env(
 
     runtime_home = (repo / ".maestro-runtime" / slug).resolve()
     runtime_home.mkdir(parents=True, exist_ok=True)
+    local_app = runtime_home / "AppData" / "Local"
+    roaming = runtime_home / "AppData" / "Roaming"
+    local_app.mkdir(parents=True, exist_ok=True)
+    roaming.mkdir(parents=True, exist_ok=True)
     env["MAESTRO_CLI_DIR"] = str(runtime_home)
-    env["ATP_MAESTRO_USER_HOME"] = str(runtime_home)
-    env["HOME"] = str(runtime_home)
+    env["ATP_MAESTRO_RUNTIME_ROOT"] = str(runtime_home)
+    env["LOCALAPPDATA"] = str(local_app)
+    env["APPDATA"] = str(roaming)
+    # Do not override USERPROFILE (breaks Windows AppDirs / Maestro init). Redirect JVM user.home.
+    opts = (env.get("MAESTRO_OPTS") or "").strip()
+    user_home_flag = f'-Duser.home={runtime_home}'
+    env["MAESTRO_OPTS"] = f"{opts} {user_home_flag}".strip() if opts else user_home_flag
     env["ATP_MAESTRO_JAVA_DIRECT"] = "1"
     meta["maestro_user_home"] = str(runtime_home)
 

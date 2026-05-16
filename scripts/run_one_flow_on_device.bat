@@ -22,19 +22,16 @@ if defined ATP_MAESTRO_DEBUG_OUTPUT (
 )
 exit /b 0
 
-REM Isolated Maestro: direct java maestro.cli.AppKt (no maestro.bat/call), per-device USERPROFILE.
+REM Isolated Maestro: direct java maestro.cli.AppKt (no maestro.bat/call); env from orchestrator (LOCALAPPDATA, MAESTRO_OPTS).
 :run_maestro_isolated
 call :apply_maestro_parallel_isolation
-set "_MAESTRO_SAVED_USERPROFILE="
-if defined ATP_MAESTRO_USER_HOME (
-  set "_MAESTRO_SAVED_USERPROFILE=%USERPROFILE%"
-  set "USERPROFILE=%ATP_MAESTRO_USER_HOME%"
-  echo [INFO] Maestro isolated USERPROFILE=%USERPROFILE%>> "%LOG_FILE%"
+if defined ATP_MAESTRO_RUNTIME_ROOT (
+  echo [INFO] Maestro runtime root=!ATP_MAESTRO_RUNTIME_ROOT! LOCALAPPDATA=!LOCALAPPDATA!>> "%LOG_FILE%"
 )
 if /I "%ATP_MAESTRO_JAVA_DIRECT%"=="1" (
   if exist "%JAVA_EXE%" if exist "%MAESTRO_APP_HOME%\lib" (
-    echo Command: "%JAVA_EXE%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt !MAESTRO_ARGS!>> "%LOG_FILE%"
-    "%JAVA_EXE%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
+    echo Command: "%JAVA_EXE%" %MAESTRO_OPTS% -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt !MAESTRO_ARGS!>> "%LOG_FILE%"
+    "%JAVA_EXE%" %MAESTRO_OPTS% -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
     set "RUN_EXIT=!ERRORLEVEL!"
     goto :run_maestro_isolated_done
   )
@@ -44,10 +41,6 @@ echo Command: "%MAESTRO_BIN%" !MAESTRO_ARGS!>> "%LOG_FILE%"
 "%MAESTRO_BIN%" !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
 set "RUN_EXIT=!ERRORLEVEL!"
 :run_maestro_isolated_done
-if defined _MAESTRO_SAVED_USERPROFILE (
-  set "USERPROFILE=%_MAESTRO_SAVED_USERPROFILE%"
-  set "_MAESTRO_SAVED_USERPROFILE="
-)
 exit /b
 
 :script_body
@@ -409,10 +402,9 @@ goto :after_flow1b_maestro
 
 for /f %%t in ('python -c "import time; print(int(time.time()*1000))" 2^>nul') do set "FLOW_END_MS=%%t"
 if not defined FLOW_END_MS set "FLOW_END_MS=0"
-if defined FLOW_START_MS if not "!FLOW_START_MS!"=="0" (
-  set /a "FLOW_DURATION_MS=!FLOW_END_MS!-!FLOW_START_MS!"
-) else (
-  set "FLOW_DURATION_MS=0"
+set "FLOW_DURATION_MS=0"
+if defined FLOW_START_MS if defined FLOW_END_MS if not "!FLOW_START_MS!"=="0" (
+  for /f %%d in ('python -c "print(max(0,int('!FLOW_END_MS!')-int('!FLOW_START_MS!')))" 2^>nul') do set "FLOW_DURATION_MS=%%d"
 )
 echo [TIMING] flow_end_ms=!FLOW_END_MS! duration_ms=!FLOW_DURATION_MS!>> "%LOG_FILE%"
 
