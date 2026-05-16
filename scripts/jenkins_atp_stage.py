@@ -9,12 +9,14 @@ Suite ids match run_atp_testcase_flows.ps1 Get-AtpSuiteId(folder).
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+ORCHESTRATOR_MODULE = "execution.atp_jenkins_orchestrator"
 
 
 def folder_to_suite_id(folder: str) -> str:
@@ -29,14 +31,54 @@ def touch_flag(name: str) -> None:
     (REPO / name).write_text("1\n", encoding="utf-8")
 
 
+def _refresh_devices_on_this_agent(repo: Path) -> None:
+    """
+    Re-run adb device discovery on the current Windows agent before Maestro.
+    Hybrid: Detect Connected Devices may run on a different executor than ATP stages.
+    """
+    if os.environ.get("ATP_REFRESH_DEVICES_BEFORE_RUN", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        print("[jenkins_atp_stage] ATP_REFRESH_DEVICES_BEFORE_RUN=0 — skip device refresh", flush=True)
+        return
+    bat = repo / "scripts" / "list_devices.bat"
+    if not bat.is_file():
+        return
+    print("[jenkins_atp_stage] refreshing detected_devices.txt on this agent (list_devices.bat)", flush=True)
+    subprocess.run(
+        ["cmd.exe", "/c", "call", str(bat), str(repo)],
+        cwd=str(repo),
+        check=False,
+    )
+
+
+def _log_orchestrator_fingerprint(repo: Path) -> None:
+    orch_py = repo / "execution" / "atp_jenkins_orchestrator.py"
+    print(f"[jenkins_atp_stage] orchestrator_module={ORCHESTRATOR_MODULE}", flush=True)
+    print(f"[jenkins_atp_stage] orchestrator_path={orch_py}", flush=True)
+    if orch_py.is_file():
+        print(f"[jenkins_atp_stage] orchestrator_mtime={orch_py.stat().st_mtime}", flush=True)
+    try:
+        from execution.atp_jenkins_orchestrator import ORCHESTRATOR_REV
+
+        print(f"[jenkins_atp_stage] orchestrator_rev={ORCHESTRATOR_REV}", flush=True)
+    except Exception as exc:
+        print(f"[jenkins_atp_stage] WARN: could not import orchestrator_rev: {exc}", flush=True)
+
+
 def cmd_run(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
     sid = folder_to_suite_id(folder)
+    _refresh_devices_on_this_agent(REPO)
+    _log_orchestrator_fingerprint(REPO)
     # Stack A: blocking Python orchestrator (no detached PowerShell Start-Process chain).
     p = subprocess.run(
         [
             sys.executable,
             "-m",
-            "execution.atp_jenkins_orchestrator",
+            ORCHESTRATOR_MODULE,
             str(REPO),
             app,
             clear_state,

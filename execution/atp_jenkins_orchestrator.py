@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -35,6 +36,9 @@ from .maestro_runner import (
     run_run_one_flow_device_bat,
 )
 from .flow_timing import read_status_fields
+
+# Bump when orchestration semantics change (visible in Jenkins console).
+ORCHESTRATOR_REV = "2026-05-parallel-wave-2"
 
 
 def add_adb_from_env_to_path() -> None:
@@ -90,12 +94,18 @@ def read_detected_file_serials(repo: Path) -> list[str]:
 
 
 def merge_and_pick_devices(repo: Path) -> list[str]:
+    """Live ``adb devices`` is authoritative; detected_devices.txt may filter but never shrink below adb."""
     authorized = get_authorized_serials_from_adb()
     if not authorized:
         raise RuntimeError("No Android devices in state 'device'.")
     file_serials = read_detected_file_serials(repo)
+    print(
+        f"[ATP] devices adb={len(authorized)} [{', '.join(authorized)}] "
+        f"detected_file={len(file_serials)} [{', '.join(file_serials) if file_serials else '-'}]",
+        flush=True,
+    )
     if not file_serials:
-        return authorized
+        return list(authorized)
     picked = [s for s in file_serials if s in authorized]
     if not picked:
         print(
@@ -103,10 +113,18 @@ def merge_and_pick_devices(repo: Path) -> list[str]:
             flush=True,
         )
         print(f"[ATP] WARN: falling back to all authorized device(s): {', '.join(authorized)}", flush=True)
-        return authorized
+        return list(authorized)
     if len(picked) < len(file_serials):
         missing = [s for s in file_serials if s not in picked]
         print(f"[ATP] WARN: dropping stale serial(s) from detected_devices.txt: {', '.join(missing)}", flush=True)
+    # Hybrid: Detect stage may have run on another agent with a stale one-device file while this agent has N USB devices.
+    if len(authorized) > len(picked):
+        print(
+            f"[ATP] WARN: live adb has {len(authorized)} device(s) but detected_devices.txt matched "
+            f"{len(picked)}; using all authorized adb devices for this run",
+            flush=True,
+        )
+        return list(authorized)
     return picked
 
 
@@ -238,6 +256,12 @@ def _execute_flow_on_device(
     )
     lease.acquire()
     exit_code = 1
+    t0 = time.time()
+    print(
+        f"[ATP] device_run_start device={device_id} flow={flow_base} "
+        f"thread={threading.current_thread().name} ts={t0:.3f}",
+        flush=True,
+    )
     try:
         log_lifecycle(repo, suite_id, WorkerState.PREPARING, "preparing", device=device_id, flow=flow_base)
         pre_maestro_cleanup(device_id, suite_id, repo, allow_maestro_kill=allow_maestro_kill)
@@ -256,6 +280,11 @@ def _execute_flow_on_device(
     finally:
         lease.release()
         log_lifecycle(repo, suite_id, WorkerState.IDLE, "lease released", device=device_id)
+        print(
+            f"[ATP] device_run_end device={device_id} flow={flow_base} exit={exit_code} "
+            f"elapsed_sec={time.time() - t0:.1f}",
+            flush=True,
+        )
 
     return _DeviceFlowOutcome(device_id=device_id, exit_code=exit_code)
 
@@ -274,6 +303,11 @@ def _run_flow_wave_on_devices(
     """Synchronized barrier: all devices finish this flow before the caller starts the next flow."""
     mode = _device_execution_mode(len(devices))
     allow_maestro_kill = len(devices) <= 1
+    wave_t0 = time.time()
+    print(
+        f"[ATP] flow_wave_start flow={flow_base} mode={mode} device_count={len(devices)} ts={wave_t0:.3f}",
+        flush=True,
+    )
     if mode == "parallel":
         print(
             f"  [ATP] flow wave parallel: {flow_base} on {len(devices)} device(s): {', '.join(devices)}",
@@ -281,6 +315,11 @@ def _run_flow_wave_on_devices(
         )
         outcomes: list[_DeviceFlowOutcome] = []
         with ThreadPoolExecutor(max_workers=len(devices), thread_name_prefix="atp-flow") as pool:
+            for dev in devices:
+                print(
+                    f"  [ATP] threadpool_submit device={dev} flow={flow_base} ts={time.time():.3f}",
+                    flush=True,
+                )
             futures = {
                 pool.submit(
                     _execute_flow_on_device,
@@ -305,6 +344,11 @@ def _run_flow_wave_on_devices(
                     outcomes.append(_DeviceFlowOutcome(device_id=dev, exit_code=1))
         order = {d: i for i, d in enumerate(devices)}
         outcomes.sort(key=lambda o: order.get(o.device_id, 999))
+        print(
+            f"[ATP] flow_wave_barrier_done flow={flow_base} mode=parallel "
+            f"elapsed_sec={time.time() - wave_t0:.1f}",
+            flush=True,
+        )
         return outcomes
 
     print(f"  [ATP] flow wave sequential: {flow_base}", flush=True)
@@ -324,6 +368,11 @@ def _run_flow_wave_on_devices(
                 allow_maestro_kill=True,
             )
         )
+    print(
+        f"[ATP] flow_wave_barrier_done flow={flow_base} mode=sequential "
+        f"elapsed_sec={time.time() - wave_t0:.1f}",
+        flush=True,
+    )
     return seq_outcomes
 
 
@@ -399,6 +448,9 @@ def run_atp_folder_blocking(
     print(f"ATP root:  {atp_root}", flush=True)
     if single_folder_mode:
         print(f"Subfolder: {atp_subfolder.strip()}", flush=True)
+    print("ATP_JENKINS_ORCHESTRATOR_ACTIVE=1", flush=True)
+    print(f"[ATP] orchestrator_rev={ORCHESTRATOR_REV}", flush=True)
+    print(f"[ATP] orchestrator_file={Path(__file__).resolve()}", flush=True)
     print("[ATP] orchestrator=execution/atp_jenkins_orchestrator.py (blocking; no detached PS1)", flush=True)
 
     flows = discover_flows(repo, atp_subfolder)

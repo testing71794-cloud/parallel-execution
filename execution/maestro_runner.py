@@ -254,6 +254,11 @@ def run_run_one_flow_device_bat(
         flow=flow_path.name,
         pid=os.getpid(),
     )
+    print(
+        f"[ATP] maestro_subprocess_launch device={device_id} flow={flow_path.stem} "
+        f"ts={time.time():.3f} pid={os.getpid()}",
+        flush=True,
+    )
     try:
         proc = subprocess.run(
             cmd,
