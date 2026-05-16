@@ -29,12 +29,15 @@ def startup_gate_enabled() -> bool:
     )
 
 
-def parallel_startup_delay_sec() -> float:
-    raw = (os.environ.get("MAESTRO_PARALLEL_STARTUP_DELAY_SEC") or "5").strip()
+def parallel_startup_delay_sec(*, legacy_mode: bool = False) -> float:
+    if legacy_mode:
+        raw = (os.environ.get("MAESTRO_PARALLEL_STARTUP_DELAY_SEC") or "8").strip()
+    else:
+        raw = (os.environ.get("MAESTRO_PARALLEL_STARTUP_DELAY_SEC") or "5").strip()
     try:
         return max(0.0, float(raw))
     except ValueError:
-        return 5.0
+        return 8.0 if legacy_mode else 5.0
 
 
 def startup_ready_timeout_sec() -> float:
@@ -213,6 +216,69 @@ def _find_maestro_java_pids_for_device(device_id: str) -> list[int]:
         return []
 
 
+def cleanup_all_host_maestro_java(*, keep_pids: set[int] | None = None) -> list[int]:
+    """Kill all Maestro CLI java processes on this host (legacy mode startup hygiene)."""
+    if os.name != "nt":
+        return []
+    keep = keep_pids or set()
+    ps = (
+        "Get-CimInstance Win32_Process -Filter \"Name='java.exe'\" | "
+        "Where-Object { $_.CommandLine -and ($_.CommandLine -match 'maestro\\.cli\\.AppKt') } | "
+        "ForEach-Object { [int]$_.ProcessId }"
+    )
+    killed: list[int] = []
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        for line in (proc.stdout or "").splitlines():
+            line = line.strip()
+            if not line.isdigit():
+                continue
+            pid = int(line)
+            if pid in keep:
+                continue
+            terminate_process_tree(pid)
+            unregister_owned_child_pid(pid)
+            killed.append(pid)
+            print(f"[ATP] host_maestro_java_killed pid={pid}", flush=True)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    if killed:
+        time.sleep(2.0)
+    return killed
+
+
+def wait_for_adb_forwards_stable(device_id: str, *, timeout_sec: float | None = None) -> bool:
+    """Wait until device forward list is unchanged across consecutive samples."""
+    timeout = timeout_sec if timeout_sec is not None else float(
+        os.environ.get("ATP_ADB_FORWARD_STABLE_SEC", "20")
+    )
+    deadline = time.monotonic() + timeout
+    prev: str | None = None
+    stable = 0
+    while time.monotonic() < deadline:
+        cur = list_adb_forwards(device_id=device_id)
+        if cur == prev:
+            stable += 1
+            if stable >= 2:
+                print(
+                    f"[ATP] adb_forward_stable device={device_id} ok=True",
+                    flush=True,
+                )
+                return True
+        else:
+            stable = 0
+        prev = cur
+        time.sleep(1.0)
+    print(f"[ATP] adb_forward_stable device={device_id} ok=False", flush=True)
+    return False
+
+
 def cleanup_orphan_maestro_java(
     device_id: str,
     *,
@@ -307,7 +373,7 @@ def _startup_failed_in_log(text: str) -> str | None:
         return "tcp_forwarder"
     if "TimeoutException" in text and "tcpForward" in text:
         return "tcp_forward_timeout"
-    if "Unknown options:" in text and "driver-host-port" in text:
+    if "Unknown options:" in text and ("driver-host-port" in text or "driver-port" in text):
         return "unsupported_driver_port_flag"
     if "SHGetKnownFolderPath" in text or "AppDirsException" in text:
         return "app_dirs"
@@ -369,9 +435,12 @@ def prepare_device_for_maestro_startup(
     driver_port: int | None,
     suite_id: str,
     repo: Path,
+    legacy_mode: bool = False,
 ) -> None:
     """ADB + port hygiene while holding startup lock (before Maestro subprocess)."""
     log_adb_forwards(device_id, "pre_startup")
+    if legacy_mode:
+        cleanup_all_host_maestro_java(keep_pids=set())
     ok, detail = clear_device_adb_forwards(device_id)
     print(
         f"[ATP] adb_forward_cleanup device={device_id} ok={ok} detail={detail!r}",
@@ -383,7 +452,11 @@ def prepare_device_for_maestro_startup(
             f"[ATP] host_port_check device={device_id} port={driver_port} free={port_free}",
             flush=True,
         )
+    elif legacy_mode:
+        wait_for_host_port_free(7001, timeout_sec=20.0)
     cleanup_orphan_maestro_java(device_id, keep_pids=set())
+    if legacy_mode:
+        wait_for_adb_forwards_stable(device_id)
     log_adb_forwards(device_id, "post_cleanup")
 
 
@@ -436,6 +509,7 @@ class MaestroStartupGate:
         self.launch_index = launch_index
         self.driver_port = driver_port
         self._enabled = startup_gate_enabled()
+        self._legacy_mode = False
         self._acquired = False
         self._t_acquire: float | None = None
 
@@ -455,8 +529,12 @@ class MaestroStartupGate:
             driver_port=self.driver_port,
             suite_id=self.suite_id,
             repo=self.repo,
+            legacy_mode=self._legacy_mode,
         )
         return self
+
+    def set_legacy_mode(self, enabled: bool) -> None:
+        self._legacy_mode = enabled
 
     def release_after_session_ready(
         self,
@@ -487,6 +565,10 @@ class MaestroStartupGate:
                     f"log_offset={log_start_offset}",
                     flush=True,
                 )
+                if reason == "unsupported_driver_port_flag":
+                    from .maestro_capabilities import invalidate_driver_port_support
+
+                    invalidate_driver_port_support(reason="unsupported_driver_port_flag")
                 return False, reason
             log_adb_forwards(self.device_id, "startup_ready")
             print(
@@ -495,7 +577,7 @@ class MaestroStartupGate:
                 f"driver_port={self.driver_port}",
                 flush=True,
             )
-            delay = parallel_startup_delay_sec()
+            delay = parallel_startup_delay_sec(legacy_mode=self._legacy_mode)
             if delay > 0:
                 print(
                     f"[ATP] startup_stabilization_delay device={self.device_id} "

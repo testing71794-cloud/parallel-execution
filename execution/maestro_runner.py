@@ -19,6 +19,13 @@ from pathlib import Path
 from typing import Any
 
 from .flow_timing import append_timing, read_status_fields
+from .maestro_capabilities import (
+    detect_maestro_capabilities,
+    driver_host_port_supported,
+    invalidate_driver_port_support,
+    legacy_runtime_mutex_active,
+    maestro_driver_ports_active,
+)
 from .maestro_startup_gate import (
     MaestroStartupGate,
     _log_byte_offset,
@@ -33,7 +40,7 @@ from .maestro_startup_gate import (
     validate_device_health,
 )
 
-_driver_port_cli_supported: bool | None = None
+_host_maestro_runtime_lock = threading.Lock()
 
 _lifecycle_log_lock = threading.Lock()
 
@@ -317,39 +324,8 @@ def flow_device_log_path(repo: Path, suite_id: str, flow_path: Path, device_id: 
 
 
 def probe_maestro_driver_port_cli() -> bool:
-    """Maestro global --driver-host-port (before subcommand) is required for parallel same-host runs."""
-    global _driver_port_cli_supported
-    if _driver_port_cli_supported is not None:
-        return _driver_port_cli_supported
-    try:
-        prefix = build_maestro_java_cmd_prefix()
-        proc = subprocess.run(
-            prefix + ["--driver-host-port", "7099", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=45,
-            check=False,
-        )
-        combined = (proc.stdout or "") + (proc.stderr or "")
-        _driver_port_cli_supported = "Unknown option" not in combined and "Unknown options" not in combined
-    except (OSError, subprocess.TimeoutExpired):
-        _driver_port_cli_supported = False
-    return _driver_port_cli_supported
-
-
-def maestro_driver_ports_active(device_count: int = 1) -> bool:
-    """
-    auto (default): enable per-device ports when 2+ devices and CLI supports --driver-host-port.
-    1/on: force enable; 0/off: disable (localhost:7001 for all — not safe for parallel).
-    """
-    raw = (os.environ.get("ATP_MAESTRO_DRIVER_PORTS") or "auto").strip().lower()
-    if raw in ("0", "false", "no", "off"):
-        return False
-    if raw in ("1", "true", "yes", "on"):
-        return probe_maestro_driver_port_cli()
-    if device_count <= 1:
-        return False
-    return probe_maestro_driver_port_cli()
+    """Backward-compatible alias for orchestrator logging."""
+    return driver_host_port_supported()
 
 
 def _maestro_driver_host_port(launch_index: int, device_count: int = 1) -> int | None:
@@ -552,6 +528,16 @@ def run_run_one_flow_device_bat(
     """
     Blocking invocation of scripts/run_one_flow_on_device.bat (preserves reports/status/csv layout).
     """
+    detect_maestro_capabilities(device_count=device_count)
+    legacy_mode = not driver_host_port_supported()
+    runtime_mutex = legacy_runtime_mutex_active(device_count)
+    if runtime_mutex:
+        print(
+            f"[ATP] legacy_runtime_mutex device={device_id} flow={flow_path.stem} "
+            f"(Maestro without per-device ports — one host session at a time)",
+            flush=True,
+        )
+
     bat = (repo / "scripts" / "run_one_flow_on_device.bat").resolve()
     if not bat.is_file():
         raise FileNotFoundError(bat)
@@ -599,6 +585,7 @@ def run_run_one_flow_device_bat(
         f"[ATP] maestro_subprocess_launch device={device_id} flow={flow_path.stem} "
         f"ts={time.time():.3f} orchestrator_parent_pid={os.getpid()} launch_index={launch_index} "
         f"driver_port_plan={port_plan} driver_port_cli={iso.get('driver_port')} "
+        f"maestro_mode={'legacy_compatible' if legacy_mode else 'isolated_driver_ports'} "
         f"startup_gate={1 if startup_gate_enabled() else 0} "
         f"workspace={iso.get('workspace')} maestro_user_home={iso.get('maestro_user_home')} java_direct=1",
         flush=True,
@@ -614,135 +601,165 @@ def run_run_one_flow_device_bat(
 
     max_attempts = startup_max_retries() + 1 if startup_gate_enabled() else 1
     code = 1
-    driver_port_int = int(port_plan) if port_plan is not None else None
-    for attempt in range(1, max_attempts + 1):
-        if attempt > 1:
-            print(
-                f"[ATP] startup_retry device={device_id} flow={flow_path.stem} "
-                f"attempt={attempt}/{max_attempts} backoff_sec={startup_retry_backoff_sec(attempt):.1f}",
-                flush=True,
-            )
-            time.sleep(startup_retry_backoff_sec(attempt))
-        if not validate_device_health(device_id, suite_id=suite_id, repo=repo):
-            code = 22
-            if attempt < max_attempts:
-                continue
-            break
-
-        gate = MaestroStartupGate(
-            device_id=device_id,
-            flow_name=flow_path.stem,
-            suite_id=suite_id,
-            repo=repo,
-            launch_index=launch_index,
-            driver_port=driver_port_int,
-        )
-        tree_thread: threading.Thread | None = None
-        child: subprocess.Popen[Any] | None = None
-        startup_succeeded = False
-        startup_failure_cleaned = False
-        log_start_offset = _log_byte_offset(log_path)
-        try:
-            with gate:
-                child = subprocess.Popen(cmd, **popen_kw)
-                register_owned_child_pid(child.pid)
+    driver_port_int = int(port_plan) if port_plan is not None and not legacy_mode else None
+    runtime_mutex_held = False
+    if runtime_mutex:
+        _host_maestro_runtime_lock.acquire()
+        runtime_mutex_held = True
+    try:
+        for attempt in range(1, max_attempts + 1):
+            legacy_mode = not driver_host_port_supported()
+            if legacy_mode:
+                env.pop("ATP_MAESTRO_DRIVER_PORT", None)
+            elif maestro_driver_ports_active(device_count):
+                port = planned_driver_port(launch_index)
+                env["ATP_MAESTRO_DRIVER_PORT"] = str(port)
+                driver_port_int = port
+            if attempt > 1:
                 print(
-                    f"[ATP] maestro_subprocess_child device={device_id} flow={flow_path.stem} "
-                    f"cmd_child_pid={child.pid} startup_attempt={attempt} log_offset={log_start_offset}",
+                    f"[ATP] startup_retry device={device_id} flow={flow_path.stem} "
+                    f"attempt={attempt}/{max_attempts} backoff_sec={startup_retry_backoff_sec(attempt):.1f}",
                     flush=True,
                 )
-                if os.environ.get("ATP_MAESTRO_LOG_PROCESS_TREE", "1").strip().lower() not in (
+                time.sleep(startup_retry_backoff_sec(attempt))
+            if not validate_device_health(device_id, suite_id=suite_id, repo=repo):
+                code = 22
+                if attempt < max_attempts:
+                    continue
+                break
+
+            gate = MaestroStartupGate(
+                device_id=device_id,
+                flow_name=flow_path.stem,
+                suite_id=suite_id,
+                repo=repo,
+                launch_index=launch_index,
+                driver_port=driver_port_int,
+            )
+            gate.set_legacy_mode(legacy_mode)
+            tree_thread: threading.Thread | None = None
+            child: subprocess.Popen[Any] | None = None
+            startup_succeeded = False
+            startup_failure_cleaned = False
+            log_start_offset = _log_byte_offset(log_path)
+            try:
+                with gate:
+                    child = subprocess.Popen(cmd, **popen_kw)
+                    register_owned_child_pid(child.pid)
+                    print(
+                        f"[ATP] maestro_subprocess_child device={device_id} flow={flow_path.stem} "
+                        f"cmd_child_pid={child.pid} startup_attempt={attempt} log_offset={log_start_offset}",
+                        flush=True,
+                    )
+                    if os.environ.get("ATP_MAESTRO_LOG_PROCESS_TREE", "1").strip().lower() not in (
+                        "0",
+                        "false",
+                        "no",
+                        "off",
+                    ):
+                        tree_thread = threading.Thread(
+                            target=_log_maestro_process_tree,
+                            args=(device_id, child.pid),
+                            name=f"maestro-tree-{device_id}",
+                            daemon=True,
+                        )
+                        tree_thread.start()
+
+                    if startup_gate_enabled():
+                        ready, reason = gate.release_after_session_ready(
+                            log_path=log_path,
+                            child_pid=child.pid,
+                            log_start_offset=log_start_offset,
+                        )
+                        if not ready:
+                            print(
+                                f"[ATP] startup_retry_root_cause device={device_id} reason={reason}",
+                                flush=True,
+                            )
+                            if reason == "unsupported_driver_port_flag":
+                                invalidate_driver_port_support(
+                                    reason="unsupported_driver_port_flag"
+                                )
+                                legacy_mode = True
+                                gate.set_legacy_mode(True)
+                                env.pop("ATP_MAESTRO_DRIVER_PORT", None)
+                                driver_port_int = None
+                            cleanup_after_startup_failure(
+                                device_id,
+                                repo=repo,
+                                suite_id=suite_id,
+                                child_pid=child.pid,
+                                driver_port=driver_port_int,
+                            )
+                            unregister_owned_child_pid(child.pid)
+                            startup_failure_cleaned = True
+                            code = 1
+                            if attempt < max_attempts:
+                                continue
+                            break
+                        startup_succeeded = True
+                    else:
+                        startup_succeeded = True
+
+                assert child is not None
+                try:
+                    child.wait(timeout=timeout_sec)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait(timeout=30)
+                    log_lifecycle(
+                        repo,
+                        suite_id,
+                        WorkerState.FAILED,
+                        "flow timeout",
+                        device=device_id,
+                        flow=flow_path.name,
+                    )
+                    unregister_owned_child_pid(child.pid)
+                    code = 124
+                    break
+                code = int(child.returncode or 0)
+                unregister_owned_child_pid(child.pid)
+                if os.environ.get("ATP_MAESTRO_POST_RUN_FORWARD_CLEANUP", "1").strip().lower() not in (
                     "0",
                     "false",
                     "no",
                     "off",
                 ):
-                    tree_thread = threading.Thread(
-                        target=_log_maestro_process_tree,
-                        args=(device_id, child.pid),
-                        name=f"maestro-tree-{device_id}",
-                        daemon=True,
-                    )
-                    tree_thread.start()
-
-                if startup_gate_enabled():
-                    ready, reason = gate.release_after_session_ready(
-                        log_path=log_path,
-                        child_pid=child.pid,
-                        log_start_offset=log_start_offset,
-                    )
-                    if not ready:
-                        print(
-                            f"[ATP] startup_retry_root_cause device={device_id} reason={reason}",
-                            flush=True,
-                        )
-                        cleanup_after_startup_failure(
-                            device_id,
-                            repo=repo,
-                            suite_id=suite_id,
-                            child_pid=child.pid,
-                            driver_port=driver_port_int,
-                        )
-                        unregister_owned_child_pid(child.pid)
-                        startup_failure_cleaned = True
-                        code = 1
-                        if attempt < max_attempts:
-                            continue
-                        break
-                    startup_succeeded = True
-                else:
-                    startup_succeeded = True
-
-            # Parallel runtime: no startup lock during full flow execution
-            assert child is not None
-            try:
-                child.wait(timeout=timeout_sec)
-            except subprocess.TimeoutExpired:
-                child.kill()
-                child.wait(timeout=30)
+                    clear_device_adb_forwards(device_id)
+                break
+            except OSError as e:
                 log_lifecycle(
-                    repo, suite_id, WorkerState.FAILED, "flow timeout", device=device_id, flow=flow_path.name
+                    repo,
+                    suite_id,
+                    WorkerState.FAILED,
+                    "run_one_flow_on_device.bat launch failed",
+                    device=device_id,
+                    flow=flow_path.name,
+                    error=str(e),
                 )
-                unregister_owned_child_pid(child.pid)
-                return 124
-            code = int(child.returncode or 0)
-            unregister_owned_child_pid(child.pid)
-            if os.environ.get("ATP_MAESTRO_POST_RUN_FORWARD_CLEANUP", "1").strip().lower() not in (
-                "0",
-                "false",
-                "no",
-                "off",
-            ):
-                clear_device_adb_forwards(device_id)
-            break
-        except OSError as e:
-            log_lifecycle(
-                repo,
-                suite_id,
-                WorkerState.FAILED,
-                "run_one_flow_on_device.bat launch failed",
-                device=device_id,
-                flow=flow_path.name,
-                error=str(e),
-            )
-            if child is not None:
-                unregister_owned_child_pid(child.pid)
-            return 1
-        finally:
-            if (
-                child is not None
-                and not startup_succeeded
-                and not startup_failure_cleaned
-                and attempt < max_attempts
-            ):
-                cleanup_after_startup_failure(
-                    device_id,
-                    repo=repo,
-                    suite_id=suite_id,
-                    child_pid=child.pid,
-                    driver_port=driver_port_int,
-                )
-                unregister_owned_child_pid(child.pid)
+                if child is not None:
+                    unregister_owned_child_pid(child.pid)
+                code = 1
+                break
+            finally:
+                if (
+                    child is not None
+                    and not startup_succeeded
+                    and not startup_failure_cleaned
+                    and attempt < max_attempts
+                ):
+                    cleanup_after_startup_failure(
+                        device_id,
+                        repo=repo,
+                        suite_id=suite_id,
+                        child_pid=child.pid,
+                        driver_port=driver_port_int,
+                    )
+                    unregister_owned_child_pid(child.pid)
+    finally:
+        if runtime_mutex_held:
+            _host_maestro_runtime_lock.release()
     log_lifecycle(
         repo,
         suite_id,
