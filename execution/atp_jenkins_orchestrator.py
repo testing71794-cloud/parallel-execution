@@ -7,13 +7,11 @@ preserving scripts/run_one_flow_on_device.bat outputs (reports/, status/, CSV).
 
 Does not modify Maestro YAML, Excel schema, AI logic, or report layouts.
 
-Enterprise parallel model (default when 2+ devices, ATP_DEVICE_EXECUTION=parallel):
-  - One testcase (flow) at a time across the suite; flows never overlap on the same device.
-  - Each flow wave fans out to ALL devices via ThreadPoolExecutor + isolated subprocess per device.
-  - Staggered Maestro startup (default 2s per device index) reduces ADB/driver handshake races.
-  - Barrier: next flow starts only after every device finishes the current flow.
-  - Per-device isolated logs, status, CSV, maestro-debug, and temp dirs (see maestro_runner.py).
-  Override: ATP_DEVICE_EXECUTION=sequential for legacy one-device-at-a-time scheduling.
+Execution models (ATP_SCHEDULER + ATP_DEVICE_EXECUTION):
+  dynamic (default): per-device worker pool with rotated (flow x device) queue — max utilization.
+  wave (legacy):     flow-level barrier — all devices finish flow N before flow N+1.
+  sequential:        one device at a time per flow (legacy).
+  Per-device isolated subprocess, logs, status, maestro-debug (maestro_runner.py).
 """
 from __future__ import annotations
 
@@ -29,6 +27,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
+from .atp_dynamic_scheduler import (
+    DynamicDeviceScheduler,
+    FlowDeviceTask,
+    TaskOutcome,
+    build_rotated_device_queues,
+)
 from .device_lease import DeviceLease
 from .maestro_runner import (
     WorkerState,
@@ -303,6 +307,17 @@ def _wait_for_prior_device_handshake(
     )
 
 
+def _scheduler_mode() -> str:
+    """
+    dynamic = per-device worker pool (default, max utilization).
+    wave    = synchronized flow waves (rollback: ATP_SCHEDULER=wave).
+    """
+    raw = (os.environ.get("ATP_SCHEDULER") or "dynamic").strip().lower()
+    if raw in ("wave", "flow_wave", "barrier", "legacy"):
+        return "wave"
+    return "dynamic"
+
+
 def _device_execution_mode(device_count: int) -> str:
     """
     parallel = flow-level fan-out to all devices (default when device_count > 1).
@@ -330,16 +345,18 @@ def _execute_flow_on_device(
     allow_maestro_kill: bool,
     launch_index: int = 0,
     execution_mode: str = "parallel",
+    worker_startup: bool = False,
 ) -> _DeviceFlowOutcome:
-    """One device in a flow wave: lease, isolated subprocess, per-device reports (no shared state)."""
-    stagger = _parallel_launch_stagger_sec(launch_index)
-    if stagger > 0:
-        print(
-            f"[ATP] parallel_stagger device={device_id} flow={flow_base} sleep_sec={stagger:.1f}",
-            flush=True,
-        )
-        time.sleep(stagger)
-    if _handshake_gate_enabled(len(devices), execution_mode):
+    """One (flow, device) run: lease, isolated subprocess, per-device reports (no shared state)."""
+    if worker_startup:
+        stagger = _parallel_launch_stagger_sec(launch_index)
+        if stagger > 0:
+            print(
+                f"[ATP] parallel_stagger device={device_id} flow={flow_base} sleep_sec={stagger:.1f}",
+                flush=True,
+            )
+            time.sleep(stagger)
+    if execution_mode != "dynamic" and _handshake_gate_enabled(len(devices), execution_mode):
         _wait_for_prior_device_handshake(
             repo=repo,
             suite_id=suite_id,
@@ -486,6 +503,93 @@ def _run_flow_wave_on_devices(
     return seq_outcomes
 
 
+def _execute_task_for_scheduler(
+    *,
+    repo: Path,
+    devices: list[str],
+    app_id: str,
+    clear_state: str,
+    maestro_launch: Path,
+    task: FlowDeviceTask,
+    device_index: int,
+    worker_startup: bool,
+) -> TaskOutcome:
+    outcome = _execute_flow_on_device(
+        repo=repo,
+        suite_id=task.suite_id,
+        flow=task.flow,
+        flow_base=task.flow_base,
+        devices=devices,
+        device_id=task.device_id,
+        app_id=app_id,
+        clear_state=clear_state,
+        maestro_launch=maestro_launch,
+        allow_maestro_kill=False,
+        launch_index=device_index,
+        execution_mode="dynamic",
+        worker_startup=worker_startup,
+    )
+    return TaskOutcome(device_id=outcome.device_id, exit_code=outcome.exit_code)
+
+
+def _run_dynamic_worker_pool(
+    *,
+    repo: Path,
+    atp_root: Path,
+    flows: list[Path],
+    devices: list[str],
+    app_id: str,
+    clear_state: str,
+    maestro_launch: Path,
+    labels: dict[str, str],
+) -> bool:
+    """Returns True if any failure."""
+    queues = build_rotated_device_queues(
+        flows=flows,
+        devices=devices,
+        atp_root=atp_root,
+        folder_name_fn=get_atp_folder_name,
+        suite_id_fn=get_atp_suite_id,
+    )
+    for flow in flows:
+        folder_name = get_atp_folder_name(atp_root, flow)
+        labels[get_atp_suite_id(folder_name)] = folder_name
+
+    def write_flow_section(task: FlowDeviceTask) -> None:
+        write_section(f"ATP [{task.folder_name}] :: {task.flow_base} (suite={task.suite_id})")
+        log_lifecycle(repo, task.suite_id, WorkerState.IDLE, "dynamic task", flow=task.flow_base)
+
+    def report_task(task: FlowDeviceTask, outcome: TaskOutcome) -> bool:
+        return _report_device_outcome(
+            repo,
+            task.suite_id,
+            task.flow,
+            task.flow_base,
+            _DeviceFlowOutcome(device_id=outcome.device_id, exit_code=outcome.exit_code),
+        )
+
+    scheduler = DynamicDeviceScheduler(
+        repo=repo,
+        devices=devices,
+        device_queues=queues,
+        execute_task=lambda task, device_index, worker_startup: _execute_task_for_scheduler(
+            repo=repo,
+            devices=devices,
+            app_id=app_id,
+            clear_state=clear_state,
+            maestro_launch=maestro_launch,
+            task=task,
+            device_index=device_index,
+            worker_startup=worker_startup,
+        ),
+        report_outcome=report_task,
+        write_flow_section=write_flow_section,
+        worker_stagger_sec_fn=_parallel_launch_stagger_sec,
+    )
+    _sched_out, failed = scheduler.run()
+    return failed
+
+
 def _print_wave_summary(flow_base: str, outcomes: list[_DeviceFlowOutcome], elapsed_sec: float) -> None:
     """Deterministic per-wave rollup (device order preserved)."""
     ok = sum(1 for o in outcomes if o.exit_code == 0)
@@ -611,24 +715,31 @@ def run_atp_folder_blocking(
         return 1
     print(f"Maestro: {maestro_launch}", flush=True)
     exec_mode = _device_execution_mode(len(devices))
+    sched_mode = _scheduler_mode()
     print(
         f"[ATP] device execution mode: {exec_mode} "
         f"(override: ATP_DEVICE_EXECUTION=sequential|parallel)",
         flush=True,
     )
+    print(
+        f"[ATP] scheduler mode: {sched_mode} "
+        f"(override: ATP_SCHEDULER=dynamic|wave; wave = legacy flow barrier)",
+        flush=True,
+    )
     if exec_mode == "parallel" and len(devices) > 1:
         stagger_env = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or _default_parallel_stagger_sec()).strip()
-        gate_on = _handshake_gate_enabled(len(devices), exec_mode)
+        gate_on = _handshake_gate_enabled(len(devices), exec_mode) and sched_mode == "wave"
         print(
             f"[ATP] parallel_device_stagger_sec={stagger_env} "
-            f"(per-device index delay before Maestro; set 0 for simultaneous startup)",
+            f"(per worker startup; set 0 for simultaneous startup)",
             flush=True,
         )
-        print(
-            f"[ATP] maestro_handshake_gate={'1' if gate_on else '0'} "
-            f"(ATP_MAESTRO_HANDSHAKE_GATE; serializes driver open on same Windows host)",
-            flush=True,
-        )
+        if sched_mode == "wave":
+            print(
+                f"[ATP] maestro_handshake_gate={'1' if gate_on else '0'} "
+                f"(ATP_MAESTRO_HANDSHAKE_GATE; wave mode only)",
+                flush=True,
+            )
         print(
             "[ATP] parallel_paths: reports/<suite>/logs/<flow>_<device>.log "
             "status/<suite>__<flow>__<device>.txt maestro-debug/<flow>__<device>/",
@@ -640,27 +751,46 @@ def run_atp_folder_blocking(
     labels: dict[str, str] = {}
     overall_failed = False
 
-    for flow in flows:
-        folder_name = get_atp_folder_name(atp_root, flow)
-        suite_id = get_atp_suite_id(folder_name)
-        labels[suite_id] = folder_name
-        flow_base = flow.stem
-        write_section(f"ATP [{folder_name}] :: {flow_base} (suite={suite_id})")
-        log_lifecycle(repo, suite_id, WorkerState.IDLE, "flow wave begin", flow=flow_base)
-
-        outcomes = _run_flow_wave_on_devices(
+    use_dynamic = exec_mode == "parallel" and len(devices) > 1 and sched_mode == "dynamic"
+    if use_dynamic:
+        write_section("ATP dynamic worker-pool scheduler")
+        print(
+            f"[ATP] dynamic_pool flows={len(flows)} devices={len(devices)} "
+            f"matrix_tasks={len(flows) * len(devices)}",
+            flush=True,
+        )
+        overall_failed = _run_dynamic_worker_pool(
             repo=repo,
-            suite_id=suite_id,
-            flow=flow,
-            flow_base=flow_base,
+            atp_root=atp_root,
+            flows=flows,
             devices=devices,
             app_id=app_id,
             clear_state=clear_state,
             maestro_launch=maestro_launch,
+            labels=labels,
         )
-        for outcome in outcomes:
-            if _report_device_outcome(repo, suite_id, flow, flow_base, outcome):
-                overall_failed = True
+    else:
+        for flow in flows:
+            folder_name = get_atp_folder_name(atp_root, flow)
+            suite_id = get_atp_suite_id(folder_name)
+            labels[suite_id] = folder_name
+            flow_base = flow.stem
+            write_section(f"ATP [{folder_name}] :: {flow_base} (suite={suite_id})")
+            log_lifecycle(repo, suite_id, WorkerState.IDLE, "flow wave begin", flow=flow_base)
+
+            outcomes = _run_flow_wave_on_devices(
+                repo=repo,
+                suite_id=suite_id,
+                flow=flow,
+                flow_base=flow_base,
+                devices=devices,
+                app_id=app_id,
+                clear_state=clear_state,
+                maestro_launch=maestro_launch,
+            )
+            for outcome in outcomes:
+                if _report_device_outcome(repo, suite_id, flow, flow_base, outcome):
+                    overall_failed = True
 
     bs = repo / "build-summary"
     bs.mkdir(parents=True, exist_ok=True)
