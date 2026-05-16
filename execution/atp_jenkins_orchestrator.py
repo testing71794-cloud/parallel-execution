@@ -7,8 +7,12 @@ preserving scripts/run_one_flow_on_device.bat outputs (reports/, status/, CSV).
 
 Does not modify Maestro YAML, Excel schema, AI logic, or report layouts.
 
-Flow-level synchronized multi-device execution (default when 2+ devices):
-  Flow 1 on all devices in parallel -> barrier -> Flow 2 on all devices in parallel -> ...
+Enterprise parallel model (default when 2+ devices, ATP_DEVICE_EXECUTION=parallel):
+  - One testcase (flow) at a time across the suite; flows never overlap on the same device.
+  - Each flow wave fans out to ALL devices via ThreadPoolExecutor + isolated subprocess per device.
+  - Staggered Maestro startup (default 2s per device index) reduces ADB/driver handshake races.
+  - Barrier: next flow starts only after every device finishes the current flow.
+  - Per-device isolated logs, status, CSV, maestro-debug, and temp dirs (see maestro_runner.py).
   Override: ATP_DEVICE_EXECUTION=sequential for legacy one-device-at-a-time scheduling.
 """
 from __future__ import annotations
@@ -229,17 +233,74 @@ class _DeviceFlowOutcome:
     exit_code: int
 
 
+def _default_parallel_stagger_sec() -> str:
+    """Enterprise default: 2s between device Maestro startups on Windows (1–2s range)."""
+    return "2" if os.name == "nt" else "0"
+
+
 def _parallel_launch_stagger_sec(launch_index: int) -> float:
     """Stagger Maestro driver handshake on one host to reduce adb TcpForwarder races (Windows)."""
     if launch_index <= 0:
         return 0.0
     raw = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or "").strip()
     if not raw:
-        raw = "3" if os.name == "nt" else "0"
+        raw = _default_parallel_stagger_sec()
     try:
         return max(0.0, float(raw)) * launch_index
     except ValueError:
         return 0.0
+
+
+def _handshake_gate_enabled(device_count: int, mode: str) -> bool:
+    if mode != "parallel" or device_count <= 1:
+        return False
+    raw = (os.environ.get("ATP_MAESTRO_HANDSHAKE_GATE") or "").strip().lower()
+    if raw in ("0", "false", "no", "off"):
+        return False
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    # Default on Windows when driver-host-port is unavailable (Maestro version unchanged).
+    return os.name == "nt"
+
+
+def _wait_for_prior_device_handshake(
+    *,
+    repo: Path,
+    suite_id: str,
+    flow: Path,
+    devices: list[str],
+    launch_index: int,
+) -> None:
+    """
+    Device index > 0 waits until the prior device's Maestro log shows driver session started.
+    Serializes only the risky handshake window; tests still run concurrently afterward.
+    """
+    if launch_index <= 0 or launch_index >= len(devices):
+        return
+    prior = devices[launch_index - 1]
+    timeout = float(os.environ.get("ATP_MAESTRO_HANDSHAKE_GATE_SEC", "120"))
+    deadline = time.monotonic() + timeout
+    wait_t0 = time.monotonic()
+    markers = ("Running on", "Launch app", "Flow ", "COMPLETED", "FAILED")
+    print(
+        f"[ATP] handshake_gate device={devices[launch_index]} waits_for={prior} flow={flow.stem}",
+        flush=True,
+    )
+    while time.monotonic() < deadline:
+        tail = _read_log_tail_text(repo, suite_id, flow, prior, 40)
+        if tail and any(m in tail for m in markers):
+            print(
+                f"[ATP] handshake_gate open device={devices[launch_index]} prior={prior} "
+                f"waited_sec={time.monotonic() - wait_t0:.1f}",
+                flush=True,
+            )
+            return
+        time.sleep(1.5)
+    print(
+        f"[ATP] handshake_gate timeout device={devices[launch_index]} prior={prior} "
+        f"after_sec={timeout:.0f} — launching Maestro anyway",
+        flush=True,
+    )
 
 
 def _device_execution_mode(device_count: int) -> str:
@@ -261,14 +322,16 @@ def _execute_flow_on_device(
     suite_id: str,
     flow: Path,
     flow_base: str,
+    devices: list[str],
     device_id: str,
     app_id: str,
     clear_state: str,
     maestro_launch: Path,
     allow_maestro_kill: bool,
     launch_index: int = 0,
+    execution_mode: str = "parallel",
 ) -> _DeviceFlowOutcome:
-    """One device in a flow wave: lease, bat, status/log per device (isolated paths)."""
+    """One device in a flow wave: lease, isolated subprocess, per-device reports (no shared state)."""
     stagger = _parallel_launch_stagger_sec(launch_index)
     if stagger > 0:
         print(
@@ -276,6 +339,14 @@ def _execute_flow_on_device(
             flush=True,
         )
         time.sleep(stagger)
+    if _handshake_gate_enabled(len(devices), execution_mode):
+        _wait_for_prior_device_handshake(
+            repo=repo,
+            suite_id=suite_id,
+            flow=flow,
+            devices=devices,
+            launch_index=launch_index,
+        )
     rd = repo / "reports" / suite_id
     (rd / "logs").mkdir(parents=True, exist_ok=True)
     (rd / "results").mkdir(parents=True, exist_ok=True)
@@ -358,12 +429,14 @@ def _run_flow_wave_on_devices(
                     suite_id=suite_id,
                     flow=flow,
                     flow_base=flow_base,
+                    devices=devices,
                     device_id=dev,
                     app_id=app_id,
                     clear_state=clear_state,
                     maestro_launch=maestro_launch,
                     allow_maestro_kill=allow_maestro_kill,
                     launch_index=idx,
+                    execution_mode=mode,
                 ): dev
                 for idx, dev in enumerate(devices)
             }
@@ -376,11 +449,13 @@ def _run_flow_wave_on_devices(
                     outcomes.append(_DeviceFlowOutcome(device_id=dev, exit_code=1))
         order = {d: i for i, d in enumerate(devices)}
         outcomes.sort(key=lambda o: order.get(o.device_id, 999))
+        wave_elapsed = time.time() - wave_t0
         print(
             f"[ATP] flow_wave_barrier_done flow={flow_base} mode=parallel "
-            f"elapsed_sec={time.time() - wave_t0:.1f}",
+            f"elapsed_sec={wave_elapsed:.1f}",
             flush=True,
         )
+        _print_wave_summary(flow_base, outcomes, wave_elapsed)
         return outcomes
 
     print(f"  [ATP] flow wave sequential: {flow_base}", flush=True)
@@ -393,11 +468,14 @@ def _run_flow_wave_on_devices(
                 suite_id=suite_id,
                 flow=flow,
                 flow_base=flow_base,
+                devices=devices,
                 device_id=dev,
                 app_id=app_id,
                 clear_state=clear_state,
                 maestro_launch=maestro_launch,
                 allow_maestro_kill=True,
+                launch_index=0,
+                execution_mode=mode,
             )
         )
     print(
@@ -406,6 +484,20 @@ def _run_flow_wave_on_devices(
         flush=True,
     )
     return seq_outcomes
+
+
+def _print_wave_summary(flow_base: str, outcomes: list[_DeviceFlowOutcome], elapsed_sec: float) -> None:
+    """Deterministic per-wave rollup (device order preserved)."""
+    ok = sum(1 for o in outcomes if o.exit_code == 0)
+    fail = len(outcomes) - ok
+    print(
+        f"[ATP] wave_summary flow={flow_base} devices={len(outcomes)} ok={ok} fail={fail} "
+        f"wall_sec={elapsed_sec:.1f}",
+        flush=True,
+    )
+    for o in outcomes:
+        mark = "OK" if o.exit_code == 0 else "FAIL"
+        print(f"[ATP] wave_device_result device={o.device_id} exit={o.exit_code} {mark}", flush=True)
 
 
 def _report_device_outcome(
@@ -525,11 +617,21 @@ def run_atp_folder_blocking(
         flush=True,
     )
     if exec_mode == "parallel" and len(devices) > 1:
-        stagger_default = "3" if os.name == "nt" else "0"
-        stagger_env = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or stagger_default).strip()
+        stagger_env = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or _default_parallel_stagger_sec()).strip()
+        gate_on = _handshake_gate_enabled(len(devices), exec_mode)
         print(
             f"[ATP] parallel_device_stagger_sec={stagger_env} "
-            f"(per-device index delay before Maestro; set 0 for simultaneous handshake)",
+            f"(per-device index delay before Maestro; set 0 for simultaneous startup)",
+            flush=True,
+        )
+        print(
+            f"[ATP] maestro_handshake_gate={'1' if gate_on else '0'} "
+            f"(ATP_MAESTRO_HANDSHAKE_GATE; serializes driver open on same Windows host)",
+            flush=True,
+        )
+        print(
+            "[ATP] parallel_paths: reports/<suite>/logs/<flow>_<device>.log "
+            "status/<suite>__<flow>__<device>.txt maestro-debug/<flow>__<device>/",
             flush=True,
         )
 

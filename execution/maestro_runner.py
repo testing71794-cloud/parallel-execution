@@ -104,6 +104,35 @@ def snapshot_adb_forwards(suite_id: str, repo: Path) -> None:
         log_lifecycle(repo, suite_id, WorkerState.CLEANUP, "adb forward list failed", error=str(e))
 
 
+def _adb_clear_device_forwards(device_id: str, suite_id: str, repo: Path) -> None:
+    """Remove stale tcp forwards for one serial before Maestro (parallel same-host safety)."""
+    if os.environ.get("ATP_ORCH_CLEAR_DEVICE_FORWARDS", "1").strip().lower() in ("0", "false", "no", "off"):
+        return
+    exe = _adb_exe()
+    if not exe:
+        return
+    try:
+        proc = subprocess.run(
+            [exe, "-s", device_id, "forward", "--remove-all"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        log_lifecycle(
+            repo,
+            suite_id,
+            WorkerState.CLEANUP,
+            "adb forward --remove-all",
+            device=device_id,
+            rc=proc.returncode,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        log_lifecycle(
+            repo, suite_id, WorkerState.CLEANUP, "adb forward --remove-all failed", device=device_id, error=str(e)
+        )
+
+
 def pre_maestro_cleanup(
     device_id: str,
     suite_id: str,
@@ -113,6 +142,7 @@ def pre_maestro_cleanup(
 ) -> None:
     log_lifecycle(repo, suite_id, WorkerState.CLEANUP, "pre_maestro_cleanup begin", device=device_id)
     adb_start_server(suite_id, repo)
+    _adb_clear_device_forwards(device_id, suite_id, repo)
     if _truthy("ATP_ORCH_SNAPSHOT_ADB_FORWARDS"):
         snapshot_adb_forwards(suite_id, repo)
     # When None, preserve legacy behavior (kill allowed). Orchestrator passes False for multi-device waves.
