@@ -220,6 +220,19 @@ class _DeviceFlowOutcome:
     exit_code: int
 
 
+def _parallel_launch_stagger_sec(launch_index: int) -> float:
+    """Stagger Maestro driver handshake on one host to reduce adb TcpForwarder races (Windows)."""
+    if launch_index <= 0:
+        return 0.0
+    raw = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or "").strip()
+    if not raw:
+        raw = "3" if os.name == "nt" else "0"
+    try:
+        return max(0.0, float(raw)) * launch_index
+    except ValueError:
+        return 0.0
+
+
 def _device_execution_mode(device_count: int) -> str:
     """
     parallel = flow-level fan-out to all devices (default when device_count > 1).
@@ -244,8 +257,16 @@ def _execute_flow_on_device(
     clear_state: str,
     maestro_launch: Path,
     allow_maestro_kill: bool,
+    launch_index: int = 0,
 ) -> _DeviceFlowOutcome:
     """One device in a flow wave: lease, bat, status/log per device (isolated paths)."""
+    stagger = _parallel_launch_stagger_sec(launch_index)
+    if stagger > 0:
+        print(
+            f"[ATP] parallel_stagger device={device_id} flow={flow_base} sleep_sec={stagger:.1f}",
+            flush=True,
+        )
+        time.sleep(stagger)
     rd = repo / "reports" / suite_id
     (rd / "logs").mkdir(parents=True, exist_ok=True)
     (rd / "results").mkdir(parents=True, exist_ok=True)
@@ -332,8 +353,9 @@ def _run_flow_wave_on_devices(
                     clear_state=clear_state,
                     maestro_launch=maestro_launch,
                     allow_maestro_kill=allow_maestro_kill,
+                    launch_index=idx,
                 ): dev
-                for dev in devices
+                for idx, dev in enumerate(devices)
             }
             for fut in as_completed(futures):
                 try:
@@ -492,6 +514,14 @@ def run_atp_folder_blocking(
         f"(override: ATP_DEVICE_EXECUTION=sequential|parallel)",
         flush=True,
     )
+    if exec_mode == "parallel" and len(devices) > 1:
+        stagger_default = "3" if os.name == "nt" else "0"
+        stagger_env = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or stagger_default).strip()
+        print(
+            f"[ATP] parallel_device_stagger_sec={stagger_env} "
+            f"(per-device index delay before Maestro; set 0 for simultaneous handshake)",
+            flush=True,
+        )
 
     (repo / "status").mkdir(parents=True, exist_ok=True)
 

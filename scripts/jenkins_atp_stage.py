@@ -61,12 +61,11 @@ def _log_orchestrator_fingerprint(repo: Path) -> None:
     print(f"[jenkins_atp_stage] orchestrator_path={orch_py}", flush=True)
     if orch_py.is_file():
         print(f"[jenkins_atp_stage] orchestrator_mtime={orch_py.stat().st_mtime}", flush=True)
-    try:
-        from execution.atp_jenkins_orchestrator import ORCHESTRATOR_REV
-
-        print(f"[jenkins_atp_stage] orchestrator_rev={ORCHESTRATOR_REV}", flush=True)
-    except Exception as exc:
-        print(f"[jenkins_atp_stage] WARN: could not import orchestrator_rev: {exc}", flush=True)
+    rev_file = repo / "execution" / "ORCHESTRATOR_REV.txt"
+    if rev_file.is_file():
+        rev = rev_file.read_text(encoding="utf-8", errors="replace").strip().splitlines()[0].strip()
+        if rev:
+            print(f"[jenkins_atp_stage] orchestrator_rev={rev}", flush=True)
 
 
 def cmd_run(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
