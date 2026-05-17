@@ -3,6 +3,7 @@ name: PR_05_03_Precut_Different_Photo_Two_From_Album
 ---
 - launchApp:
     clearState: true
+- waitForAnimationToEnd
 - runFlow: ../../elements/loadElements.yaml
 - runFlow: ../../flows/I will do it later.yaml
 - runFlow: ../../flows/Agree Term and Condition.yaml
@@ -19,12 +20,25 @@ name: PR_05_03_Precut_Different_Photo_Two_From_Album
           start: "75%,55%"
           end: "15%,45%"
       - waitForAnimationToEnd
-- runFlow: ../../flows/onboardingSkip.yaml
+- runFlow: ../flows/onboardingSkip.yaml
 - assertVisible: ${output.home.titleText}
-- runFlow: ../../flows/openAlbum.yaml
-- runFlow: ../../flows/selectDoublePhotos.yaml
-- runFlow: ../../flows/openPrecutEditor.yaml
+- runFlow: ../flows/openAlbum.yaml
+- runFlow: ../flows/selectDoublePhotos.yaml
 - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Pre-Cut Stickers"
+    commands:
+      - runFlow:
+          when:
+            visible: "Kodak 2x3 Pre-Cut Sticker Paper"
+          commands:
+            - tapOn: "Kodak 2x3 Pre-Cut Sticker Paper"
+            - waitForAnimationToEnd
+            - back
+            - waitForAnimationToEnd
+      - tapOn: "OK"
+      - waitForAnimationToEnd
 - assertVisible: |-
     CREATE PRE-CUT
      STICKERS
@@ -34,6 +48,7 @@ name: PR_05_03_Precut_Different_Photo_Two_From_Album
 - waitForAnimationToEnd
 - tapOn: "Next"
 - tapOn: "Save"
+- waitForAnimationToEnd
 - runFlow:
     when:
       visible: "Time to Fine-Tune"

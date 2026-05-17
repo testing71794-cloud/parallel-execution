@@ -24,9 +24,44 @@ name: PR_05_01_Precut Print  + Back + Home screen
 - runFlow: ../../flows/onboardingSkip.yaml
 - assertVisible: ${output.home.titleText}
 - runFlow: ../../flows/findAndConnectPrinter.yaml
-- runFlow: ../../flows/openAlbum.yaml
-- runFlow: ../../flows/selectSinglePhoto.yaml
-- runFlow: ../../flows/openPrecutEditor.yaml
+- runFlow: ../flows/openAlbum.yaml
+- runFlow: ../flows/selectSinglePhoto.yaml
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: ${output.editor.precutsTab}
+    commands:
+      - tapOn: ${output.editor.precutsTab}
+      - waitForAnimationToEnd
+      - tapOn:
+          point: "20%,60%" # choose a precut option
+      - waitForAnimationToEnd
+# ----------------------------
+# 1) Pre-Cut Stickers info popup
+# ----------------------------
+- runFlow:
+    when:
+      visible: "Pre-Cut Stickers"
+    commands:
+      - assertVisible: "Pre-Cut Stickers"
+
+      # If the link text is present, tap only the link (NOT the whole sentence)
+      - runFlow:
+          when:
+            visible: "Kodak 2x3 Pre-Cut Sticker Paper"
+          commands:
+            - tapOn: "Kodak 2x3 Pre-Cut Sticker Paper"
+            - waitForAnimationToEnd
+            - back
+            - waitForAnimationToEnd
+
+      # Close popup
+      - tapOn: "OK"
+      - waitForAnimationToEnd
+
+# ----------------------------
+# 2) CREATE PRE-CUT STICKERS (photo picker)
+# ----------------------------
 - assertVisible: |-
     CREATE PRE-CUT
      STICKERS

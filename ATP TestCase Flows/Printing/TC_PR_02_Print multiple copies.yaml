@@ -48,6 +48,7 @@ name: TC_PR_02_Print multiple copies
       - tapOn:
           text: "Connect"
 - waitForAnimationToEnd
+- waitForAnimationToEnd
 - runFlow:
     when:
       visible:

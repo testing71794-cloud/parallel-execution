@@ -48,6 +48,7 @@ name: TC_PR_01_Print single photo
       - tapOn:
           text: "Connect"
 - waitForAnimationToEnd
+- waitForAnimationToEnd
 - runFlow:
     when:
       visible:

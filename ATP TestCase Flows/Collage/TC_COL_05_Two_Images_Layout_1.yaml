@@ -5,21 +5,54 @@ name: TC_COL_05_Two_Images_Layout_1
 # Assumes footer on Select Layout reads "N Items selected" for N>1; adjust if the app differs.
 - launchApp:
     clearState: true
+- waitForAnimationToEnd
 - runFlow: ../../elements/loadElements.yaml
+- waitForAnimationToEnd
 - runFlow: ../../flows/I will do it later.yaml
+- waitForAnimationToEnd
 - runFlow: ../../flows/Agree Term and Condition.yaml
+- waitForAnimationToEnd
 - runFlow: ../../flows/permissionsFlow.yaml
+- waitForAnimationToEnd
 - runFlow: ../../flows/Onboarding Welcome Screen.yaml
-- runFlow: ../../flows/swipeOnboardingIfShown.yaml
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
 - runFlow: ../../flows/onboardingSkip.yaml
+- waitForAnimationToEnd
 - runFlow:
     when:
       visible: "Go to homepage"
     commands:
       - tapOn: "Go to homepage"
       - waitForAnimationToEnd
-- runFlow: ../../flows/waitForHomeScreen.yaml
-- runFlow: ../../flows/grantPhotosAccess.yaml
+- extendedWaitUntil:
+    visible: "KODAK SMILE"
+    timeout: 25000
+- assertVisible: "KODAK SMILE"
+- assertVisible: ${output.home.titleText}
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Allow KODAK SMILE to access photos"
+    commands:
+      - tapOn: "Allow"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Photos Access Required"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
 - tapOn: "All Photos"
 - waitForAnimationToEnd
 - assertVisible: "All Photos"
@@ -66,6 +99,7 @@ name: TC_COL_05_Two_Images_Layout_1
 - assertVisible: "Save"
 - waitForAnimationToEnd
 - tapOn: "Save"
+- waitForAnimationToEnd
 - runFlow:
     when:
       visible: "Save Photo?"

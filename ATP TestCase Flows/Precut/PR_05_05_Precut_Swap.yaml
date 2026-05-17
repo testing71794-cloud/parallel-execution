@@ -3,6 +3,7 @@ name: PR_05_05_Precut_Swap
 ---
 - launchApp:
     clearState: true
+- waitForAnimationToEnd
 - runFlow: ../../elements/loadElements.yaml
 - runFlow: ../../flows/I will do it later.yaml
 - runFlow: ../../flows/Agree Term and Condition.yaml
@@ -23,6 +24,7 @@ name: PR_05_05_Precut_Swap
 - assertVisible: ${output.home.titleText}
 - runFlow: ../../flows/openAlbum.yaml
 - runFlow: ../../flows/selectSinglePhoto.yaml
+- waitForAnimationToEnd
 - runFlow:
     when:
       visible: ${output.editor.precutsTab}

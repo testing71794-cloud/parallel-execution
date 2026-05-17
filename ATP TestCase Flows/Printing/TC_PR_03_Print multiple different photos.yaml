@@ -48,6 +48,7 @@ name: TC_PR_03_Print multiple different photos
       - tapOn:
           text: "Connect"
 - waitForAnimationToEnd
+- waitForAnimationToEnd
 - runFlow:
     when:
       visible:
@@ -57,6 +58,7 @@ name: TC_PR_03_Print multiple different photos
           text: "Connect"
 - tapOn:
     id: "imageViewGallery"
+- waitForAnimationToEnd
 - runFlow:
     when:
       notVisible: "Select Items"

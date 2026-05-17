@@ -3,6 +3,7 @@ name: PR_05_02_Precut_Different_Photo_Single_From_Album
 ---
 - launchApp:
     clearState: true
+- waitForAnimationToEnd
 - runFlow: ../../elements/loadElements.yaml
 - runFlow: ../../flows/I will do it later.yaml
 - runFlow: ../../flows/Agree Term and Condition.yaml
@@ -23,6 +24,7 @@ name: PR_05_02_Precut_Different_Photo_Single_From_Album
 - assertVisible: ${output.home.titleText}
 - runFlow: ../../flows/openAlbum.yaml
 - runFlow: ../../flows/selectSinglePhoto.yaml
+- waitForAnimationToEnd
 - runFlow:
     when:
       visible: ${output.editor.precutsTab}
