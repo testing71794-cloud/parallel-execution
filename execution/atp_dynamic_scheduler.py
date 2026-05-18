@@ -151,22 +151,6 @@ class DynamicDeviceScheduler:
     def _device_worker(self, device_id: str, device_index: int) -> list[TaskOutcome]:
         tasks = list(self._queues.get(device_id, []))
         outcomes: list[TaskOutcome] = []
-        stagger = self._worker_stagger_sec_fn(device_index)
-        if os.environ.get("ATP_NATIVE_PARALLEL_ACTIVE", "").strip().lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
-        ):
-            stagger = 0.0
-        if stagger > 0:
-            print(
-                f"[ATP] worker_stagger device={_dev_log(device_id)} worker_index={device_index} "
-                f"sleep_sec={stagger:.1f}",
-                flush=True,
-            )
-            time.sleep(stagger)
-
         worker_t0 = time.time()
         print(
             f"[ATP] worker_start device={_dev_log(device_id)} tasks={len(tasks)} ts={worker_t0:.3f}",

@@ -24,8 +24,8 @@ name: PR_05_01_Precut Print  + Back + Home screen
 - runFlow: ../../flows/onboardingSkip.yaml
 - assertVisible: ${output.home.titleText}
 - runFlow: ../../flows/findAndConnectPrinter.yaml
-- runFlow: ../flows/openAlbum.yaml
-- runFlow: ../flows/selectSinglePhoto.yaml
+- runFlow: ../../flows/openAlbum.yaml
+- runFlow: ../../flows/selectSinglePhoto.yaml
 - waitForAnimationToEnd
 - runFlow:
     when:

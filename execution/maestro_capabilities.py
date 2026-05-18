@@ -191,7 +191,7 @@ def apply_native_parallel_env_defaults(
         return
     # Force native runtime policy (override stale Jenkins env).
     os.environ["ATP_MAESTRO_STARTUP_GATE"] = "0"
-    os.environ["ATP_PARALLEL_DEVICE_STAGGER_SEC"] = "0"
+    os.environ.setdefault("ATP_PARALLEL_DEVICE_STAGGER_SEC", "2")
     os.environ["ATP_MAESTRO_LEGACY_RUNTIME_MUTEX"] = "0"
     os.environ["ATP_MAESTRO_HANDSHAKE_GATE"] = "0"
     os.environ["MAESTRO_PARALLEL_STARTUP_DELAY_SEC"] = "0"
@@ -223,7 +223,8 @@ def log_native_parallel_runtime_config(caps: MaestroCapabilities) -> None:
         flush=True,
     )
     print("[ATP] maestro_startup_gate=0", flush=True)
-    print("[ATP] parallel_device_stagger_sec=0", flush=True)
+    stagger = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or "2").strip()
+    print(f"[ATP] parallel_device_stagger_sec={stagger}", flush=True)
     print("[ATP] legacy_runtime_mutex=0", flush=True)
     print("[ATP] native_parallel_runtime_config end", flush=True)
 

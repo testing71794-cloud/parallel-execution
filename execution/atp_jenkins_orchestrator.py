@@ -278,39 +278,17 @@ class _DeviceFlowOutcome:
 
 
 def _default_parallel_stagger_sec(device_count: int = 1) -> str:
-    """0 = simultaneous startups for native parallel; legacy serialized may use 2s on Windows."""
-    from .maestro_capabilities import legacy_serialized_allowed
-
-    if device_count > 1 and native_parallel_active(device_count):
-        return "0"
-    if device_count > 1 and legacy_serialized_allowed():
-        return "2" if os.name == "nt" else "0"
+    """Default startup stagger step (seconds per device index); execution stays parallel."""
+    if device_count > 1:
+        return "2"
     return "0"
 
 
 def _parallel_launch_stagger_sec(launch_index: int) -> float:
-    """Stagger between device worker starts (0 = simultaneous for native parallel)."""
-    if launch_index <= 0:
-        return 0.0
-    try:
-        from .maestro_capabilities import is_native_parallel_env_active, native_parallel_active
+    """Startup-only stagger between device workers (does not serialize flow execution)."""
+    from .maestro_stabilization import parallel_device_stagger_sec
 
-        dc = int(os.environ.get("ATP_ORCH_DEVICE_COUNT", "1") or "1")
-        if is_native_parallel_env_active() or native_parallel_active(dc):
-            return 0.0
-    except (ImportError, ValueError):
-        pass
-    raw = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or "").strip()
-    if not raw:
-        try:
-            dc = int(os.environ.get("ATP_ORCH_DEVICE_COUNT", "1"))
-        except ValueError:
-            dc = 1
-        raw = _default_parallel_stagger_sec(dc)
-    try:
-        return max(0.0, float(raw)) * launch_index
-    except ValueError:
-        return 0.0
+    return parallel_device_stagger_sec(launch_index)
 
 
 def _handshake_gate_enabled(device_count: int, mode: str) -> bool:
@@ -414,21 +392,15 @@ def _execute_flow_on_device(
     worker_startup: bool = False,
 ) -> _DeviceFlowOutcome:
     """One (flow, device) run: lease, isolated subprocess, per-device reports (no shared state)."""
-    if worker_startup:
-        stagger = _parallel_launch_stagger_sec(launch_index)
-        try:
-            from .maestro_capabilities import is_native_parallel_env_active, native_parallel_active
+    from .maestro_stabilization import maybe_startup_stagger_once
 
-            if is_native_parallel_env_active() or native_parallel_active(len(devices)):
-                stagger = 0.0
-        except ImportError:
-            pass
-        if stagger > 0:
-            print(
-                f"[ATP] parallel_stagger device={_dev_log(device_id)} flow={flow_base} sleep_sec={stagger:.1f}",
-                flush=True,
-            )
-            time.sleep(stagger)
+    maybe_startup_stagger_once(device_id, launch_index)
+    try:
+        from utils.runflow_resolve import validate_runflow_paths
+
+        validate_runflow_paths(flow, repo_root=repo)
+    except OSError as exc:
+        print(f"[ATP] runflow_resolve_skip flow={flow_base} error={exc}", flush=True)
     if execution_mode != "dynamic" and _handshake_gate_enabled(len(devices), execution_mode):
         _wait_for_prior_device_handshake(
             repo=repo,
@@ -829,7 +801,7 @@ def run_atp_folder_blocking(
         print(f"[ATP] legacy_runtime_mutex={mutex_env}", flush=True)
         print(
             f"[ATP] parallel_device_stagger_sec={stagger_env} "
-            f"(0 = simultaneous; native parallel default)",
+            f"(startup-only; index*N sec before worker begins; flows still parallel)",
             flush=True,
         )
         print(

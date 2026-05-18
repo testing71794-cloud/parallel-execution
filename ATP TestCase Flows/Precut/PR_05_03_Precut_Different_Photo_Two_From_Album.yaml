@@ -20,10 +20,10 @@ name: PR_05_03_Precut_Different_Photo_Two_From_Album
           start: "75%,55%"
           end: "15%,45%"
       - waitForAnimationToEnd
-- runFlow: ../flows/onboardingSkip.yaml
+- runFlow: ../../flows/onboardingSkip.yaml
 - assertVisible: ${output.home.titleText}
-- runFlow: ../flows/openAlbum.yaml
-- runFlow: ../flows/selectDoublePhotos.yaml
+- runFlow: ../../flows/openAlbum.yaml
+- runFlow: ../../flows/selectDoublePhotos.yaml
 - waitForAnimationToEnd
 - runFlow:
     when:

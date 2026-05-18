@@ -180,7 +180,9 @@ def pre_maestro_cleanup(
 ) -> None:
     log_lifecycle(repo, suite_id, WorkerState.CLEANUP, "pre_maestro_cleanup begin", device=device_id)
     adb_start_server(suite_id, repo)
-    _adb_clear_device_forwards(device_id, suite_id, repo)
+    from .maestro_stabilization import aggressive_adb_device_cleanup
+
+    aggressive_adb_device_cleanup(device_id)
     if _truthy("ATP_ORCH_SNAPSHOT_ADB_FORWARDS"):
         snapshot_adb_forwards(suite_id, repo)
     # When None, preserve legacy behavior (kill allowed). Orchestrator passes False for multi-device waves.
@@ -475,6 +477,7 @@ def _apply_parallel_maestro_env(
         "debug_output": None,
         "workspace": None,
         "maestro_user_home": None,
+        "localappdata": None,
     }
     if not _parallel_maestro_isolation_enabled():
         return meta
@@ -500,6 +503,7 @@ def _apply_parallel_maestro_env(
     env["ATP_MAESTRO_RUNTIME_ROOT"] = str(runtime_home)
     env["LOCALAPPDATA"] = str(local_app)
     env["APPDATA"] = str(roaming)
+    meta["localappdata"] = str(local_app)
     # Do not override USERPROFILE (breaks Windows AppDirs / Maestro init). Redirect JVM user.home.
     opts = (env.get("MAESTRO_OPTS") or "").strip()
     user_home_flag = f'-Duser.home={runtime_home}'
@@ -579,6 +583,20 @@ def run_run_one_flow_device_bat(
         launch_index=launch_index,
         device_count=device_count,
     )
+    env["ATP_REPO_ROOT"] = str(repo.resolve())
+    from .maestro_stabilization import (
+        disable_device_animations,
+        log_isolated_runtime_confirmed,
+        run_maestro_warmup,
+        startup_watchdog_enabled,
+    )
+
+    log_isolated_runtime_confirmed(device_id=device_id, meta=iso)
+    disable_device_animations(device_id)
+    run_maestro_warmup(maestro_launcher=maestro_launcher, device_id=device_id, env=env)
+    use_watchdog = startup_watchdog_enabled(
+        native_parallel=native_parallel, use_startup_gate=use_startup_gate
+    )
     # Ensure child cmd sees the same Maestro/Java discovery as Jenkins (set_maestro_java.bat still runs inside bat).
     timeout_sec = int(os.environ.get("ATP_FLOW_TIMEOUT_SEC", str(4 * 3600)))
 
@@ -627,7 +645,7 @@ def run_run_one_flow_device_bat(
     if win_flags:
         popen_kw["creationflags"] = win_flags
 
-    max_attempts = startup_max_retries() + 1 if use_startup_gate else 1
+    max_attempts = startup_max_retries() + 1 if use_startup_gate else (2 if use_watchdog else 1)
     code = 1
     driver_port_int = int(port_plan) if port_plan is not None and not legacy_mode else None
     runtime_mutex_held = False
@@ -655,6 +673,14 @@ def run_run_one_flow_device_bat(
                 if attempt < max_attempts:
                     continue
                 break
+
+            from .maestro_stabilization import (
+                aggressive_adb_device_cleanup,
+                handle_startup_watchdog_failure,
+                wait_for_maestro_log_activity,
+            )
+
+            aggressive_adb_device_cleanup(device_id)
 
             tree_thread: threading.Thread | None = None
             child: subprocess.Popen[Any] | None = None
@@ -706,6 +732,31 @@ def run_run_one_flow_device_bat(
                             daemon=True,
                         )
                         tree_thread.start()
+
+                    if use_watchdog and not use_startup_gate:
+                        if not wait_for_maestro_log_activity(
+                            log_path=log_path,
+                            log_start_offset=log_start_offset,
+                        ):
+                            if child.poll() is None:
+                                print(
+                                    f"[ATP] maestro_restart_attempt device={_dev_log(device_id)} "
+                                    f"retry={attempt}",
+                                    flush=True,
+                                )
+                                handle_startup_watchdog_failure(
+                                    device_id=device_id,
+                                    child_pid=child.pid,
+                                    driver_port=driver_port_int,
+                                    repo=repo,
+                                    suite_id=suite_id,
+                                )
+                                unregister_owned_child_pid(child.pid)
+                                startup_failure_cleaned = True
+                                code = 1
+                                if attempt < max_attempts:
+                                    continue
+                                break
 
                     if use_startup_gate and gate is not None:
                         ready, reason = gate.release_after_session_ready(
