@@ -84,7 +84,18 @@ name: TC_COL_20_Back_From_Layout_Screen
 - tapOn:
     id: "layoutTwoHImage2"
 - waitForAnimationToEnd
-- back
+- tapOn:
+    id: "linearLayoutBack"
+    optional: true
 - waitForAnimationToEnd
+- runFlow:
+    when:
+      notVisible: "Select Items"
+    commands:
+      - back
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Select Items"
+    timeout: 15000
 - assertVisible: "Select Items"
 - assertVisible: "Collage"

@@ -23,6 +23,8 @@ if str(_REPO_ROOT) not in sys.path:
 
 from utils.device_utils import get_device_display_name  # noqa: E402
 
+from .device_app_preflight import EXIT_APP_NOT_INSTALLED  # noqa: E402
+
 
 def _dev_log(device_id: str) -> str:
     return get_device_display_name(device_id)
@@ -54,6 +56,7 @@ class SchedulerMetrics:
     wall_sec: float = 0.0
     tasks_total: int = 0
     tasks_ok: int = 0
+    tasks_skip: int = 0
     tasks_fail: int = 0
     per_device_sec: dict[str, float] = field(default_factory=dict)
     per_device_tasks: dict[str, int] = field(default_factory=dict)
@@ -184,6 +187,8 @@ class DynamicDeviceScheduler:
                 self._completed[task.matrix_key] = outcome
                 if outcome.exit_code == 0:
                     self._metrics.tasks_ok += 1
+                elif outcome.exit_code == EXIT_APP_NOT_INSTALLED:
+                    self._metrics.tasks_skip += 1
                 else:
                     self._metrics.tasks_fail += 1
 
@@ -273,7 +278,7 @@ class DynamicDeviceScheduler:
             util_lines.append(f"{_dev_log(dev)}:{cnt}tasks/{sec:.0f}s")
         print(
             f"[ATP] scheduler_summary wall_sec={m.wall_sec:.1f} "
-            f"tasks={m.tasks_total} ok={m.tasks_ok} fail={m.tasks_fail}",
+            f"tasks={m.tasks_total} ok={m.tasks_ok} skip={m.tasks_skip} fail={m.tasks_fail}",
             flush=True,
         )
         print(f"[ATP] scheduler_utilization {' | '.join(util_lines)}", flush=True)

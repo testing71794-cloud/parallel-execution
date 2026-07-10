@@ -15,11 +15,22 @@ if not "%MAESTRO_JAVA_HOME%"=="" (
 set "JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-25.0.2.10-hotspot"
 :java_ok
 if not exist "%JAVA_HOME%\bin\java.exe" (
-  echo ERROR: Java not found at %JAVA_HOME%
+  echo ERROR: Java not found at "%JAVA_HOME%"
   endlocal & exit /b 1
 )
 
 REM --- Maestro: directory that contains maestro.bat or maestro.cmd ---
+REM Prefer ATP_MAESTRO_PARALLEL_HOME over MAESTRO_HOME when both are set (Jenkins parallel install).
+if not "%ATP_MAESTRO_PARALLEL_HOME%"=="" (
+  if exist "%ATP_MAESTRO_PARALLEL_HOME%\maestro.bat" (
+    set "MAESTRO_HOME=%ATP_MAESTRO_PARALLEL_HOME%"
+    goto :maestro_ok
+  )
+  if exist "%ATP_MAESTRO_PARALLEL_HOME%\maestro.cmd" (
+    set "MAESTRO_HOME=%ATP_MAESTRO_PARALLEL_HOME%"
+    goto :maestro_ok
+  )
+)
 
 if not "%MAESTRO_HOME%"=="" (
   if exist "%MAESTRO_HOME%\maestro.bat" goto :maestro_ok
@@ -81,6 +92,7 @@ if defined ADB_HOME set "PATH=%ADB_HOME%;%PATH%"
 
 echo JAVA_HOME=%JAVA_HOME%
 echo MAESTRO_HOME=%MAESTRO_HOME%
+if defined ATP_MAESTRO_PARALLEL_HOME echo ATP_MAESTRO_PARALLEL_HOME=%ATP_MAESTRO_PARALLEL_HOME%
 if defined ADB_HOME echo ADB_HOME=%ADB_HOME%
 
 endlocal & (

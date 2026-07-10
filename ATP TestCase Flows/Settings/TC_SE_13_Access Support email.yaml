@@ -46,6 +46,25 @@ name: TC_SE_13_Access Support email
 - assertVisible: "To"
 - waitForAnimationToEnd
 # Step 3: action=tapOn; target=X / Back; input=None; expected=Returns to app
-- tapOn: "Navigate up"
+- tapOn:
+    text: "Navigate up"
+    optional: true
+- back
 - waitForAnimationToEnd
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      notVisible: "Support"
+    commands:
+      - assertVisible:
+          id: "settingImageView"
+      - tapOn:
+          id: "settingImageView"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Support"
+    timeout: 15000
+- assertVisible: "Support"
 - assertVisible: "Quick Tips"

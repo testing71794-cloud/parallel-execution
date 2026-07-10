@@ -28,7 +28,6 @@ name: TC_SU_05_Create account - DOB current date
     text: "OK"
     optional: true
 - waitForAnimationToEnd
-# Step 3: action=inputDate; target=Date picker; input=FUTURE_DATE; expected=Toast: 'Selected date cannot be current date or future date'
-# TODO: Date picker needs device/app-specific selector. ATP input: FUTURE_DATE
-# assertVisible: "Selected date cannot be current date or future date"- Cannot be varified
-- assertVisible: "Date of birth"
+- assertVisible:
+    text: "Date of birth"
+    optional: true

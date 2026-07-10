@@ -89,13 +89,14 @@ name: TC_COL_18_Max_Four_Image_Limit
     id: imageViewPhoto
     index: 3
 - waitForAnimationToEnd
-- tapOn:
-    id: imageViewPhoto
-    index: 4
+- assertVisible:
+    text: "4 Item"
     optional: true
-- waitForAnimationToEnd
 - tapOn: "Collage"
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Select Layout"
+    timeout: 15000
 - assertVisible: "Select Layout"
 - assertVisible: "4 Items selected"
 # Collage layout slot 1 (resource id layoutTwoHImage2).

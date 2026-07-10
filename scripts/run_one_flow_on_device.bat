@@ -1,5 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+REM script_rev=2026-06-jenkins-gallery-appium-pinch-10
 goto :script_body
 
 REM Approximate sleep without timeout.exe (Jenkins + non-TTY stdin makes timeout print
@@ -14,31 +15,145 @@ exit /b 0
 
 REM Orchestrator may set ATP_MAESTRO_DRIVER_PORT / ATP_MAESTRO_DEBUG_OUTPUT per device (parallel isolation).
 :apply_maestro_parallel_isolation
-if defined ATP_MAESTRO_DRIVER_PORT (
-  set "MAESTRO_ARGS=--driver-host-port %ATP_MAESTRO_DRIVER_PORT% !MAESTRO_ARGS!"
+exit /b 0
+
+REM Log resolved paths before Maestro (Jenkins workspace may contain spaces).
+:log_maestro_invoke_context
+echo [DEBUG] script_rev=2026-06-jenkins-gallery-appium-pinch-10>> "%LOG_FILE%"
+echo [DEBUG] CD=!CD!>> "%LOG_FILE%"
+echo [DEBUG] REPO_ROOT=!REPO_ROOT!>> "%LOG_FILE%"
+echo [DEBUG] FLOW_PATH=!FLOW_PATH!>> "%LOG_FILE%"
+echo [DEBUG] MAESTRO_FLOW_PATH=!MAESTRO_FLOW_PATH!>> "%LOG_FILE%"
+echo [DEBUG] MAESTRO_BIN=!MAESTRO_BIN!>> "%LOG_FILE%"
+echo [DEBUG] JAVA_EXE=!JAVA_EXE!>> "%LOG_FILE%"
+echo [DEBUG] MAESTRO_APP_HOME=!MAESTRO_APP_HOME!>> "%LOG_FILE%"
+echo [DEBUG] ATP_JAVA_USER_HOME=!ATP_JAVA_USER_HOME!>> "%LOG_FILE%"
+echo [DEBUG] LOCALAPPDATA=!LOCALAPPDATA!>> "%LOG_FILE%"
+exit /b 0
+
+:prepare_maestro_recording_wrapper
+set "MAESTRO_FLOW_PATH=%FLOW_PATH%"
+if "%ATP_AUTO_RECORD_VIDEO%"=="" set "ATP_AUTO_RECORD_VIDEO=1"
+if /I "%ATP_AUTO_RECORD_VIDEO%"=="0" exit /b 0
+if not defined ATP_MAESTRO_TEST_OUTPUT exit /b 0
+set "RECORD_WRAPPER=%ATP_MAESTRO_TEST_OUTPUT%\__atp_record_wrapper.yaml"
+python "%REPO_ROOT%\scripts\build_maestro_recording_wrapper.py" "%APP_ID%" "%FLOW_PATH%" "%RECORD_WRAPPER%" >> "%LOG_FILE%" 2>&1
+if errorlevel 1 (
+  echo [WARN] build_maestro_recording_wrapper failed; running without auto-record>> "%LOG_FILE%"
+  set "MAESTRO_FLOW_PATH=%FLOW_PATH%"
+  exit /b 0
 )
-if defined ATP_MAESTRO_DEBUG_OUTPUT (
-  set "MAESTRO_ARGS=!MAESTRO_ARGS! --debug-output "!ATP_MAESTRO_DEBUG_OUTPUT!""
+set "MAESTRO_FLOW_PATH=%RECORD_WRAPPER%"
+echo [INFO] Maestro auto-record wrapper: %RECORD_WRAPPER%>> "%LOG_FILE%"
+exit /b 0
+
+REM Write a one-shot wrapper .cmd with fully quoted paths (avoids cmd.exe splitting on spaces/parens).
+:write_maestro_wrapper
+set "MWRAP=%~1"
+set "MAESTRO_OUT_DIR="
+if defined ATP_MAESTRO_TEST_OUTPUT set "MAESTRO_OUT_DIR=--test-output-dir "%ATP_MAESTRO_TEST_OUTPUT%""
+if /I "!MAESTRO_FLOW1B!"=="1" goto :write_maestro_wrapper_flow1b
+> "%MWRAP%" echo @echo off
+>> "%MWRAP%" echo cd /d "%REPO_ROOT%"
+if not defined ATP_JAVA_USER_HOME goto :wmw_no_java_user
+if defined ATP_MAESTRO_DRIVER_PORT goto :wmw_java_driver_port
+if /I "!MAESTRO_USE_REINSTALL!"=="1" goto :wmw_java_reinstall
+if defined ATP_MAESTRO_DEBUG_OUTPUT goto :wmw_java_debug
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+goto :wmw_done
+:wmw_java_debug
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! --debug-output "!ATP_MAESTRO_DEBUG_OUTPUT!" "!MAESTRO_FLOW_PATH!"
+goto :wmw_done
+:wmw_java_reinstall
+if defined ATP_MAESTRO_DEBUG_OUTPUT goto :wmw_java_reinstall_debug
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test --reinstall-driver !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+goto :wmw_done
+:wmw_java_reinstall_debug
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test --reinstall-driver !MAESTRO_OUT_DIR! --debug-output "!ATP_MAESTRO_DEBUG_OUTPUT!" "!MAESTRO_FLOW_PATH!"
+goto :wmw_done
+:wmw_java_driver_port
+if /I "!MAESTRO_USE_REINSTALL!"=="1" goto :wmw_java_driver_reinstall
+if defined ATP_MAESTRO_DEBUG_OUTPUT goto :wmw_java_driver_debug
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" --driver-host-port %ATP_MAESTRO_DRIVER_PORT% test !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+goto :wmw_done
+:wmw_java_driver_debug
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" --driver-host-port %ATP_MAESTRO_DRIVER_PORT% test !MAESTRO_OUT_DIR! --debug-output "!ATP_MAESTRO_DEBUG_OUTPUT!" "!MAESTRO_FLOW_PATH!"
+goto :wmw_done
+:wmw_java_driver_reinstall
+if defined ATP_MAESTRO_DEBUG_OUTPUT goto :wmw_java_driver_reinstall_debug
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" --driver-host-port %ATP_MAESTRO_DRIVER_PORT% test --reinstall-driver !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+goto :wmw_done
+:wmw_java_driver_reinstall_debug
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" --driver-host-port %ATP_MAESTRO_DRIVER_PORT% test --reinstall-driver !MAESTRO_OUT_DIR! --debug-output "!ATP_MAESTRO_DEBUG_OUTPUT!" "!MAESTRO_FLOW_PATH!"
+goto :wmw_done
+:wmw_no_java_user
+if defined ATP_MAESTRO_DRIVER_PORT (
+  >> "%MWRAP%" echo "%JAVA_EXE%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" --driver-host-port %ATP_MAESTRO_DRIVER_PORT% test !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+) else (
+  >> "%MWRAP%" echo "%JAVA_EXE%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+)
+:wmw_done
+exit /b 0
+
+:write_maestro_wrapper_flow1b
+> "%MWRAP%" echo @echo off
+>> "%MWRAP%" echo cd /d "%REPO_ROOT%"
+if defined ATP_JAVA_USER_HOME (
+  >> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! -e FULL_NAME="!FULL_NAME!" -e EMAIL="!EMAIL!" -e PASSWORD="!PASSWORD!" "!MAESTRO_FLOW_PATH!"
+) else (
+  >> "%MWRAP%" echo "%JAVA_EXE%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! -e FULL_NAME="!FULL_NAME!" -e EMAIL="!EMAIL!" -e PASSWORD="!PASSWORD!" "!MAESTRO_FLOW_PATH!"
 )
 exit /b 0
 
-REM Isolated Maestro: direct java maestro.cli.AppKt (no maestro.bat/call); env from orchestrator (LOCALAPPDATA, MAESTRO_OPTS).
+REM Isolated Maestro via java maestro.cli.AppKt (wrapper .cmd has quoted paths baked in).
+:run_maestro_java
+set "MWRAP=%TEMP%\atp_maestro_%RANDOM%_%RANDOM%.cmd"
+call :write_maestro_wrapper "%MWRAP%"
+echo [DEBUG] maestro_wrapper=!MWRAP!>> "%LOG_FILE%"
+echo [DEBUG] launching maestro java wrapper>> "%LOG_FILE%"
+type "%MWRAP%" >> "%LOG_FILE%"
+echo [DEBUG] maestro_wrapper_exec_begin>> "%LOG_FILE%"
+call "%MWRAP%" >> "%LOG_FILE%" 2>&1
+echo [DEBUG] maestro_wrapper_exec_end exit=!ERRORLEVEL!>> "%LOG_FILE%"
+set "RUN_EXIT=!ERRORLEVEL!"
+del "%MWRAP%" 2>nul
+exit /b !RUN_EXIT!
+
+REM Fallback: maestro.bat wrapper (quoted device + flow only).
+:run_maestro_bat
+set "MAESTRO_OUT_DIR="
+if defined ATP_MAESTRO_TEST_OUTPUT set "MAESTRO_OUT_DIR=--test-output-dir "%ATP_MAESTRO_TEST_OUTPUT%""
+set "MWRAP=%TEMP%\atp_maestro_bat_%RANDOM%_%RANDOM%.cmd"
+> "%MWRAP%" echo @echo off
+>> "%MWRAP%" echo cd /d "%REPO_ROOT%"
+if /I "!MAESTRO_USE_REINSTALL!"=="1" (
+  >> "%MWRAP%" echo "%MAESTRO_BIN%" --device "%DEVICE_ID%" test --reinstall-driver !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+) else (
+  >> "%MWRAP%" echo "%MAESTRO_BIN%" --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+)
+echo [DEBUG] maestro_bat_wrapper=!MWRAP!>> "%LOG_FILE%"
+type "%MWRAP%" >> "%LOG_FILE%"
+call "%MWRAP%" >> "%LOG_FILE%" 2>&1
+set "RUN_EXIT=!ERRORLEVEL!"
+del "%MWRAP%" 2>nul
+exit /b !RUN_EXIT!
+
 :run_maestro_isolated
 call :apply_maestro_parallel_isolation
+call :log_maestro_invoke_context
+call :prepare_maestro_recording_wrapper
 if defined ATP_MAESTRO_RUNTIME_ROOT (
   echo [INFO] Maestro runtime root=!ATP_MAESTRO_RUNTIME_ROOT! LOCALAPPDATA=!LOCALAPPDATA!>> "%LOG_FILE%"
 )
 if /I "%ATP_MAESTRO_JAVA_DIRECT%"=="1" (
   if exist "%JAVA_EXE%" if exist "%MAESTRO_APP_HOME%\lib" (
-    echo Command: "%JAVA_EXE%" %MAESTRO_OPTS% -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt !MAESTRO_ARGS!>> "%LOG_FILE%"
-    "%JAVA_EXE%" %MAESTRO_OPTS% -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
+    call :run_maestro_java
     set "RUN_EXIT=!ERRORLEVEL!"
     goto :run_maestro_isolated_done
   )
   echo [WARN] ATP_MAESTRO_JAVA_DIRECT=1 but java/lib missing; falling back to MAESTRO_BIN>> "%LOG_FILE%"
 )
-echo Command: "%MAESTRO_BIN%" !MAESTRO_ARGS!>> "%LOG_FILE%"
-"%MAESTRO_BIN%" !MAESTRO_ARGS! >> "%LOG_FILE%" 2>&1
+call :run_maestro_bat
 set "RUN_EXIT=!ERRORLEVEL!"
 :run_maestro_isolated_done
 exit /b
@@ -74,9 +189,12 @@ set "CLASSPATH="
 set "JAVA_TOOL_OPTIONS="
 set "_JAVA_OPTIONS="
 set "JDK_JAVA_OPTIONS="
+REM Inherited MAESTRO_OPTS breaks cmd when it contains -Duser.home=<workspace with spaces>.
+set "MAESTRO_OPTS="
 
 set "REPO_ROOT=%~dp0.."
 for %%I in ("%REPO_ROOT%") do set "REPO_ROOT=%%~fI"
+cd /d "%REPO_ROOT%"
 
 call "%REPO_ROOT%\scripts\set_maestro_java.bat" "%MAESTRO_CMD%"
 if errorlevel 1 exit /b 14
@@ -88,6 +206,7 @@ if exist "%MAESTRO_HOME%\maestro.bat" (
 ) else (
     set "MAESTRO_BIN=%MAESTRO_CMD%"
 )
+if not exist "%MAESTRO_BIN%" if exist "%MAESTRO_CMD%" set "MAESTRO_BIN=%MAESTRO_CMD%"
 
 REM Maestro app root (parent of bin/) — used for direct java launch (no maestro.bat wrapper).
 set "MAESTRO_APP_HOME=%MAESTRO_HOME%\.."
@@ -97,6 +216,16 @@ set "MAESTRO_CLASSPATH=%MAESTRO_APP_HOME%\lib\*"
 
 for %%I in ("%FLOW_PATH%") do set "FLOW_NAME=%%~nI"
 
+set "SAFE_FLOW="
+set "_ATP_HELPER_OUT=%TEMP%\atp_safe_flow_%RANDOM%.txt"
+python "%REPO_ROOT%\scripts\atp_bat_path_helpers.py" safe_flow_stem "%FLOW_PATH%" > "!_ATP_HELPER_OUT!" 2>nul
+if exist "!_ATP_HELPER_OUT!" for /f "usebackq delims=" %%S in ("!_ATP_HELPER_OUT!") do set "SAFE_FLOW=%%S"
+del "!_ATP_HELPER_OUT!" 2>nul
+if defined SAFE_FLOW goto :safe_flow_ready
+set "SAFE_FLOW=%FLOW_NAME: =_%"
+set "SAFE_FLOW=%SAFE_FLOW:(=_%"
+set "SAFE_FLOW=%SAFE_FLOW:)=_%"
+:safe_flow_ready
 set "REPORT_ROOT=%REPO_ROOT%\reports\%SUITE%"
 set "LOG_DIR=%REPORT_ROOT%\logs"
 set "RESULT_DIR=%REPORT_ROOT%\results"
@@ -107,29 +236,45 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 if not exist "%RESULT_DIR%" mkdir "%RESULT_DIR%"
 if not exist "%STATUS_DIR%" mkdir "%STATUS_DIR%"
 
-set "SAFE_FLOW=%FLOW_NAME: =_%"
 set "SAFE_DEVICE=%DEVICE_ID: =_%"
 set "LOG_FILE=%LOG_DIR%\%SAFE_FLOW%_%SAFE_DEVICE%.log"
 set "RESULT_FILE=%RESULT_DIR%\%SAFE_FLOW%_%SAFE_DEVICE%.csv"
 set "STATUS_FILE=%STATUS_DIR%\%SUITE%__%SAFE_FLOW%__%SAFE_DEVICE%.txt"
 
-(
-echo =====================================
-echo RUN ONE FLOW ON DEVICE
-echo =====================================
-echo Timestamp        : %date% %time%
-echo Suite            : %SUITE%
-echo Flow path        : %FLOW_PATH%
-echo Flow name        : %FLOW_NAME%
-echo Device           : %DEVICE_ID%
-echo App id           : %APP_ID%
-echo Clear state      : %CLEAR_STATE%
-echo Include tag      : %INCLUDE_TAG%
-echo JAVA_HOME        : %JAVA_HOME%
-echo MAESTRO_HOME     : %MAESTRO_HOME%
-echo Maestro cmd      : %MAESTRO_BIN%
-echo =====================================
-) > "%LOG_FILE%"
+if not defined ATP_MAESTRO_TEST_OUTPUT (
+  set "ATP_MAESTRO_TEST_OUTPUT=%REPORT_ROOT%\recordings\%SAFE_FLOW%__%SAFE_DEVICE%"
+)
+if not exist "%REPORT_ROOT%\recordings" mkdir "%REPORT_ROOT%\recordings"
+if not exist "%ATP_MAESTRO_TEST_OUTPUT%" mkdir "%ATP_MAESTRO_TEST_OUTPUT%"
+
+> "%LOG_FILE%" echo =====================================
+>> "%LOG_FILE%" echo RUN ONE FLOW ON DEVICE
+>> "%LOG_FILE%" echo =====================================
+>> "%LOG_FILE%" echo Timestamp        : %date% %time%
+>> "%LOG_FILE%" echo Suite            : %SUITE%
+>> "%LOG_FILE%" echo Flow path        : %FLOW_PATH%
+>> "%LOG_FILE%" echo Flow name        : %FLOW_NAME%
+>> "%LOG_FILE%" echo Device           : %DEVICE_ID%
+>> "%LOG_FILE%" echo App id           : %APP_ID%
+>> "%LOG_FILE%" echo Clear state      : %CLEAR_STATE%
+>> "%LOG_FILE%" echo Include tag      : %INCLUDE_TAG%
+>> "%LOG_FILE%" echo JAVA_HOME        : %JAVA_HOME%
+>> "%LOG_FILE%" echo MAESTRO_HOME     : %MAESTRO_HOME%
+>> "%LOG_FILE%" echo Maestro cmd      : %MAESTRO_BIN%
+>> "%LOG_FILE%" echo =====================================
+>> "%LOG_FILE%" echo BATCH ARGUMENTS / WORKSPACE
+>> "%LOG_FILE%" echo =====================================
+>> "%LOG_FILE%" echo script_rev        : 2026-06-jenkins-gallery-appium-pinch-10
+>> "%LOG_FILE%" echo arg1 SUITE        : %~1
+>> "%LOG_FILE%" echo arg2 FLOW_PATH    : %~2
+>> "%LOG_FILE%" echo arg3 DEVICE_ID    : %~3
+>> "%LOG_FILE%" echo arg4 APP_ID       : %~4
+>> "%LOG_FILE%" echo arg5 CLEAR_STATE  : %~5
+>> "%LOG_FILE%" echo arg6 MAESTRO_CMD  : %~6
+>> "%LOG_FILE%" echo arg7 INCLUDE_TAG  : %~7
+>> "%LOG_FILE%" echo REPO_ROOT         : %REPO_ROOT%
+>> "%LOG_FILE%" echo CD after cd /d    : %CD%
+>> "%LOG_FILE%" echo =====================================
 
 where java >> "%LOG_FILE%" 2>&1
 java -version >> "%LOG_FILE%" 2>&1
@@ -144,13 +289,15 @@ set "REASON=OK"
 set "MAESTRO_DEVICE_RETRY_USED=0"
 set "MAESTRO_DRIVER_7001_RETRY=0"
 
-if not exist "%FLOW_PATH%" (
-    echo ERROR: Flow file not found: %FLOW_PATH%>> "%LOG_FILE%"
-    set "RUN_EXIT=20"
-    set "STATUS_VALUE=FAIL"
-    set "REASON=FLOW_FILE_NOT_FOUND"
-    goto :write_result
-)
+if not exist "%FLOW_PATH%" goto :flow_file_not_found
+goto :flow_file_ok
+:flow_file_not_found
+>> "%LOG_FILE%" echo ERROR: Flow file not found: "%FLOW_PATH%"
+set "RUN_EXIT=20"
+set "STATUS_VALUE=FAIL"
+set "REASON=FLOW_FILE_NOT_FOUND"
+goto :write_result
+:flow_file_ok
 
 REM ---- ADB: ensure server is up (mitigates stale Jenkins adb on Windows) ----
 adb start-server >> "%LOG_FILE%" 2>&1
@@ -249,15 +396,15 @@ echo === flow1b signup ^(runtime^) ===>> "%LOG_FILE%"
 echo [flow1b] EMAIL=!EMAIL!>> "%LOG_FILE%"
 if defined SIGNUP_RUN_ID echo KODAK_SIGNUP_RUN_ID=!SIGNUP_RUN_ID!>> "%LOG_FILE%"
 
-set "MAESTRO_ARGS=--device "%DEVICE_ID%" test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=!PASSWORD! "%FLOW_PATH%""
-if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
+set "MAESTRO_FLOW1B=1"
+set "MAESTRO_USE_REINSTALL=0"
 rem config.yaml: Maestro loads workspace config from the current directory (REPO); run from repo root
 
 for /f %%t in ('python -c "import time; print(int(time.time()*1000))" 2^>nul') do set "FLOW_START_MS=%%t"
 if not defined FLOW_START_MS set "FLOW_START_MS=0"
 echo [TIMING] flow_start_ms=!FLOW_START_MS!>> "%LOG_FILE%"
 echo Starting Maestro test (flow1b)... (PASSWORD is not written to the log^)>> "%LOG_FILE%"
-echo [flow1b] !MAESTRO_BIN! --device "%DEVICE_ID%" test -e ... "%FLOW_PATH%">> "%LOG_FILE%"
+echo [flow1b] "%MAESTRO_BIN%" --device "%DEVICE_ID%" test -e ... "%MAESTRO_FLOW_PATH%">> "%LOG_FILE%"
 echo. >> "%LOG_FILE%"
 call :run_maestro_isolated
 set "RUN_EXIT=%ERRORLEVEL%"
@@ -285,8 +432,8 @@ echo [flow1b] EMAIL retry: !EMAIL!>> "%LOG_FILE%"
 if defined SIGNUP_RUN_ID echo KODAK_SIGNUP_RUN_ID retry: !SIGNUP_RUN_ID!>> "%LOG_FILE%"
 echo.>> "%LOG_FILE%"
 echo === Maestro retry (flow1b) ===>> "%LOG_FILE%"
-set "MAESTRO_ARGS=--device "%DEVICE_ID%" test -e FULL_NAME=!FULL_NAME! -e EMAIL=!EMAIL! -e PASSWORD=!PASSWORD! "%FLOW_PATH%""
-if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
+set "MAESTRO_FLOW1B=1"
+set "MAESTRO_USE_REINSTALL=0"
 call :run_maestro_isolated
 set "RUN_EXIT=%ERRORLEVEL%"
 if "!RUN_EXIT!"=="0" (
@@ -299,7 +446,17 @@ if "!RUN_EXIT!"=="0" (
 goto :after_flow1b_maestro
 
 :run_maestro_default
-REM TC_ON_E02_* : Bluetooth must be off before the flow — Maestro YAML cannot invoke adb (sandboxed JS).
+REM ---- GA_05 / GA_06: Appium W3C pinch when ATP_GALLERY_APPIUM_PINCH is enabled ----
+set "APPIUM_FLOW_BAT="
+if /I not "%ATP_GALLERY_APPIUM_PINCH%"=="0" (
+  set "_ATP_HELPER_OUT=%TEMP%\atp_appium_%RANDOM%.txt"
+  python "%REPO_ROOT%\scripts\atp_bat_path_helpers.py" resolve_appium_runner "%FLOW_PATH%" "%REPO_ROOT%" > "!_ATP_HELPER_OUT!" 2>nul
+  if exist "!_ATP_HELPER_OUT!" for /f "usebackq delims=" %%B in ("!_ATP_HELPER_OUT!") do set "APPIUM_FLOW_BAT=%%B"
+  del "!_ATP_HELPER_OUT!" 2>nul
+)
+if defined APPIUM_FLOW_BAT goto :run_appium_pinch_flow
+
+REM ---- TC_ON_E02_* : Bluetooth must be off before the flow ----
 echo "%FLOW_NAME%" | findstr /I /C:"TC_ON_E02" >nul 2>&1
 if errorlevel 1 goto :skip_bt_off_for_on_e02
 echo [INFO] Flow %FLOW_NAME% - disabling Bluetooth via adb before Maestro ^(TC_ON_E02^)>> "%LOG_FILE%"
@@ -310,11 +467,11 @@ if errorlevel 1 (
 echo [INFO] Bluetooth disable attempted for TC_ON_E02>> "%LOG_FILE%"
 :skip_bt_off_for_on_e02
 
-set "MAESTRO_ARGS=--device "%DEVICE_ID%" test "%FLOW_PATH%""
-if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
+set "MAESTRO_FLOW1B=0"
+set "MAESTRO_USE_REINSTALL=0"
 
 echo Starting Maestro test...>> "%LOG_FILE%"
-echo Command: "%MAESTRO_BIN%" !MAESTRO_ARGS!>> "%LOG_FILE%"
+echo Command: "%MAESTRO_BIN%" --device "%DEVICE_ID%" test "%MAESTRO_FLOW_PATH%">> "%LOG_FILE%"
 echo. >> "%LOG_FILE%"
 
 REM ---- Default flows: require device online immediately before Maestro; one rerun if ADB drops mid-run (Jenkins logs: device not found / transport) ----
@@ -358,8 +515,7 @@ findstr /i /c:"Connection refused" "%LOG_FILE%" >nul 2>&1
 if errorlevel 1 goto :skip_maestro_driver_7001_retry
 echo [WARN] Maestro Android driver handshake failed ^(e.g. localhost:7001 Connection refused^). Retrying once with test --reinstall-driver...>> "%LOG_FILE%"
 set "MAESTRO_DRIVER_7001_RETRY=1"
-set "MAESTRO_ARGS=--device "%DEVICE_ID%" test --reinstall-driver "%FLOW_PATH%""
-if not "%INCLUDE_TAG%"=="" set "MAESTRO_ARGS=!MAESTRO_ARGS! --include-tags "%INCLUDE_TAG%""
+set "MAESTRO_USE_REINSTALL=1"
 call :sleep_seconds 3
 goto :maestro_default_attempt
 :skip_maestro_driver_7001_retry
@@ -401,6 +557,27 @@ set "STATUS_VALUE=FAIL"
 set "REASON=MAESTRO_FAILED"
 goto :after_flow1b_maestro
 
+:run_appium_pinch_flow
+echo [INFO] Appium W3C pinch runner for %FLOW_NAME%: !APPIUM_FLOW_BAT!
+echo [INFO] Appium W3C pinch runner for %FLOW_NAME%: !APPIUM_FLOW_BAT!>> "%LOG_FILE%"
+for /f %%t in ('python -c "import time; print(int(time.time()*1000))" 2^>nul') do set "FLOW_START_MS=%%t"
+if not defined FLOW_START_MS set "FLOW_START_MS=0"
+echo [TIMING] flow_start_ms=!FLOW_START_MS!>> "%LOG_FILE%"
+set "APPIUM_OUT=%TEMP%\atp_appium_%RANDOM%_%RANDOM%.log"
+call "!APPIUM_FLOW_BAT!" "%DEVICE_ID%" > "!APPIUM_OUT!" 2>&1
+set "RUN_EXIT=!ERRORLEVEL!"
+type "!APPIUM_OUT!"
+type "!APPIUM_OUT!" >> "%LOG_FILE%"
+del "!APPIUM_OUT!" 2>nul
+if "!RUN_EXIT!"=="0" (
+  set "STATUS_VALUE=PASS"
+  set "REASON=APPIUM_PINCH_OK"
+) else (
+  set "STATUS_VALUE=FAIL"
+  set "REASON=APPIUM_PINCH_FAILED"
+)
+goto :after_flow1b_maestro
+
 :after_flow1b_maestro
 
 for /f %%t in ('python -c "import time; print(int(time.time()*1000))" 2^>nul') do set "FLOW_END_MS=%%t"
@@ -411,29 +588,43 @@ if defined FLOW_START_MS if defined FLOW_END_MS if not "!FLOW_START_MS!"=="0" (
 )
 echo [TIMING] flow_end_ms=!FLOW_END_MS! duration_ms=!FLOW_DURATION_MS!>> "%LOG_FILE%"
 
+set "VIDEO_FILE="
+if defined ATP_MAESTRO_TEST_OUTPUT if exist "%ATP_MAESTRO_TEST_OUTPUT%\recording.mp4" (
+  set "VIDEO_FILE=%ATP_MAESTRO_TEST_OUTPUT%\recording.mp4"
+)
+if not defined VIDEO_FILE if defined ATP_MAESTRO_TEST_OUTPUT if exist "%ATP_MAESTRO_TEST_OUTPUT%\recording.webm" (
+  set "VIDEO_FILE=%ATP_MAESTRO_TEST_OUTPUT%\recording.webm"
+)
+if not defined VIDEO_FILE if defined ATP_MAESTRO_TEST_OUTPUT if exist "%ATP_MAESTRO_TEST_OUTPUT%" (
+  for /r "%ATP_MAESTRO_TEST_OUTPUT%" %%V in (*.mp4 *.webm) do (
+    if not defined VIDEO_FILE set "VIDEO_FILE=%%~fV"
+  )
+)
+if defined VIDEO_FILE echo [INFO] Maestro recording: !VIDEO_FILE!>> "%LOG_FILE%"
+
 :write_result
 if not defined DEVICE_NAME (
   for /f "delims=" %%N in ('python "%REPO_ROOT%\scripts\resolve_device_name.py" "%DEVICE_ID%" 2^>nul') do set "DEVICE_NAME=%%N"
 )
 if not defined DEVICE_NAME set "DEVICE_NAME=%DEVICE_ID%"
-> "%STATUS_FILE%" (
-    echo suite=%SUITE%
-    echo flow=%FLOW_NAME%
-    echo device=%DEVICE_ID%
-    echo device_id=%DEVICE_ID%
-    echo device_name=%DEVICE_NAME%
-    echo status=%STATUS_VALUE%
-    echo exit_code=%RUN_EXIT%
-    echo reason=%REASON%
-    echo log_file=%LOG_FILE%
-    echo first_log_path=%LOG_FILE%
-    echo log_path=%LOG_FILE%
-    echo retry_count=!SIGNUP_RETRY_USED!
-    echo maestro_device_reconnect_retry=!MAESTRO_DEVICE_RETRY_USED!
-    echo maestro_driver_7001_retry=!MAESTRO_DRIVER_7001_RETRY!
-    echo duration_ms=!FLOW_DURATION_MS!
-    echo timestamp=%date% %time%
-)
+> "%STATUS_FILE%" echo suite=%SUITE%
+>> "%STATUS_FILE%" echo flow=%FLOW_NAME%
+>> "%STATUS_FILE%" echo device=%DEVICE_ID%
+>> "%STATUS_FILE%" echo device_id=%DEVICE_ID%
+>> "%STATUS_FILE%" echo device_name=%DEVICE_NAME%
+>> "%STATUS_FILE%" echo status=%STATUS_VALUE%
+>> "%STATUS_FILE%" echo exit_code=%RUN_EXIT%
+>> "%STATUS_FILE%" echo reason=%REASON%
+>> "%STATUS_FILE%" echo log_file=%LOG_FILE%
+>> "%STATUS_FILE%" echo first_log_path=%LOG_FILE%
+>> "%STATUS_FILE%" echo log_path=%LOG_FILE%
+>> "%STATUS_FILE%" echo test_output_dir=%ATP_MAESTRO_TEST_OUTPUT%
+>> "%STATUS_FILE%" echo retry_count=!SIGNUP_RETRY_USED!
+>> "%STATUS_FILE%" echo maestro_device_reconnect_retry=!MAESTRO_DEVICE_RETRY_USED!
+>> "%STATUS_FILE%" echo maestro_driver_7001_retry=!MAESTRO_DRIVER_7001_RETRY!
+>> "%STATUS_FILE%" echo duration_ms=!FLOW_DURATION_MS!
+>> "%STATUS_FILE%" echo timestamp=%date% %time%
+if defined VIDEO_FILE >>"%STATUS_FILE%" echo video_file=!VIDEO_FILE!
 if /I "%FLOW_NAME%"=="flow1b" if defined EMAIL (
     >>"%STATUS_FILE%" echo signup_email=!EMAIL!
     >>"%STATUS_FILE%" echo signup_run_id=!SIGNUP_RUN_ID!
@@ -441,10 +632,8 @@ if /I "%FLOW_NAME%"=="flow1b" if defined EMAIL (
     if defined KODAK_SIGNUP_JSON >>"%STATUS_FILE%" echo kodak_signup_json_path=!KODAK_SIGNUP_JSON!
 )
 
-> "%RESULT_FILE%" (
-    echo suite,flow,device,status,exit_code,reason,log_file
-    echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,%STATUS_VALUE%,%RUN_EXIT%,%REASON%,"%LOG_FILE%"
-)
+> "%RESULT_FILE%" echo suite,flow,device,status,exit_code,reason,log_file
+>> "%RESULT_FILE%" echo %SUITE%,%FLOW_NAME%,%DEVICE_ID%,%STATUS_VALUE%,%RUN_EXIT%,%REASON%,"%LOG_FILE%"
 
 echo. >> "%LOG_FILE%"
 if /I "%AUTOFILL_RESTORE_AFTER_TEST%"=="1" (

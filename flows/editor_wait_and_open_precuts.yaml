@@ -1,0 +1,48 @@
+appId: com.kodaksmile
+name: Wait for editor then open Pre-Cuts
+---
+# when:visible does not wait — wait for editor first, then open Pre-Cuts.
+- extendedWaitUntil:
+    visible:
+      text: "Pre-Cuts|Edit|Filter|Print|Close"
+    timeout: 30000
+- runFlow:
+    when:
+      notVisible: "Pre-Cuts"
+    commands:
+      - swipe:
+          start: "85%,12%"
+          end: "15%,12%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "85%,12%"
+          end: "15%,12%"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Pre-Cuts"
+    timeout: 15000
+- tapOn: "Pre-Cuts"
+- waitForAnimationToEnd
+- tapOn:
+    point: "20%,60%"
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Pre-Cut Stickers"
+    commands:
+      - runFlow:
+          when:
+            visible: "Kodak 2x3 Pre-Cut Sticker Paper"
+          commands:
+            - tapOn: "Kodak 2x3 Pre-Cut Sticker Paper"
+            - waitForAnimationToEnd
+            - back
+            - waitForAnimationToEnd
+      - tapOn: "OK"
+      - waitForAnimationToEnd
+# Title is split across lines in the accessibility tree.
+- extendedWaitUntil:
+    visible: |-
+      CREATE PRE-CUT
+       STICKERS
+    timeout: 20000

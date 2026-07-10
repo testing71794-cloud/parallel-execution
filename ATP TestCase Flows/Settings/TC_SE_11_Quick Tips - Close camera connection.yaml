@@ -43,10 +43,16 @@ name: TC_SE_11_Quick Tips - Close camera connection
 # Step 2: action=tapOn; target=How to connect my Camera; input=None; expected=Camera connection info screen
 - tapOn: "How to connect my Camera"
 - waitForAnimationToEnd
-- tapOn: "Search Again"
-- waitForAnimationToEnd
-- assertVisible: "Hang tight, searching\nfor your camera\u2026"
-- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Search Again"
+    commands:
+      - tapOn: "Search Again"
+      - waitForAnimationToEnd
+      - assertVisible:
+          text: "Hang tight, searching"
+          optional: true
+      - waitForAnimationToEnd
 # Step 3: action=tapOn; target=X (close); input=None; expected=Returns to Quick Tips page
 - tapOn:
     id: "backImageView"

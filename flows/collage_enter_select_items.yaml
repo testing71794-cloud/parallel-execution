@@ -1,0 +1,25 @@
+appId: com.kodaksmile
+name: Collage enter Select Items mode
+---
+- tapOn: "All Photos"
+- waitForAnimationToEnd
+- assertVisible: "All Photos"
+- assertVisible: "Select"
+- runFlow:
+    when:
+      visible: "Select"
+    commands:
+      - tapOn: "Select"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      notVisible: "Select Items"
+    commands:
+      - tapOn:
+          id: textViewSelect
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Select Items"
+    timeout: 15000
+- assertVisible: "Select Items"
+- assertVisible: "Collage"

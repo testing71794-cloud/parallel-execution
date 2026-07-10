@@ -1,0 +1,31 @@
+appId: com.kodaksmile
+name: Signup assert terms validation or blocked submit
+---
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Please accept terms and conditions"
+    commands:
+      - assertVisible: "Please accept terms and conditions"
+- runFlow:
+    when:
+      visible: "Please accept the Terms and Conditions"
+    commands:
+      - assertVisible: "Please accept the Terms and Conditions"
+- runFlow:
+    when:
+      visible: "Please accept"
+    commands:
+      - assertVisible: "Please accept"
+- runFlow:
+    when:
+      visible: "Agree Terms and Conditions"
+    commands:
+      - assertVisible: "Agree Terms and Conditions"
+- runFlow:
+    when:
+      visible: "Sign Up"
+    commands:
+      - assertVisible: "Sign Up"
+      - assertVisible: "Create Account"
+      - assertNotVisible: "Welcome"

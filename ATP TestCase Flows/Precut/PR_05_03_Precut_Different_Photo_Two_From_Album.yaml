@@ -23,25 +23,15 @@ name: PR_05_03_Precut_Different_Photo_Two_From_Album
 - runFlow: ../../flows/onboardingSkip.yaml
 - assertVisible: ${output.home.titleText}
 - runFlow: ../../flows/openAlbum.yaml
-- runFlow: ../../flows/selectDoublePhotos.yaml
+- runFlow: ../../flows/selectSinglePhoto.yaml
 - waitForAnimationToEnd
-- runFlow:
-    when:
-      visible: "Pre-Cut Stickers"
-    commands:
-      - runFlow:
-          when:
-            visible: "Kodak 2x3 Pre-Cut Sticker Paper"
-          commands:
-            - tapOn: "Kodak 2x3 Pre-Cut Sticker Paper"
-            - waitForAnimationToEnd
-            - back
-            - waitForAnimationToEnd
-      - tapOn: "OK"
-      - waitForAnimationToEnd
+- runFlow: ../../flows/editor_wait_and_open_precuts.yaml
 - assertVisible: |-
     CREATE PRE-CUT
      STICKERS
+- waitForAnimationToEnd
+- tapOn:
+    point: "12%,78%"
 - waitForAnimationToEnd
 - tapOn:
     point: "50%,78%"
@@ -71,7 +61,12 @@ name: PR_05_03_Precut_Different_Photo_Two_From_Album
       visible: "Save Photo?"
     commands:
       - tapOn: "Save"
-- tapOn: Cancel
+- runFlow:
+    when:
+      visible: "Cancel"
+    commands:
+      - tapOn: "Cancel"
+      - waitForAnimationToEnd
 - runFlow:
     when:
       visible: "All Photos"

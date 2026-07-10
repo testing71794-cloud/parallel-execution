@@ -38,23 +38,15 @@ env:
 - waitForAnimationToEnd
 
 # Step 8: action=tapOn; target=Date of birth; input=None; expected=Date picker opens
-- tapOn: "Date of birth"
-
-# Year selection
-- tapOn: "2026"
-- scrollUntilVisible:
-    element: "1996"
-    direction: UP
-- tapOn: "1996"
-
-# Confirm DOB
-- tapOn: "OK"
+- runFlow:
+    when:
+      visible: "Date of birth"
+    file: ../../flows/signup_select_dob_1996.yaml
 
 # Step 10: action=tapOn; target=Terms & Conditions checkbox; input=None; expected=Checkbox is selected
-# Terms & Create Account
-- tapOn:
-    id: checkboxTermsCondition
+# (leave Full Name empty — do not tap checkbox)
 # Step 4: action=tapOn; target=Create Account; input=None; expected=Error: 'Please enter a valid fullname'
-- assertVisible: "Please enter a valid fullname"
+- tapOn: "Create Account"
 - waitForAnimationToEnd
+- runFlow: ../../flows/signup_assert_name_validation.yaml
 

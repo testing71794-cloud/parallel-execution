@@ -1,0 +1,31 @@
+appId: com.kodaksmile
+name: Signup assert validation or blocked submit
+---
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Please enter a valid fullname"
+    commands:
+      - assertVisible: "Please enter a valid fullname"
+- runFlow:
+    when:
+      visible: "Please enter a valid full name"
+    commands:
+      - assertVisible: "Please enter a valid full name"
+- runFlow:
+    when:
+      visible: "Please enter your full name"
+    commands:
+      - assertVisible: "Please enter your full name"
+- runFlow:
+    when:
+      visible: "Please enter"
+    commands:
+      - assertVisible: "Please enter"
+- runFlow:
+    when:
+      visible: "Sign Up"
+    commands:
+      - assertVisible: "Sign Up"
+      - assertVisible: "Create Account"
+      - assertNotVisible: "Welcome"

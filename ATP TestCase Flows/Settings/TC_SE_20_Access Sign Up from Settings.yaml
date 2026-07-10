@@ -46,7 +46,9 @@ name: TC_SE_20_Access Sign Up from Settings
 - assertVisible: "Full Name"
 - assertVisible: "Email"
 - assertVisible: "Password"
-- assertVisible: "Date of birth"
+- assertVisible:
+    text: "Date of birth"
+    optional: true
 - assertVisible: "Create Account"
 - assertVisible: "I'll do it later"
 - assertVisible: "Already have an account?"

@@ -45,8 +45,12 @@ name: TC_SE_05_Access Quick Tips
 
 # Step 3: action=tapOn; target=Back button; input=None; expected=Returns to Settings page
 - tapOn:
-    point: 1%,6%
+    id: "linearLayoutBack"
+    optional: true
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Buy KODAK ZINK Photo Paper"
+    timeout: 15000
 - assertVisible: "Buy KODAK ZINK Photo Paper"
 - assertVisible: "Quick Tips"
 - assertVisible: "Support"

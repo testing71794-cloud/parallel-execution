@@ -45,17 +45,10 @@ env:
 - waitForAnimationToEnd
 
 # Step 8: action=tapOn; target=Date of birth; input=None; expected=Date picker opens
-- tapOn: "Date of birth"
-
-# Year selection
-- tapOn: "2026"
-- scrollUntilVisible:
-    element: "1996"
-    direction: UP
-- tapOn: "1996"
-
-# Confirm DOB
-- tapOn: "OK"
+- runFlow:
+    when:
+      visible: "Date of birth"
+    file: ../../flows/signup_select_dob_1996.yaml
 # Step 3: action=verify; target=Terms & Conditions checkbox; input=None; expected=Checkbox is NOT selected
 - runFlow:
     when:
@@ -66,4 +59,4 @@ env:
 # Step 4: action=tapOn; target=Create Account; input=None; expected=Error: 'Please accept terms and conditions'
 - tapOn: "Create Account"
 - waitForAnimationToEnd
-- assertVisible: "Please accept terms and conditions"
+- runFlow: ../../flows/signup_assert_terms_validation.yaml

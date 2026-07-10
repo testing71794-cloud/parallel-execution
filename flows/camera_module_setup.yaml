@@ -1,0 +1,13 @@
+appId: com.kodaksmile
+name: camera_module_setup
+---
+- runFlow: ../elements/loadElements.yaml
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "I'll do it later"
+    timeout: 60000
+- runFlow: I will do it later.yaml
+- runFlow: Agree Term and Condition.yaml
+- runFlow: permissionsFlow.yaml
+- runFlow: camera_module_reach_home.yaml

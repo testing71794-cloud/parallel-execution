@@ -50,6 +50,7 @@ from .maestro_runner import (
     resolve_maestro_launcher,
     run_run_one_flow_device_bat,
 )
+from .atp_folder_paths import discover_atp_yaml_files, resolve_atp_subfolder
 from .flow_timing import read_status_fields
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -88,6 +89,94 @@ def _read_orchestrator_rev() -> str:
 ORCHESTRATOR_REV = _read_orchestrator_rev()
 
 
+def configure_stdout_stderr_utf8() -> None:
+    """Best-effort UTF-8 stdout/stderr on Windows Jenkins agents (avoids cp1252 encode crashes)."""
+    if os.name != "nt":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            reconfigure = getattr(stream, "reconfigure", None)
+            if callable(reconfigure):
+                reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    # PYTHONIOENCODING=utf-8 is set in some Jenkins stages; honor when streams lack reconfigure.
+    if os.environ.get("PYTHONIOENCODING", "").strip().lower().replace("-", "") != "utf8":
+        try:
+            import io
+
+            for name in ("stdout", "stderr"):
+                stream = getattr(sys, name, None)
+                if stream is None or not hasattr(stream, "buffer"):
+                    continue
+                enc = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+                if enc == "utf8":
+                    continue
+                wrapped = io.TextIOWrapper(
+                    stream.buffer,
+                    encoding="utf-8",
+                    errors="replace",
+                    line_buffering=True,
+                )
+                setattr(sys, name, wrapped)
+        except Exception:
+            pass
+
+
+def _sanitize_console_text(text: str) -> str:
+    """Replace characters the active console encoding cannot represent."""
+    payload = "" if text is None else str(text)
+    stream = sys.stdout
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    try:
+        sanitized = payload.encode(encoding, errors="replace").decode(encoding, errors="replace")
+    except (LookupError, UnicodeError):
+        sanitized = payload.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
+    return sanitized.replace("\ufffd", "?")
+
+
+def safe_print(text: str, *, file=None, flush: bool = True) -> None:
+    """Print without raising when Jenkins/console encoding rejects log content."""
+    target = file if file is not None else sys.stdout
+    payload = "" if text is None else str(text)
+    try:
+        print(payload, file=target, flush=flush)
+        return
+    except UnicodeEncodeError:
+        pass
+    except Exception:
+        return
+    try:
+        print(_sanitize_console_text(payload), file=target, flush=flush)
+    except Exception:
+        try:
+            ascii_payload = payload.encode("ascii", errors="replace").decode("ascii")
+            print(ascii_payload, file=target, flush=flush)
+        except Exception:
+            return
+
+
+def _validate_execution_modules() -> bool:
+    """Fail fast when execution stack modules are missing from the Jenkins workspace checkout."""
+    execution_dir = Path(__file__).resolve().parent
+    print(f"[ATP] execution_package_dir={execution_dir}", flush=True)
+    try:
+        import execution
+        import execution.maestro_stabilization as ms
+    except ModuleNotFoundError as exc:
+        print(f"[ATP] ERROR: execution stack import failed: {exc}", flush=True)
+        stabilization_py = execution_dir / "maestro_stabilization.py"
+        print(
+            f"[ATP] maestro_stabilization_expected={stabilization_py} "
+            f"exists={stabilization_py.is_file()}",
+            flush=True,
+        )
+        return False
+    print(f"[ATP] execution_package={Path(execution.__file__).resolve().parent}", flush=True)
+    print(f"[ATP] maestro_stabilization={Path(ms.__file__).resolve()}", flush=True)
+    return True
+
+
 def add_adb_from_env_to_path() -> None:
     d = os.environ.get("ADB_HOME", "").strip().strip('"')
     if not d:
@@ -104,7 +193,9 @@ def add_adb_from_env_to_path() -> None:
 
 
 def get_authorized_serials_from_adb() -> list[str]:
-    adb = shutil.which("adb")
+    from .subprocess_launch import resolve_adb_executable
+
+    adb = resolve_adb_executable()
     if not adb:
         raise RuntimeError("adb not on PATH. Set ADB_HOME or ANDROID_HOME/platform-tools.")
     proc = subprocess.run([adb, "devices"], capture_output=True, text=True, timeout=60, check=False)
@@ -138,6 +229,30 @@ def read_detected_file_serials(repo: Path) -> list[str]:
             seen.add(t)
             serial_list.append(t)
     return serial_list
+
+
+def merge_and_pick_devices_with_app_preflight(repo: Path, app_id: str) -> list[str]:
+    """``merge_and_pick_devices`` then drop devices missing ``app_id`` (non-fatal)."""
+    devices = merge_and_pick_devices(repo)
+    if not (app_id or "").strip():
+        return devices
+    if os.environ.get("ATP_DEVICE_APP_PREFLIGHT", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        return devices
+    from .device_app_preflight import filter_devices_with_app
+
+    ready, missing = filter_devices_with_app(devices, app_id, repo=repo)
+    if missing and ready:
+        print(
+            f"[ATP] device_app_preflight: continuing with {len(ready)} device(s); "
+            f"skipped {len(missing)} without app",
+            flush=True,
+        )
+    return ready
 
 
 def merge_and_pick_devices(repo: Path) -> list[str]:
@@ -224,23 +339,43 @@ def merge_atp_suite_labels_json(labels_path: Path, new_labels: dict[str, str], m
 
 def discover_flows(repo: Path, atp_subfolder: str) -> list[Path]:
     atp_root = repo / "ATP TestCase Flows"
+    folder_arg = (atp_subfolder or "").strip()
+    resolved = resolve_atp_subfolder(repo, folder_arg) if folder_arg else ""
+    print(f"[ATP] workspace={repo.resolve()}", flush=True)
+    print(f"[ATP] atp_root={atp_root.resolve()}", flush=True)
+    if folder_arg:
+        print(f"[ATP] folder_arg={folder_arg!r} resolved_folder={resolved!r}", flush=True)
     if not atp_root.is_dir():
-        print("[ATP] SKIP: folder not found - ATP TestCase Flows", flush=True)
+        print("[ATP] ERROR: folder not found - ATP TestCase Flows", flush=True)
         return []
-    sub = (atp_subfolder or "").strip()
-    if sub:
-        folder_root = atp_root / sub
+    if folder_arg:
+        folder_root = atp_root / resolved
         if not folder_root.is_dir():
-            print(f"[ATP] SKIP: subfolder not found: {sub}", flush=True)
+            print(
+                f"[ATP] ERROR: subfolder not found on disk: {resolved!r} "
+                f"(from stage arg {folder_arg!r})",
+                flush=True,
+            )
+            available = [c.name for c in sorted(atp_root.iterdir()) if c.is_dir()]
+            print(f"[ATP] available ATP folders: {available}", flush=True)
             return []
-        roots = [folder_root]
+    flows = discover_atp_yaml_files(repo, folder_arg, exclude_subflows=True)
+    include = (os.environ.get("ATP_FLOW_INCLUDE") or "").strip()
+    exclude = (os.environ.get("ATP_FLOW_EXCLUDE") or "").strip()
+    if include:
+        print(f"[ATP] ATP_FLOW_INCLUDE filter={include!r} -> {len(flows)} flow(s)", flush=True)
+    if exclude:
+        print(f"[ATP] ATP_FLOW_EXCLUDE filter={exclude!r} -> {len(flows)} flow(s)", flush=True)
+    if flows:
+        print(f"[ATP] discovered {len(flows)} yaml test file(s):", flush=True)
+        for p in flows:
+            try:
+                rel = p.resolve().relative_to(repo.resolve())
+            except ValueError:
+                rel = p
+            print(f"[ATP]   - {rel}", flush=True)
     else:
-        roots = [atp_root]
-    flows: list[Path] = []
-    for root in roots:
-        for p in sorted(root.rglob("*"), key=lambda x: str(x).lower()):
-            if p.is_file() and p.suffix.lower() in (".yaml", ".yml"):
-                flows.append(p)
+        print("[ATP] discovered 0 yaml test files (subflows/ excluded)", flush=True)
     return flows
 
 
@@ -252,7 +387,9 @@ def write_section(title: str) -> None:
 
 
 def _safe_flow_stem(flow: Path) -> str:
-    return re.sub(r"\s+", "_", flow.stem)
+    from execution.atp_folder_paths import safe_flow_stem
+
+    return safe_flow_stem(flow.stem)
 
 
 def _log_path(repo: Path, suite_id: str, flow: Path, device_id: str) -> Path:
@@ -399,7 +536,7 @@ def _execute_flow_on_device(
         from utils.runflow_resolve import validate_runflow_paths
 
         validate_runflow_paths(flow, repo_root=repo)
-    except OSError as exc:
+    except (OSError, ImportError) as exc:
         print(f"[ATP] runflow_resolve_skip flow={flow_base} error={exc}", flush=True)
     if execution_mode != "dynamic" and _handshake_gate_enabled(len(devices), execution_mode):
         _wait_for_prior_device_handshake(
@@ -522,7 +659,14 @@ def _run_flow_wave_on_devices(
             f"elapsed_sec={wave_elapsed:.1f}",
             flush=True,
         )
-        _print_wave_summary(flow_base, outcomes, wave_elapsed)
+        _print_wave_summary(
+            flow_base,
+            outcomes,
+            wave_elapsed,
+            repo=repo,
+            suite_id=suite_id,
+            flow=flow,
+        )
         return outcomes
 
     print(f"  [ATP] flow wave sequential: {flow_base}", flush=True)
@@ -640,21 +784,60 @@ def _run_dynamic_worker_pool(
     return failed
 
 
-def _print_wave_summary(flow_base: str, outcomes: list[_DeviceFlowOutcome], elapsed_sec: float) -> None:
+def _print_wave_summary(
+    flow_base: str,
+    outcomes: list[_DeviceFlowOutcome],
+    elapsed_sec: float,
+    *,
+    repo: Path | None = None,
+    suite_id: str = "",
+    flow: Path | None = None,
+) -> None:
     """Deterministic per-wave rollup (device order preserved)."""
     ok = sum(1 for o in outcomes if o.exit_code == 0)
-    fail = len(outcomes) - ok
+    skip = 0
+    if repo is not None and suite_id and flow is not None:
+        skip = sum(
+            1
+            for o in outcomes
+            if o.exit_code != 0 and _outcome_is_app_skip(o.exit_code, repo, suite_id, flow, o.device_id)
+        )
+    fail = len(outcomes) - ok - skip
     print(
-        f"[ATP] wave_summary flow={flow_base} devices={len(outcomes)} ok={ok} fail={fail} "
+        f"[ATP] wave_summary flow={flow_base} devices={len(outcomes)} ok={ok} skip={skip} fail={fail} "
         f"wall_sec={elapsed_sec:.1f}",
         flush=True,
     )
     for o in outcomes:
-        mark = "OK" if o.exit_code == 0 else "FAIL"
+        if o.exit_code == 0:
+            mark = "OK"
+        elif (
+            repo is not None
+            and suite_id
+            and flow is not None
+            and _outcome_is_app_skip(o.exit_code, repo, suite_id, flow, o.device_id)
+        ):
+            mark = "SKIP"
+        else:
+            mark = "FAIL"
         print(
             f"[ATP] wave_device_result device={_dev_log(o.device_id)} exit={o.exit_code} {mark}",
             flush=True,
         )
+
+
+def _outcome_is_app_skip(exit_code: int, repo: Path, suite_id: str, flow: Path, device_id: str) -> bool:
+    from .device_app_preflight import EXIT_APP_NOT_INSTALLED
+
+    if exit_code == EXIT_APP_NOT_INSTALLED:
+        return True
+    try:
+        reason = read_status_fields(_status_file_path(repo, suite_id, flow, device_id)).get(
+            "reason", ""
+        )
+        return reason.strip().upper() == "APP_NOT_INSTALLED"
+    except Exception:
+        return False
 
 
 def _report_device_outcome(
@@ -664,7 +847,7 @@ def _report_device_outcome(
     flow_base: str,
     outcome: _DeviceFlowOutcome,
 ) -> bool:
-    """Print console result for one device; return True if failed."""
+    """Print console result for one device; return True if failed (not skipped)."""
     dev = outcome.device_id
     ex = outcome.exit_code
     dur_hint = ""
@@ -675,13 +858,22 @@ def _report_device_outcome(
             dur_hint = f" duration_ms={dm}"
     except Exception:
         pass
-    if ex != 0:
-        print(f"  [FAIL] exit={ex} device={_dev_log(dev)} flow={flow_base}{dur_hint}", flush=True)
-        _print_log_tail(repo, suite_id, flow, dev)
+    if ex != 0 and _outcome_is_app_skip(ex, repo, suite_id, flow, dev):
         print(
-            "  [hint] If Maestro said 'Flow file does not exist', fix runFlow paths from ATP subfolders "
-            "(use ../../flows/ or ../../elements/ to reach repo root).",
+            f"  [SKIP] exit={ex} device={_dev_log(dev)} flow={flow_base} "
+            f"reason=APP_NOT_INSTALLED{dur_hint}",
             flush=True,
+        )
+        return False
+    if ex != 0:
+        safe_print(f"  [FAIL] exit={ex} device={_dev_log(dev)} flow={flow_base}{dur_hint}")
+        try:
+            _print_log_tail(repo, suite_id, flow, dev)
+        except Exception as exc:
+            safe_print(f"  [log] (tail unavailable: {exc})")
+        safe_print(
+            "  [hint] If Maestro said 'Flow file does not exist', fix runFlow paths from ATP subfolders "
+            "(use ../../flows/ or ../../elements/ to reach repo root)."
         )
         tail = _read_log_tail_text(repo, suite_id, flow, dev, 80)
         if "7001" in tail and "Connection refused" in tail:
@@ -698,17 +890,22 @@ def _report_device_outcome(
 
 
 def _print_log_tail(repo: Path, suite_id: str, flow: Path, device_id: str) -> None:
-    lp = _log_path(repo, suite_id, flow, device_id)
-    print(f"  [log] {lp} (last 45 lines):", flush=True)
-    if not lp.is_file():
-        print("    (no file)", flush=True)
-        return
+    """Print last lines of a Maestro log; never raises (Unicode-safe on Windows)."""
     try:
-        lines = lp.read_text(encoding="utf-8", errors="replace").splitlines()
+        lp = _log_path(repo, suite_id, flow, device_id)
+        safe_print(f"  [log] {lp} (last 45 lines):")
+        if not lp.is_file():
+            safe_print("    (no file)")
+            return
+        try:
+            lines = lp.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as exc:
+            safe_print(f"    (read error: {exc})")
+            return
         for ln in lines[-45:]:
-            print(f"    {ln}", flush=True)
-    except OSError as e:
-        print(f"    (read error: {e})", flush=True)
+            safe_print(f"    {_sanitize_console_text(ln)}")
+    except Exception as exc:
+        safe_print(f"  [log] (tail print failed: {exc})")
 
 
 def run_atp_folder_blocking(
@@ -718,6 +915,7 @@ def run_atp_folder_blocking(
     clear_state: str,
     maestro_cmd: str,
 ) -> int:
+    configure_stdout_stderr_utf8()
     repo = repo.resolve()
     single_folder_mode = bool((atp_subfolder or "").strip())
     atp_root = repo / "ATP TestCase Flows"
@@ -734,9 +932,18 @@ def run_atp_folder_blocking(
     print(f"[ATP] orchestrator_file={Path(__file__).resolve()}", flush=True)
     print("[ATP] orchestrator=execution/atp_jenkins_orchestrator.py (blocking; no detached PS1)", flush=True)
     print(f"[ATP] git_branch={_atp_git_branch(repo)}", flush=True)
+    if not _validate_execution_modules():
+        return 1
 
     flows = discover_flows(repo, atp_subfolder)
     if not flows:
+        if single_folder_mode:
+            print(
+                "[ATP] ERROR: no executable .yaml/.yml test files found for this stage "
+                "(check folder mapping and ATP TestCase Flows layout)",
+                flush=True,
+            )
+            return 1
         if atp_root.is_dir():
             print("[ATP] SKIP: no .yaml/.yml files under ATP TestCase Flows", flush=True)
         return 0
@@ -747,19 +954,39 @@ def run_atp_folder_blocking(
     clear_state = (clear_state or "true").strip()
 
     add_adb_from_env_to_path()
-    try:
-        subprocess.run(["adb", "start-server"], capture_output=True, text=True, timeout=60, check=False)
-        subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=60, check=False)
-    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-        pass
+    from .subprocess_launch import log_subprocess_launch, resolve_adb_executable
+
+    adb_exe = resolve_adb_executable()
+    if adb_exe:
+        for adb_args in (["start-server"], ["devices"]):
+            adb_cmd = [adb_exe, *adb_args]
+            log_subprocess_launch(adb_cmd, cwd=repo, shell=False, label="atp_orchestrator_adb")
+            try:
+                subprocess.run(
+                    adb_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+                pass
 
     time.sleep(1)
 
     try:
-        devices = merge_and_pick_devices(repo)
+        devices = merge_and_pick_devices_with_app_preflight(repo, app_id)
     except Exception as e:
         print(f"ERROR: {e}", flush=True)
         return 1
+
+    if not devices:
+        print(
+            "[ATP] SKIP: no devices available after app preflight "
+            "(install APK or connect authorized device(s))",
+            flush=True,
+        )
+        return 0
 
     print(f"Devices: {', '.join(_dev_log(d) for d in devices)}", flush=True)
     os.environ["ATP_ORCH_DEVICE_COUNT"] = str(len(devices))
@@ -883,6 +1110,7 @@ def run_atp_folder_blocking(
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_stdout_stderr_utf8()
     argv = argv if argv is not None else sys.argv[1:]
     if len(argv) < 4:
         print(

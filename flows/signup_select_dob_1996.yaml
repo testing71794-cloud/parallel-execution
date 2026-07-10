@@ -1,0 +1,39 @@
+appId: com.kodaksmile
+name: Signup DOB select 1996
+---
+- hideKeyboard:
+    optional: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "By signing up you agree to our"
+    optional: true
+- swipe:
+    start: "50%,78%"
+    end: "50%,38%"
+    duration: 400
+- swipe:
+    start: "50%,78%"
+    end: "50%,38%"
+    duration: 400
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "Date of birth"
+    direction: DOWN
+    visibilityPercentage: 50
+    timeout: 30000
+- tapOn: "Date of birth"
+- waitForAnimationToEnd
+- tapOn:
+    text: "2026"
+    optional: true
+- scrollUntilVisible:
+    element: "1996"
+    direction: UP
+    optional: true
+- tapOn:
+    text: "1996"
+    optional: true
+- tapOn:
+    text: "OK"
+    optional: true
+- waitForAnimationToEnd

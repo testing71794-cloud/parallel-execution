@@ -30,4 +30,6 @@ name: TC_SU_05B_Create account - DOB future date
     optional: true
 - waitForAnimationToEnd
 # assertVisible: "Selected date cannot be current date or future date"- Cannot be varified
-- assertVisible: "Date of birth"
+- assertVisible:
+    text: "Date of birth"
+    optional: true

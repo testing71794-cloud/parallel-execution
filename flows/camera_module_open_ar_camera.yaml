@@ -1,0 +1,31 @@
+appId: com.kodaksmile
+name: camera_module_open_ar_camera
+---
+- runFlow:
+    when:
+      visible: "Enable camera access"
+    commands:
+      - tapOn: "Enable camera access"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "While using the app"
+    commands:
+      - tapOn: "While using the app"
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+- tapOn:
+    point: "50%,92%"
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Swipe left to apply live filters"
+    commands:
+      - assertVisible: "Ok"
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+- assertVisible: "Close"
+- assertVisible: "Scan"

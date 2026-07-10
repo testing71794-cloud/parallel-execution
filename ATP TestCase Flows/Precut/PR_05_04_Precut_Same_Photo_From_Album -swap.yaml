@@ -48,9 +48,7 @@ name: PR_05_04_Precut_Same_Photo_From_Album -swap
             - waitForAnimationToEnd
       - tapOn: "OK"
       - waitForAnimationToEnd
-- assertVisible: |-
-    CREATE PRE-CUT
-     STICKERS
+- assertVisible: "CREATE PRE-CUT STICKERS"
 - waitForAnimationToEnd
 - tapOn:
     id: relativeLayoutItem

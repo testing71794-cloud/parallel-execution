@@ -150,7 +150,10 @@ def _maestro_warmup_cmd(
         try:
             from .maestro_runner import build_maestro_java_cmd_prefix
 
-            prefix = build_maestro_java_cmd_prefix(maestro_launcher)
+            prefix = build_maestro_java_cmd_prefix(
+                maestro_launcher,
+                user_home=env.get("ATP_JAVA_USER_HOME"),
+            )
             return [*prefix, "--device", device_id, subcommand]
         except (RuntimeError, OSError):
             pass

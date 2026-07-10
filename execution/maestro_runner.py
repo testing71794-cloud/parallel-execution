@@ -26,7 +26,9 @@ if str(_REPO_ROOT) not in sys.path:
 
 from utils.device_utils import get_device_display_name  # noqa: E402
 
+from .atp_folder_paths import safe_flow_stem
 from .flow_timing import append_timing, read_status_fields
+from .subprocess_launch import log_subprocess_launch
 
 
 def _dev_log(device_id: str) -> str:
@@ -256,20 +258,27 @@ def resolve_maestro_java_exe() -> Path:
 
 def build_maestro_java_cmd_prefix(
     maestro_launcher: Path | None = None,
+    *,
+    user_home: str | None = None,
 ) -> list[str]:
     """
     argv prefix to invoke Maestro CLI without maestro.bat (Gradle-style launcher).
-    Example: [java.exe, -classpath, <app>/lib/*, maestro.cli.AppKt]
+    Example: [java.exe, -Duser.home=..., -classpath, <app>/lib/*, maestro.cli.AppKt]
     """
     app_home = resolve_maestro_app_home(maestro_launcher)
     lib_glob = str((app_home / "lib" / "*").resolve())
     java_exe = resolve_maestro_java_exe()
-    return [str(java_exe), "-classpath", lib_glob, "maestro.cli.AppKt"]
+    home = (user_home or os.environ.get("ATP_JAVA_USER_HOME") or "").strip()
+    prefix: list[str] = [str(java_exe)]
+    if home:
+        prefix.append(f"-Duser.home={home}")
+    prefix.extend(["-classpath", lib_glob, "maestro.cli.AppKt"])
+    return prefix
 
 
 def flow_log_tail(repo: Path, suite_id: str, flow_path: Path, device_id: str) -> str:
     """Same stem convention as scripts/run_one_flow_on_device.bat SAFE_FLOW."""
-    flow_name = re.sub(r"\s+", "_", flow_path.stem)
+    flow_name = safe_flow_stem(flow_path.stem)
     safe_dev = re.sub(r"\s+", "_", device_id)
     logf = repo / "reports" / suite_id / "logs" / f"{flow_name}_{safe_dev}.log"
     if not logf.is_file():
@@ -336,7 +345,7 @@ def _parallel_maestro_isolation_enabled() -> bool:
 
 
 def flow_device_log_path(repo: Path, suite_id: str, flow_path: Path, device_id: str) -> Path:
-    flow_name = re.sub(r"\s+", "_", flow_path.stem)
+    flow_name = safe_flow_stem(flow_path.stem)
     safe_dev = re.sub(r"\s+", "_", device_id)
     return repo / "reports" / suite_id / "logs" / f"{flow_name}_{safe_dev}.log"
 
@@ -505,9 +514,10 @@ def _apply_parallel_maestro_env(
     env["APPDATA"] = str(roaming)
     meta["localappdata"] = str(local_app)
     # Do not override USERPROFILE (breaks Windows AppDirs / Maestro init). Redirect JVM user.home.
-    opts = (env.get("MAESTRO_OPTS") or "").strip()
-    user_home_flag = f'-Duser.home={runtime_home}'
-    env["MAESTRO_OPTS"] = f"{opts} {user_home_flag}".strip() if opts else user_home_flag
+    env["ATP_JAVA_USER_HOME"] = str(runtime_home)
+    # Batch child uses ATP_JAVA_USER_HOME + wrapper .cmd (quoted per-arg). Never pass MAESTRO_OPTS
+    # to cmd.exe — maestro.bat expands it unquoted and splits workspace paths at spaces.
+    env.pop("MAESTRO_OPTS", None)
     env["ATP_MAESTRO_JAVA_DIRECT"] = "1"
     meta["maestro_user_home"] = str(runtime_home)
 
@@ -525,10 +535,17 @@ def _apply_parallel_maestro_env(
         env.pop("ATP_MAESTRO_DRIVER_PORT", None)
 
     debug_root = (repo / "reports" / suite_id / "maestro-debug").resolve()
-    debug_dir = debug_root / f"{flow_path.stem}__{slug}"
+    debug_dir = debug_root / f"{safe_flow_stem(flow_path.stem)}__{slug}"
     debug_dir.mkdir(parents=True, exist_ok=True)
     env["ATP_MAESTRO_DEBUG_OUTPUT"] = str(debug_dir)
     meta["debug_output"] = str(debug_dir)
+
+    recordings_root = (repo / "reports" / suite_id / "recordings").resolve()
+    recordings_dir = recordings_root / f"{safe_flow_stem(flow_path.stem)}__{slug}"
+    recordings_dir.mkdir(parents=True, exist_ok=True)
+    env["ATP_MAESTRO_TEST_OUTPUT"] = str(recordings_dir)
+    meta["test_output"] = str(recordings_dir)
+    env.setdefault("ATP_AUTO_RECORD_VIDEO", "1")
     return meta
 
 
@@ -593,19 +610,34 @@ def run_run_one_flow_device_bat(
 
     log_isolated_runtime_confirmed(device_id=device_id, meta=iso)
     disable_device_animations(device_id)
-    run_maestro_warmup(maestro_launcher=maestro_launcher, device_id=device_id, env=env)
+    from .flow_appium_runners import resolve_appium_runner_bat
+
+    appium_runner = resolve_appium_runner_bat(flow_path, repo)
+    appium_pinch_enabled = os.environ.get("ATP_GALLERY_APPIUM_PINCH", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+    if appium_runner and appium_pinch_enabled:
+        print(
+            f"[ATP] appium_pinch_flow device={_dev_log(device_id)} flow={flow_path.stem} "
+            f"runner={appium_runner} (skip orchestrator Maestro warmup)",
+            flush=True,
+        )
+    else:
+        run_maestro_warmup(maestro_launcher=maestro_launcher, device_id=device_id, env=env)
     use_watchdog = startup_watchdog_enabled(
         native_parallel=native_parallel, use_startup_gate=use_startup_gate
     )
     # Ensure child cmd sees the same Maestro/Java discovery as Jenkins (set_maestro_java.bat still runs inside bat).
     timeout_sec = int(os.environ.get("ATP_FLOW_TIMEOUT_SEC", str(4 * 3600)))
 
-    # cmd /d /c <bat> (no "call") — one cmd.exe child per device; bat invokes Maestro without "call".
-    cmd: list[str] = [
-        "cmd.exe",
-        "/d",
-        "/c",
-        str(bat),
+    from .subprocess_launch import windows_cmd_bat_argv
+
+    # cmd /d /c "<bat>" <args> as one quoted tail — required when workspace/flow paths contain spaces.
+    cmd = windows_cmd_bat_argv(
+        bat,
         suite_id,
         str(flow_path.resolve()),
         device_id,
@@ -613,7 +645,18 @@ def run_run_one_flow_device_bat(
         clear_state,
         str(maestro_launcher),
         include_tag,
-    ]
+    )
+    log_subprocess_launch(
+        cmd,
+        cwd=repo.resolve(),
+        shell=False,
+        label="run_one_flow_on_device",
+        extra={
+            "maestro_launcher": str(maestro_launcher),
+            "flow_path": str(flow_path.resolve()),
+            "bat": str(bat),
+        },
+    )
     log_lifecycle(
         repo,
         suite_id,
@@ -626,6 +669,23 @@ def run_run_one_flow_device_bat(
         maestro_debug=iso.get("debug_output"),
     )
     log_path = flow_device_log_path(repo, suite_id, flow_path, device_id)
+    from .maestro_startup_diagnostics import StartupDiagnostics
+
+    startup_diag = StartupDiagnostics(
+        repo=repo,
+        suite_id=suite_id,
+        device_id=device_id,
+        flow_name=flow_path.stem,
+    )
+    startup_diag.log_environment(env)
+    startup_diag.log_command(cmd, cwd=repo.resolve())
+    startup_diag.trace(
+        "launch_config",
+        startup_gate=use_startup_gate,
+        legacy_mode=legacy_mode,
+        native_parallel=native_parallel,
+        device_count=device_count,
+    )
     port_plan = iso.get("driver_port_plan", planned_driver_port(launch_index))
     print(
         f"[ATP] maestro_subprocess_launch device={_dev_log(device_id)} flow={flow_path.stem} "
@@ -759,10 +819,17 @@ def run_run_one_flow_device_bat(
                                 break
 
                     if use_startup_gate and gate is not None:
+                        startup_diag.trace(
+                            "startup_gate_wait_begin",
+                            child_pid=child.pid,
+                            log_path=str(log_path),
+                            log_offset=log_start_offset,
+                        )
                         ready, reason = gate.release_after_session_ready(
                             log_path=log_path,
                             child_pid=child.pid,
                             log_start_offset=log_start_offset,
+                            diagnostics=startup_diag,
                         )
                         if not ready:
                             print(
@@ -872,7 +939,7 @@ def run_run_one_flow_device_bat(
 
 
 def _status_file_path(repo: Path, suite_id: str, flow_path: Path, device_id: str) -> Path:
-    safe_flow = flow_path.stem.replace(" ", "_")
+    safe_flow = safe_flow_stem(flow_path.stem)
     safe_device = device_id.replace(" ", "_")
     return repo / "status" / f"{suite_id}__{safe_flow}__{safe_device}.txt"
 

@@ -48,9 +48,7 @@ name: PR_05_02_Precut_Different_Photo_Single_From_Album
             - waitForAnimationToEnd
       - tapOn: "OK"
       - waitForAnimationToEnd
-- assertVisible: |-
-    CREATE PRE-CUT
-     STICKERS
+- assertVisible: "CREATE PRE-CUT STICKERS"
 - waitForAnimationToEnd
 - tapOn:
     point: "50%,78%"

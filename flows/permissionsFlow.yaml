@@ -1,11 +1,16 @@
 appId: com.kodaksmile
 ---
-# Android runtime permission dialogs (best-effort)
+# Android runtime permission dialogs (best-effort; literal labels for subflow safety)
 - runFlow:
     when:
       visible: "Photos Access Required"
     commands:
-      - tapOn: ${output.common.okText}
+      - tapOn:
+          text: "Ok"
+          optional: true
+      - tapOn:
+          text: "OK"
+          optional: true
       - waitForAnimationToEnd
 
 - runFlow:
@@ -19,5 +24,14 @@ appId: com.kodaksmile
     when:
       visible: "Allow KODAK SMILE to find"
     commands:
-      - tapOn: ${output.common.allowText}
+      - tapOn:
+          text: "Allow"
+          optional: true
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible: "While using the app"
+    commands:
+      - tapOn: "While using the app"
       - waitForAnimationToEnd

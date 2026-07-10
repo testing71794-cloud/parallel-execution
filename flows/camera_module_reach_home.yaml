@@ -1,0 +1,47 @@
+appId: com.kodaksmile
+name: camera_module_reach_home
+---
+- runFlow: ../elements/loadElements.yaml
+# Resilient onboarding for Camera ATP: reach home without hard-failing on Welcome.
+- runFlow:
+    when:
+      visible: "Welcome"
+    commands:
+      - assertVisible: "Welcome"
+      - assertVisible: "Which device would you like to connect?"
+      - assertVisible: "Find My Camera"
+      - tapOn: "Find My Camera"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
+- runFlow: swipe screen.yaml
+- runFlow: onboardingSkip.yaml
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "KODAK ZINK"
+    commands:
+      - assertVisible: "KODAK ZINK"
+      - assertVisible: "Go to Homepage"
+      - tapOn: "Go to Homepage"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Go to homepage"
+    commands:
+      - tapOn: "Go to homepage"
+      - waitForAnimationToEnd
+- runFlow: handleRateApp.yaml
+- extendedWaitUntil:
+    visible: ${output.home.titleText}
+    timeout: 30000
+- assertVisible: ${output.home.titleText}

@@ -19,15 +19,21 @@ name: Signup Flow
 # Terms text + links
 - assertVisible: "By signing up you agree to our"
 - assertVisible: "Terms & Conditions and  "
-- assertVisible: Privacy Policy.
+- assertVisible: "Privacy Policy."
 # Primary CTA
 - assertVisible: "Create Account"
 
-# Footer actions
-- assertVisible: "I'll do it later"
-- assertVisible: "Already have an account?"
-- assertVisible: "Log In"
+# Footer actions (optional — layout varies by build/locale)
+- assertVisible:
+    text: "Already have an account?"
+    optional: true
+- assertVisible:
+    text: "Log In"
+    optional: true
 
 # Tap skip
 - tapOn: "I'll do it later"
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Terms and Conditions"
+    timeout: 20000

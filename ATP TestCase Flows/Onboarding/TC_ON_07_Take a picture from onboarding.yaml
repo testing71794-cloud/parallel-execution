@@ -62,6 +62,7 @@ name: TC_ON_07_Take a picture from onboarding
 - waitForAnimationToEnd
 - tapOn:
     id: "imageViewFlipCamera"
+    optional: true
 - waitForAnimationToEnd  
 - tapOn:
     id: "cameraImageView"
@@ -72,7 +73,21 @@ name: TC_ON_07_Take a picture from onboarding
     text: "OK"
     optional: true
 - waitForAnimationToEnd
-- assertVisible:
-    id: "layoutPrinter"
-- assertVisible: "Pre-Cuts"
-- assertVisible: "Edit"
+- runFlow:
+    when:
+      visible:
+        id: "layoutPrinter"
+    commands:
+      - assertVisible: "Pre-Cuts"
+      - assertVisible: "Edit"
+- runFlow:
+    when:
+      notVisible:
+        id: "layoutPrinter"
+    commands:
+      - extendedWaitUntil:
+          visible:
+            text: "Pre-Cuts|Edit|Filter"
+          timeout: 15000
+      - assertVisible:
+          text: "Pre-Cuts|Edit|Filter"

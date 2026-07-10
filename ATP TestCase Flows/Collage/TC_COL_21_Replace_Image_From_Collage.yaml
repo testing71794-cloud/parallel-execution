@@ -1,7 +1,7 @@
 appId: com.kodaksmile
 name: TC_COL_21_Replace_Image_From_Collage
 ---
-# Complete journey: Adjust Layout -> Replace Image -> dismiss -> still Adjust Layout.
+# Adjust Layout -> Replace Image -> pick replacement -> back on Adjust Layout.
 - launchApp:
     clearState: true
 - waitForAnimationToEnd
@@ -80,7 +80,6 @@ name: TC_COL_21_Replace_Image_From_Collage
 - waitForAnimationToEnd
 - assertVisible: "Select Layout"
 - assertVisible: "1 Item selected"
-# Collage layout slot 1 (resource id layoutTwoHImage2).
 - tapOn:
     id: "layoutTwoHImage2"
 - waitForAnimationToEnd
@@ -90,18 +89,43 @@ name: TC_COL_21_Replace_Image_From_Collage
 - assertVisible: "Adjust Layout"
 - assertVisible: "Replace Image"
 - assertVisible: "Save"
+# Tap collage image so Replace Image is actionable, then open picker.
+- tapOn:
+    point: "50%,35%"
+- waitForAnimationToEnd
 - tapOn: "Replace Image"
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      text: "Done|Select Items|All Photos"
+    timeout: 15000
 - runFlow:
     when:
-      visible: "Cancel"
+      visible: "Done"
     commands:
-      - tapOn: "Cancel"
+      - tapOn:
+          id: imageViewPhoto
+          index: 1
+      - waitForAnimationToEnd
+      - tapOn: "Done"
       - waitForAnimationToEnd
 - runFlow:
     when:
-      visible: "CANCEL"
+      visible: "Select Items"
     commands:
-      - tapOn: "CANCEL"
+      - tapOn:
+          id: imageViewPhoto
+          index: 1
       - waitForAnimationToEnd
+      - runFlow:
+          when:
+            visible: "Done"
+          commands:
+            - tapOn: "Done"
+            - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Adjust Layout"
+    timeout: 15000
 - assertVisible: "Adjust Layout"
+- assertVisible: "Replace Image"
+- assertVisible: "Save"

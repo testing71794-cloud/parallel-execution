@@ -1,0 +1,28 @@
+appId: com.kodaksmile
+name: Editor open Pre-Cuts tab
+---
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      text: "Pre-Cuts|Edit|Filter|Print|Close"
+    timeout: 30000
+- runFlow:
+    when:
+      notVisible: "Pre-Cuts"
+    commands:
+      - swipe:
+          start: "85%,12%"
+          end: "15%,12%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "85%,12%"
+          end: "15%,12%"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Pre-Cuts"
+    timeout: 15000
+- tapOn: "Pre-Cuts"
+- waitForAnimationToEnd
+- tapOn:
+    point: "20%,60%"
+- waitForAnimationToEnd

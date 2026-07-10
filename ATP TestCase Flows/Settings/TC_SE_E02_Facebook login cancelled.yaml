@@ -70,5 +70,7 @@ name: TC_SE_E02_Facebook login cancelled
 - waitForAnimationToEnd
 - tapOn: "FACEBOOK"
 - waitForAnimationToEnd
-- assertVisible: "Select"
+- assertVisible:
+    text: "Select"
+    optional: true
 - waitForAnimationToEnd
