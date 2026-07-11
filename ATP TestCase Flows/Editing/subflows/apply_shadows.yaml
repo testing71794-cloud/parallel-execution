@@ -1,0 +1,12 @@
+appId: com.kodaksmile
+---
+- runFlow:
+    file: open_edit_tool.yaml
+    env:
+      TOOL_LABEL: "Shadows"
+- swipe:
+    start: "30%,90%"
+    end: "80%,90%"
+- waitForAnimationToEnd
+- tapOn: "Done"
+- waitForAnimationToEnd

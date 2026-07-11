@@ -1,0 +1,11 @@
+appId: com.kodaksmile
+---
+# Before/after OpenRouter pair verification for editing tools.
+- runScript:
+    file: ../scripts/verify_visual_pair_openrouter.js
+    env:
+      BEFORE_BASENAME: ${BEFORE_BASENAME}
+      AFTER_BASENAME: ${AFTER_BASENAME}
+      VERIFY_LABEL: ${VERIFY_LABEL}
+      VERIFY_PROFILE: ${VERIFY_PROFILE}
+- assertTrue: ${output.visual_pair_verified}

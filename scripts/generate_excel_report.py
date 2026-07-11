@@ -324,17 +324,29 @@ def _rows_to_raw_dicts(
         logp = _log_path(row)
         ec = (row.get("exit_code") or "").strip() or "0"
         flow = (row.get("flow") or "").strip()
+        row_suite = (row.get("suite") or suite_label or "").strip()
         if st in ("FAIL", "FLAKY") or (st != "PASS" and st not in ("UNKNOWN", "RUNNING")):
             st_for_ai = st if st in ("FAIL", "FLAKY") else "FAIL"
             an = analyze_failure_for_row(
-                logp if logp else None, status=st_for_ai, use_openrouter=use_or
+                logp if logp else None,
+                status=st_for_ai,
+                use_openrouter=use_or,
+                flow_name=flow,
+                suite=row_suite,
+                device_id=did,
             )
         else:
             an = analyze_failure_for_row(
-                None, status="PASS", use_openrouter=False
+                logp if logp else None,
+                status="PASS",
+                use_openrouter=False,
+                flow_name=flow,
+                suite=row_suite,
+                device_id=did,
             )
         ai_raw = (an.get("ai_failure_summary") or "").strip()
         ai_one = (ai_raw[:2000] if ai_raw else "—")
+        shot_path = str(an.get("screenshot_path") or "").strip() or _SCREEN_DEFAULT
         out.append(
             {
                 "Suite": suite_label,
@@ -362,7 +374,7 @@ def _rows_to_raw_dicts(
                     or "Rule-based fallback"
                 )[:60],
                 "Log Path": logp,
-                "Screenshot Path": _SCREEN_DEFAULT,
+                "Screenshot Path": shot_path,
                 "Timestamp": (row.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))[
                     :32
                 ],

@@ -1,0 +1,13 @@
+appId: com.kodaksmile
+---
+# Apply Saturation via Maestro bottom-toolbar discovery (ADB dump conflicts mid-Maestro).
+- runFlow:
+    file: open_edit_tool.yaml
+    env:
+      TOOL_LABEL: "Saturation"
+- swipe:
+    start: "30%,90%"
+    end: "80%,90%"
+- waitForAnimationToEnd
+- tapOn: "Done"
+- waitForAnimationToEnd

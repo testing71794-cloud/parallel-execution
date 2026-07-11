@@ -1,0 +1,44 @@
+appId: com.kodaksmile
+---
+# After Find My Printer / Find My Camera: dismiss tutorial, allow perms, wait for search UI.
+# Env: DEVICE_FIND_LABEL = "Find My Printer" | "Find My Camera"
+- assertVisible: "Welcome"
+- assertVisible: "Which device would you like to connect?"
+- tapOn: ${DEVICE_FIND_LABEL}
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+          duration: 400
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: ${DEVICE_FIND_LABEL}
+    commands:
+      - tapOn: ${DEVICE_FIND_LABEL}
+      - waitForAnimationToEnd
+- runFlow: permissionsFlow.yaml
+- runFlow:
+    when:
+      visible: "While using the app"
+    commands:
+      - tapOn: "While using the app"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+      - waitForAnimationToEnd
+# Search may take a while; Search Again appears on searching / not-found screens
+- extendedWaitUntil:
+    visible:
+      text: "Search Again|We couldn't find|Searching for your device|Device found|Let's hook it up"
+    timeout: 45000

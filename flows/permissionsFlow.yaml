@@ -35,3 +35,28 @@ appId: com.kodaksmile
     commands:
       - tapOn: "While using the app"
       - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible: "ONLY THIS TIME"
+    commands:
+      - tapOn:
+          text: "WHILE USING THE APP"
+          optional: true
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible: "Only this time"
+    commands:
+      - tapOn:
+          text: "While using the app"
+          optional: true
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+      - waitForAnimationToEnd

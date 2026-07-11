@@ -107,7 +107,7 @@ def main() -> int:
 
     html = [
         "<html><body>",
-        "<h2>Kodak Smile Execution Summary</h2>",
+        f"<h2>{EXECUTION_SUMMARY_TITLE}</h2>",
         f"<p>Generated On: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>",
         f"<p>Git Branch: {detect_git_branch(REPO)}</p>",
         "<table border='1' cellspacing='0' cellpadding='4'>",

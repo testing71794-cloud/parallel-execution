@@ -1,41 +1,22 @@
+# TC_ID: TC_ED_03 - Edit photo fit crop with AI verification
 appId: com.kodaksmile
-name: TC_ED_03_Edit photo fit crop
+name: TC_ED_03_Edit_photo_fit_crop
 ---
-- launchApp:
-    clearState: true
-- waitForAnimationToEnd
+- runFlow:
+    file: subflows/prepare_editor_cold_start.yaml
+    env:
+      SCREENSHOT_BASENAME: TC_ED_03_editor_ready
+      SCREEN_LABEL: TC_ED_03 editor before Edit photo fit crop
 
-# Load shared identifiers. This file must exist in ../../elements.
-- runFlow: ../../elements/loadElements.yaml
+- takeScreenshot: TC_ED_03_crop_before
+- runFlow: subflows/apply_fit_crop.yaml
+- takeScreenshot: TC_ED_03_crop_after
+- runFlow:
+    file: subflows/verify_visual_pair_with_ai.yaml
+    env:
+      BEFORE_BASENAME: TC_ED_03_crop_before
+      AFTER_BASENAME: TC_ED_03_crop_after
+      VERIFY_LABEL: TC_ED_03 Edit photo fit crop
+      VERIFY_PROFILE: crop
 
-# Common setup: skip account creation and reach onboarding/home path
-- runFlow: ../../flows/I will do it later.yaml
-- runFlow: ../../flows/Agree Term and Condition.yaml
-- runFlow: ../../flows/Onboarding Welcome Screen.yaml
-- runFlow: ../../flows/Swipe to continue.yaml
-- runFlow: ../../flows/permissionsFlow.yaml
-
-- runFlow: ../../flows/openAlbum.yaml
-- runFlow: ../../flows/Edit.yaml
-
-# ATP steps for traceability: ED_03 - Edit photo fit/crop
-# Step 1: action=executeTestCase; target=ED_01; input=None; expected=Edit mode active
-# TODO: Map ATP action 'executeTestCase' if this step is not already covered by reusable flows.
-
-# Step 2: action=tapOn; target=Fit; input=None; expected=Fit tool selected
-- tapOn: "Fit"
-- waitForAnimationToEnd
-
-# Step 3: action=pinchZoom; target=Photo canvas; input=Zoom in; expected=Photo zooms in
-# TODO: Map ATP action 'pinchZoom' if this step is not already covered by reusable flows.
-
-# Step 4: action=pinchZoom; target=Photo canvas; input=Zoom out; expected=Photo zooms out
-# TODO: Map ATP action 'pinchZoom' if this step is not already covered by reusable flows.
-
-# Step 5: action=drag; target=Photo canvas; input=Move position; expected=Photo position adjusted
-# TODO: Map ATP action 'drag' if this step is not already covered by reusable flows.
-
-# Step 6: action=tapOn; target=Save; input=None; expected=Fit changes saved
-- tapOn: "Save"
-- waitForAnimationToEnd
-
+- runFlow: subflows/save_changes.yaml

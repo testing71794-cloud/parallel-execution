@@ -1,0 +1,60 @@
+appId: com.kodaksmile
+---
+# Cancel edit without saving — dialog labels vary by build.
+- extendedWaitUntil:
+    visible: "Close"
+    timeout: 10000
+- tapOn: "Close"
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Don't Save"
+    commands:
+      - tapOn: "Don't Save"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Dont Save"
+    commands:
+      - tapOn: "Dont Save"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Discard"
+    commands:
+      - tapOn: "Discard"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Cancel"
+    commands:
+      - tapOn: "Cancel"
+      - waitForAnimationToEnd
+# Save Photo? still up → left dialog button (Don't Save)
+- runFlow:
+    when:
+      visible: "Save Photo?"
+    commands:
+      - tapOn:
+          point: "28%,58%"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Save changes?"
+    commands:
+      - tapOn:
+          point: "28%,58%"
+      - waitForAnimationToEnd
+# Press back as last resort (legacy Smile cancel path)
+- runFlow:
+    when:
+      visible: "Save Photo?"
+    commands:
+      - back
+      - waitForAnimationToEnd
+      - runFlow:
+          when:
+            visible: "Don't Save"
+          commands:
+            - tapOn: "Don't Save"
+            - waitForAnimationToEnd

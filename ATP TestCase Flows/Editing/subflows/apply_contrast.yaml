@@ -1,0 +1,16 @@
+appId: com.kodaksmile
+---
+- runFlow:
+    when:
+      visible: "Edit"
+    commands:
+      - tapOn: "Edit"
+      - waitForAnimationToEnd
+- tapOn: "Contrast"
+- waitForAnimationToEnd
+- swipe:
+    start: "30%,90%"
+    end: "80%,90%"
+- waitForAnimationToEnd
+- tapOn: "Done"
+- waitForAnimationToEnd

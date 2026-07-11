@@ -133,6 +133,12 @@ def _validate_maestro_yaml_preflight() -> int:
     return proc.returncode
 
 
+def _is_gallery_folder(folder: str) -> bool:
+    resolved = resolve_atp_subfolder(REPO, folder)
+    key = (resolved or folder or "").strip().lower()
+    return key == "gallery"
+
+
 def _is_editing_folder(folder: str) -> bool:
     resolved = resolve_atp_subfolder(REPO, folder)
     key = (resolved or folder or "").strip().lower()
@@ -145,8 +151,157 @@ def _is_printing_folder(folder: str) -> bool:
     return key == "printing"
 
 
+def _prepend_path(*dirs: Path) -> None:
+    cur = os.environ.get("PATH", "")
+    parts = [str(d) for d in dirs if d.is_dir()]
+    if not parts:
+        return
+    prefix = os.pathsep.join(parts)
+    if prefix.lower() not in cur.lower():
+        os.environ["PATH"] = prefix + os.pathsep + cur
+
+
+def _resolve_npm_executable() -> str | None:
+    """Windows Jenkins agents need npm.cmd — bare 'npm' is not a CreateProcess executable."""
+    candidates: list[Path] = []
+    node_home = os.environ.get("NODE_HOME", "").strip().strip('"')
+    if node_home:
+        candidates.append(Path(node_home) / ("npm.cmd" if os.name == "nt" else "npm"))
+    candidates.append(Path(r"C:\Program Files\nodejs\npm.cmd"))
+    candidates.append(Path(r"C:\Program Files\nodejs\npm"))
+    for path in candidates:
+        if path.is_file():
+            return str(path.resolve())
+    found = shutil.which("npm")
+    if found:
+        return found
+    if os.name == "nt":
+        for name in ("npm.cmd", "npm.exe", "npm"):
+            found = shutil.which(name)
+            if found:
+                return found
+    return None
+
+
+def _prepare_gallery_appium(folder: str) -> None:
+    """Node/Appium deps for GA_05/GA_06 real W3C pinch when Jenkins runs gallery suite."""
+    if not _is_gallery_folder(folder):
+        return
+    if os.environ.get("ATP_GALLERY_APPIUM_PINCH", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        print("[jenkins_atp_stage] ATP_GALLERY_APPIUM_PINCH=0 — GA_05/GA_06 use Maestro-only yaml", flush=True)
+        return
+
+    os.environ.setdefault("ATP_GALLERY_APPIUM_PINCH", "1")
+    os.environ.setdefault("ATP_REQUIRE_PINCH_VISION", "1")
+    os.environ.setdefault("GALLERY_PINCH", "1")
+    os.environ.setdefault("PINCH_STYLE", "diagonal")
+    os.environ.setdefault("NPM_GLOBAL", r"C:\Tools\npm-global")
+    os.environ.setdefault("APPIUM_BIN", r"C:\Tools\npm-global\appium.cmd")
+
+    _prepend_path(
+        Path(r"C:\Program Files\nodejs"),
+        Path(r"C:\Tools\npm-global"),
+        Path.home() / "AppData" / "Roaming" / "npm",
+    )
+
+    mod = REPO / "automation" / "appium-gestures"
+    pkg = mod / "package.json"
+    wdio = mod / "node_modules" / "webdriverio"
+    if pkg.is_file() and not wdio.is_dir():
+        npm = _resolve_npm_executable()
+        if not npm:
+            print(
+                "[jenkins_atp_stage] WARN: npm not found — skip appium-gestures npm install; "
+                "install Node.js on agent or set NODE_HOME (GA_05/GA_06 Appium pinch may fail)",
+                flush=True,
+            )
+        else:
+            cmd = [npm, "install", "--no-fund", "--no-audit"]
+            print(f"[jenkins_atp_stage] gallery Appium: npm install in {mod} via {npm}", flush=True)
+            log_subprocess_launch(cmd, cwd=mod, shell=False, label="gallery_appium_npm_install")
+            try:
+                subprocess.run(cmd, cwd=str(mod), check=False, shell=False)
+            except OSError as exc:
+                print(f"[jenkins_atp_stage] WARN: npm install failed to start: {exc}", flush=True)
+    print(
+        "[jenkins_atp_stage] gallery Appium pinch: "
+        f"ATP_GALLERY_APPIUM_PINCH={os.environ.get('ATP_GALLERY_APPIUM_PINCH', '')} "
+        f"GALLERY_PINCH={os.environ.get('GALLERY_PINCH', '')} "
+        f"PINCH_STYLE={os.environ.get('PINCH_STYLE', '')} "
+        f"npm={_resolve_npm_executable() or 'not-found'}",
+        flush=True,
+    )
+
+
+def _prepare_gallery_openrouter(folder: str) -> None:
+    """GraalJS host access + local verify server for GA_02 OpenRouter vision verify."""
+    if not _is_gallery_folder(folder):
+        return
+    import importlib.util
+
+    mod_path = REPO / "scripts" / "ensure_maestro_verify_server.py"
+    spec = importlib.util.spec_from_file_location("ensure_maestro_verify_server", mod_path)
+    if spec is None or spec.loader is None:
+        print(f"[jenkins_atp_stage] WARN: cannot load {mod_path}", flush=True)
+        return
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    mod.apply_maestro_graaljs_env()
+    print(
+        "[jenkins_atp_stage] gallery OpenRouter: "
+        f"MAESTRO_CLI_DANGEROUS_GRAALJS_ALLOW_HOST_ACCESS={os.environ.get('MAESTRO_CLI_DANGEROUS_GRAALJS_ALLOW_HOST_ACCESS', '')} "
+        f"OPENROUTER_MODEL_VISION={os.environ.get('OPENROUTER_MODEL_VISION', '')}",
+        flush=True,
+    )
+    if os.environ.get("ATP_GALLERY_VERIFY_SERVER", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        print("[jenkins_atp_stage] ATP_GALLERY_VERIFY_SERVER=0 — skip verify server", flush=True)
+        return
+    if not mod.ensure_verify_server(REPO):
+        print(
+            "[jenkins_atp_stage] WARN: verify server not ready; GA_02 may still use GraalJS adb capture",
+            flush=True,
+        )
+
+
 def _apply_editing_ci_defaults(folder: str) -> None:
+    """Set editing-stage defaults before flow discovery (must run before preflight log)."""
     if not _is_editing_folder(folder):
+        return
+    os.environ.setdefault(
+        "ATP_FLOW_EXCLUDE",
+        "ED_Q,"
+        "ED_02 - Apply,"
+        "ED_03 - Frames,"
+        "ED_03B,ED_03C,ED_03D,ED_03E,ED_03F,ED_03G,ED_03H,"
+        "ED_04 - Stickers,"
+        "ED_04B,ED_04C,ED_04D,ED_04E,ED_04F,ED_04G,ED_04H",
+    )
+    os.environ.setdefault("EDITING_VERIFY_SOFT", "1")
+    os.environ.setdefault("OPENROUTER_VISION_TIMEOUT_SEC", "25")
+    os.environ.setdefault("OPENROUTER_VISION_MAX_ROUNDS", "1")
+    # Vision fallbacks: intelligent_platform.config.openrouter_vision_model_chain()
+
+
+def _is_barbie_folder(folder: str) -> bool:
+    resolved = resolve_atp_subfolder(REPO, folder)
+    key = (resolved or folder or "").strip().lower()
+    return key == "barbie"
+
+
+def _apply_barbie_ci_defaults(folder: str) -> None:
+    """Set Barbie-stage defaults before flow discovery (must run before preflight log)."""
+    if not _is_barbie_folder(folder):
         return
     os.environ.setdefault("EDITING_VERIFY_SOFT", "1")
     os.environ.setdefault("OPENROUTER_VISION_TIMEOUT_SEC", "25")
@@ -154,6 +309,7 @@ def _apply_editing_ci_defaults(folder: str) -> None:
 
 
 def _apply_printing_ci_defaults(folder: str) -> None:
+    """Set printing-stage defaults before flow discovery (must run before preflight log)."""
     if not _is_printing_folder(folder):
         return
     os.environ.setdefault("EDITING_VERIFY_SOFT", "1")
@@ -162,37 +318,125 @@ def _apply_printing_ci_defaults(folder: str) -> None:
 
 
 def _prepare_editing_openrouter(folder: str) -> None:
+    """GraalJS host access + editing verify server for ED_* OpenRouter vision verify."""
     if not _is_editing_folder(folder):
-        return
-    mod_path = REPO / "scripts" / "ensure_editing_verify_server.py"
-    if not mod_path.is_file():
         return
     import importlib.util
 
+    mod_path = REPO / "scripts" / "ensure_editing_verify_server.py"
     spec = importlib.util.spec_from_file_location("ensure_editing_verify_server", mod_path)
     if spec is None or spec.loader is None:
+        print(f"[jenkins_atp_stage] WARN: cannot load {mod_path}", flush=True)
         return
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+
     mod.apply_editing_openrouter_env()
     _apply_editing_ci_defaults(folder)
+    print(
+        "[jenkins_atp_stage] editing OpenRouter: "
+        f"MAESTRO_CLI_DANGEROUS_GRAALJS_ALLOW_HOST_ACCESS={os.environ.get('MAESTRO_CLI_DANGEROUS_GRAALJS_ALLOW_HOST_ACCESS', '')} "
+        f"OPENROUTER_MODEL_VISION={os.environ.get('OPENROUTER_MODEL_VISION', '')} "
+        f"EDITING_VERIFY_PORT={os.environ.get('EDITING_VERIFY_PORT', '8767')} "
+        f"EDITING_VERIFY_SOFT={os.environ.get('EDITING_VERIFY_SOFT', '')} "
+        f"ATP_FLOW_EXCLUDE={os.environ.get('ATP_FLOW_EXCLUDE', '')}",
+        flush=True,
+    )
+    if os.environ.get("ATP_EDITING_VERIFY_SERVER", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        print("[jenkins_atp_stage] ATP_EDITING_VERIFY_SERVER=0 — skip editing verify server", flush=True)
+        return
+    if not mod.ensure_editing_verify_server(REPO):
+        print(
+            "[jenkins_atp_stage] WARN: editing verify server not ready; ED_* may use GraalJS direct OpenRouter",
+            flush=True,
+        )
 
 
 def _prepare_printing_openrouter(folder: str) -> None:
+    """GraalJS host access + shared verify server for PR_* OpenRouter vision verify."""
     if not _is_printing_folder(folder):
-        return
-    mod_path = REPO / "scripts" / "ensure_editing_verify_server.py"
-    if not mod_path.is_file():
         return
     import importlib.util
 
+    mod_path = REPO / "scripts" / "ensure_editing_verify_server.py"
     spec = importlib.util.spec_from_file_location("ensure_editing_verify_server", mod_path)
     if spec is None or spec.loader is None:
+        print(f"[jenkins_atp_stage] WARN: cannot load {mod_path}", flush=True)
         return
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+
     mod.apply_editing_openrouter_env()
     _apply_printing_ci_defaults(folder)
+    print(
+        "[jenkins_atp_stage] printing OpenRouter: "
+        f"MAESTRO_CLI_DANGEROUS_GRAALJS_ALLOW_HOST_ACCESS={os.environ.get('MAESTRO_CLI_DANGEROUS_GRAALJS_ALLOW_HOST_ACCESS', '')} "
+        f"OPENROUTER_MODEL_VISION={os.environ.get('OPENROUTER_MODEL_VISION', '')} "
+        f"EDITING_VERIFY_PORT={os.environ.get('EDITING_VERIFY_PORT', '8767')} "
+        f"EDITING_VERIFY_SOFT={os.environ.get('EDITING_VERIFY_SOFT', '')} "
+        f"OPENROUTER_VISION_TIMEOUT_SEC={os.environ.get('OPENROUTER_VISION_TIMEOUT_SEC', '')} "
+        f"OPENROUTER_VISION_MAX_ROUNDS={os.environ.get('OPENROUTER_VISION_MAX_ROUNDS', '')}",
+        flush=True,
+    )
+    if os.environ.get("ATP_PRINTING_VERIFY_SERVER", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        print("[jenkins_atp_stage] ATP_PRINTING_VERIFY_SERVER=0 — skip printing verify server", flush=True)
+        return
+    if not mod.ensure_editing_verify_server(REPO):
+        print(
+            "[jenkins_atp_stage] WARN: verify server not ready; PR_* may use GraalJS direct OpenRouter",
+            flush=True,
+        )
+
+
+def _prepare_barbie_openrouter(folder: str) -> None:
+    """GraalJS host access + shared verify server for BA_* OpenRouter vision verify."""
+    if not _is_barbie_folder(folder):
+        return
+    import importlib.util
+
+    mod_path = REPO / "scripts" / "ensure_editing_verify_server.py"
+    spec = importlib.util.spec_from_file_location("ensure_editing_verify_server", mod_path)
+    if spec is None or spec.loader is None:
+        print(f"[jenkins_atp_stage] WARN: cannot load {mod_path}", flush=True)
+        return
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    mod.apply_editing_openrouter_env()
+    _apply_barbie_ci_defaults(folder)
+    print(
+        "[jenkins_atp_stage] barbie OpenRouter: "
+        f"MAESTRO_CLI_DANGEROUS_GRAALJS_ALLOW_HOST_ACCESS={os.environ.get('MAESTRO_CLI_DANGEROUS_GRAALJS_ALLOW_HOST_ACCESS', '')} "
+        f"OPENROUTER_MODEL_VISION={os.environ.get('OPENROUTER_MODEL_VISION', '')} "
+        f"EDITING_VERIFY_PORT={os.environ.get('EDITING_VERIFY_PORT', '8767')} "
+        f"EDITING_VERIFY_SOFT={os.environ.get('EDITING_VERIFY_SOFT', '')} "
+        f"OPENROUTER_VISION_TIMEOUT_SEC={os.environ.get('OPENROUTER_VISION_TIMEOUT_SEC', '')} "
+        f"OPENROUTER_VISION_MAX_ROUNDS={os.environ.get('OPENROUTER_VISION_MAX_ROUNDS', '')}",
+        flush=True,
+    )
+    if os.environ.get("ATP_BARBIE_VERIFY_SERVER", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        print("[jenkins_atp_stage] ATP_BARBIE_VERIFY_SERVER=0 — skip barbie verify server", flush=True)
+        return
+    if not mod.ensure_editing_verify_server(REPO):
+        print(
+            "[jenkins_atp_stage] WARN: verify server not ready; BA_* may use GraalJS direct OpenRouter",
+            flush=True,
+        )
 
 
 def cmd_run(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
@@ -200,13 +444,17 @@ def cmd_run(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
     sid = folder_to_suite_id(resolved or folder)
     _apply_editing_ci_defaults(folder)
     _apply_printing_ci_defaults(folder)
+    _apply_barbie_ci_defaults(folder)
     _log_folder_discovery(folder, resolved)
     yaml_rc = _validate_maestro_yaml_preflight()
     if yaml_rc != 0:
         touch_flag(f"{sid}_failed.flag")
         return yaml_rc
+    _prepare_gallery_openrouter(folder)
+    _prepare_gallery_appium(folder)
     _prepare_editing_openrouter(folder)
     _prepare_printing_openrouter(folder)
+    _prepare_barbie_openrouter(folder)
     _refresh_devices_on_this_agent(REPO)
     _log_orchestrator_fingerprint(REPO)
     maestro_argv = [
@@ -224,6 +472,7 @@ def cmd_run(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
         touch_flag(f"{sid}_no_results.flag")
         return 1
     print(f"[jenkins_atp_stage] maestro_command={' '.join(maestro_argv)!r}", flush=True)
+    # Stack A: blocking Python orchestrator (no detached PowerShell Start-Process chain).
     p = subprocess.run(maestro_argv, cwd=str(REPO))
     if p.returncode != 0:
         touch_flag(f"{sid}_failed.flag")
@@ -231,6 +480,7 @@ def cmd_run(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
 
 
 def cmd_validate(suite_id: str) -> int:
+    """Match Jenkins bat: set *_no_results.flag on issues; step exit 0 (catchError / flags)."""
     root = REPO
     py = sys.executable
     v = subprocess.run(
@@ -251,11 +501,14 @@ def cmd_validate(suite_id: str) -> int:
 
 
 def cmd_excel(folder: str) -> int:
+    """Per-folder Excel merge; flag on failure; exit 0 like Jenkins bat echo chain."""
     sid = folder_to_suite_id(folder)
     label = folder
     (REPO / "build-summary").mkdir(parents=True, exist_ok=True)
     out_dir = REPO / "reports" / f"{sid}_summary"
     py = sys.executable
+    # Do NOT pass --skip-if-empty: failed runs may have no parsable status rows yet we still
+    # must merge into final_execution_report.xlsx (generate_excel_report writes placeholder rows).
     p = subprocess.run(
         [
             py,
@@ -273,6 +526,7 @@ def cmd_excel(folder: str) -> int:
 
 
 def cmd_all(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
+    """One Jenkins stage per folder: run → validate → excel (shrinks CPS bytecode vs 3 stages)."""
     resolved = resolve_atp_subfolder(REPO, folder)
     sid = folder_to_suite_id(resolved or folder)
     print(f"[jenkins_atp_stage] === ATP folder={folder!r} resolved={resolved!r} suite={sid!r} ===", flush=True)

@@ -116,6 +116,29 @@ def _success_in(text: str) -> bool:
     return any(p.search(text) for p in _SUCCESS_PATTERNS)
 
 
+def _classify_probe_failure(
+    *,
+    code_a: int,
+    code_b: int,
+    combined: str,
+    errors: dict[str, str],
+) -> str:
+    if errors or "python_exception:" in combined:
+        return f"python_exception:{next(iter(errors.values()), 'worker_failed')}"
+    low = combined.lower()
+    if "not recognized" in low and "maestro" in low:
+        return "maestro_cli_missing"
+    if "adb" in low and ("not found" in low or "no devices" in low or "device offline" in low):
+        return "adb_failure"
+    if _collision_in(combined):
+        return "runtime_collision:port_7001_or_forwarder"
+    if "unknown options" in low or "unrecognized option" in low:
+        return "unsupported_cli"
+    if code_a == 124 or code_b == 124:
+        return f"probe_timeout exit=({code_a},{code_b})"
+    return f"concurrent_failed exit=({code_a},{code_b})"
+
+
 def _run_isolated_hierarchy(
     *,
     app_home: Path,
@@ -123,18 +146,19 @@ def _run_isolated_hierarchy(
     work_root: Path,
     timeout_sec: float,
 ) -> tuple[int, str]:
+    import re as re_module
+
     from .maestro_install_resolver import build_java_prefix_for_app_home
 
     prefix = build_java_prefix_for_app_home(app_home)
-    slug = re.sub(r"[^\w\-.]+", "_", device_id)
+    slug = re_module.sub(r"[^\w\-.]+", "_", device_id)
     runtime_home = (work_root / f"probe_{slug}").resolve()
     runtime_home.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["ANDROID_SERIAL"] = device_id
     env.pop("ANDROID_DEBUG_SERIAL", None)
-    opts = (env.get("MAESTRO_OPTS") or "").strip()
-    user_home_flag = f"-Duser.home={runtime_home}"
-    env["MAESTRO_OPTS"] = f"{opts} {user_home_flag}".strip() if opts else user_home_flag
+    env.pop("MAESTRO_OPTS", None)
+    env["ATP_JAVA_USER_HOME"] = str(runtime_home)
     env["TMP"] = str(runtime_home / "tmp")
     env["TEMP"] = str(runtime_home / "tmp")
     Path(env["TMP"]).mkdir(parents=True, exist_ok=True)
@@ -231,13 +255,26 @@ def run_isolated_parallel_probe(
     results: dict[str, tuple[int, str]] = {}
     t0 = time.time()
 
+    errors: dict[str, str] = {}
+
     def worker(dev: str) -> None:
-        results[dev] = _run_isolated_hierarchy(
-            app_home=app_home,
-            device_id=dev,
-            work_root=work_root,
-            timeout_sec=tmo,
-        )
+        try:
+            results[dev] = _run_isolated_hierarchy(
+                app_home=app_home,
+                device_id=dev,
+                work_root=work_root,
+                timeout_sec=tmo,
+            )
+        except Exception as exc:
+            import traceback
+
+            tb = traceback.format_exc()
+            errors[dev] = f"{exc}"
+            results[dev] = (1, f"python_exception:{exc}\n{tb}")
+            print(
+                f"[ATP] isolated_runtime_probe worker_error device={dev} error={exc}",
+                flush=True,
+            )
 
     th_a = threading.Thread(target=worker, args=(device_a,), name=f"probe_{device_a}")
     th_b = threading.Thread(target=worker, args=(device_b,), name=f"probe_{device_b}")
@@ -257,15 +294,10 @@ def run_isolated_parallel_probe(
     code_b, out_b = results.get(device_b, (1, ""))
     combined = out_a + "\n" + out_b
 
-    if _collision_in(combined):
-        result = IsolatedParallelProbeResult(
-            supported=False,
-            detail="collision_detected:port_7001_or_forwarder",
-            device_a=device_a,
-            device_b=device_b,
-            duration_sec=elapsed,
-        )
-    elif code_a == 0 and code_b == 0:
+    fail_detail = _classify_probe_failure(
+        code_a=code_a, code_b=code_b, combined=combined, errors=errors
+    )
+    if code_a == 0 and code_b == 0:
         result = IsolatedParallelProbeResult(
             supported=True,
             detail="concurrent_hierarchy_ok",
@@ -284,7 +316,7 @@ def run_isolated_parallel_probe(
     else:
         result = IsolatedParallelProbeResult(
             supported=False,
-            detail=f"concurrent_failed exit=({code_a},{code_b})",
+            detail=fail_detail,
             device_a=device_a,
             device_b=device_b,
             duration_sec=elapsed,

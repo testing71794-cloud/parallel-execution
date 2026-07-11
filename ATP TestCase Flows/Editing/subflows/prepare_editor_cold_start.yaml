@@ -1,0 +1,47 @@
+appId: com.kodaksmile
+---
+# Cold start: onboarding -> home -> open photo in editor -> AI-verify editor screen.
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- runFlow: ../../../elements/loadElements.yaml
+- runFlow: ../../../flows/I will do it later.yaml
+- runFlow: ../../../flows/Agree Term and Condition.yaml
+- runFlow: ../../../flows/permissionsFlow.yaml
+- runFlow: ../../../flows/Onboarding Welcome Screen.yaml
+- runFlow:
+    when:
+      visible: "Swipe to continue"
+    commands:
+      - tapOn:
+          point: "50%,50%"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "75%,55%"
+          end: "15%,45%"
+      - waitForAnimationToEnd
+- runFlow: ../../../flows/onboardingSkip.yaml
+- runFlow:
+    when:
+      visible: "Go to homepage"
+    commands:
+      - tapOn: "Go to homepage"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "KODAK SMILE"
+    timeout: 25000
+- assertVisible: ${output.home.titleText}
+- runFlow: ../../../flows/openAlbum.yaml
+- runFlow: ../../../flows/selectSinglePhoto.yaml
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      text: "Filter|Edit|Pre-Cuts|Close|AR"
+    timeout: 30000
+- takeScreenshot: ${SCREENSHOT_BASENAME}
+- runFlow:
+    file: verify_edit_screen_with_ai.yaml
+    env:
+      SCREEN_BASENAME: ${SCREENSHOT_BASENAME}
+      SCREEN_LABEL: ${SCREEN_LABEL}
+      SCREEN_PROFILE: edit_screen

@@ -1,0 +1,51 @@
+appId: com.kodaksmile
+---
+# Text: type → confirm (may need two Done taps) → editor Close.
+# First Done often commits the text box; second Done exits Add Text.
+- runFlow:
+    file: open_edit_tool.yaml
+    env:
+      TOOL_LABEL: "Text"
+- waitForAnimationToEnd
+- tapOn:
+    point: "50%,40%"
+- waitForAnimationToEnd
+- inputText: "HelloSmile"
+- waitForAnimationToEnd
+- hideKeyboard
+- waitForAnimationToEnd
+# Commit text / dismiss keyboard chrome
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Ok"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+# Exit Add Text tool if still open
+- runFlow:
+    when:
+      visible: "Add Text"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Filter"
+    commands:
+      - tapOn: "Filter"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Close"
+    timeout: 15000

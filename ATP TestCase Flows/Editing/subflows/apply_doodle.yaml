@@ -1,0 +1,21 @@
+appId: com.kodaksmile
+---
+- runFlow:
+    file: open_edit_tool.yaml
+    env:
+      TOOL_LABEL: "Doodle"
+- waitForAnimationToEnd
+- swipe:
+    start: "35%,45%"
+    end: "75%,65%"
+    duration: 400
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Close"
+    timeout: 12000

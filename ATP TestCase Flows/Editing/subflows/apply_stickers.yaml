@@ -1,0 +1,66 @@
+appId: com.kodaksmile
+---
+# Stickers: category → download/select sticker → Done → editor Close.
+# Done stays disabled until a sticker is chosen; many assets show a download badge.
+- runFlow:
+    file: open_edit_tool.yaml
+    env:
+      TOOL_LABEL: "Stickers"
+- waitForAnimationToEnd
+# Enter a category if still on category picker
+- tapOn:
+    id: "ivFrameCategory"
+    index: 0
+    optional: true
+- tapOn:
+    id: "flFrameCategory"
+    index: 0
+    optional: true
+- tapOn:
+    point: "20%,70%"
+    optional: true
+- waitForAnimationToEnd
+# First sticker cell (may start download)
+- tapOn:
+    id: "imageViewStricker"
+    index: 0
+    optional: true
+- tapOn:
+    point: "18%,55%"
+- waitForAnimationToEnd:
+    timeout: 5000
+# Tap again after download / to place
+- tapOn:
+    id: "imageViewStricker"
+    index: 0
+    optional: true
+- tapOn:
+    point: "18%,55%"
+    optional: true
+- waitForAnimationToEnd
+- tapOn:
+    id: "saveRecentEditImageView"
+    optional: true
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Done"
+    timeout: 10000
+    optional: true
+- tapOn: "Done"
+- waitForAnimationToEnd
+# If still in sticker sheet, Cancel back to editor (best-effort recovery)
+- runFlow:
+    when:
+      visible: "Categories"
+    commands:
+      - tapOn: "Cancel"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Fathers Day|Graduation|Categories"
+    commands:
+      - tapOn: "Cancel"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Close"
+    timeout: 15000

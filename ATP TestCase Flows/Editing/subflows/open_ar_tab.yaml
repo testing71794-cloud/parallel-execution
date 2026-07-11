@@ -1,0 +1,73 @@
+appId: com.kodaksmile
+---
+# AR opens the device Videos picker — select a video, then return to editor.
+- tapOn: "AR"
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "While using the app"
+    commands:
+      - tapOn: "While using the app"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "OK"
+    commands:
+      - tapOn: "OK"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Ok"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
+# Videos gallery (title "Videos") — pick first thumbnail
+- runFlow:
+    when:
+      visible: "Videos"
+    commands:
+      - tapOn:
+          point: "18%,28%"
+      - waitForAnimationToEnd:
+          timeout: 5000
+- runFlow:
+    when:
+      visible: "Video"
+    commands:
+      - tapOn: "Video"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Add"
+    commands:
+      - tapOn: "Add"
+      - waitForAnimationToEnd
+# If still in Videos, back out to editor
+- runFlow:
+    when:
+      visible: "Videos"
+    commands:
+      - back
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Close|Filter|Edit|AR|Scan"
+    timeout: 15000
+    optional: true

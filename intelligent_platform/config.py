@@ -52,6 +52,12 @@ OPENROUTER_APP_TITLE: str = (os.environ.get("OPENROUTER_APP_TITLE", "") or "Koda
 _DEFAULT_MODEL_PRIMARY: str = "openrouter/free"
 _DEFAULT_MODEL_FB1: str = "meta-llama/llama-3.3-70b-instruct:free"
 _DEFAULT_MODEL_FB2: str = "rules"
+_DEFAULT_MODEL_VISION: str = "meta-llama/llama-3.2-11b-vision-instruct:free"
+_DEFAULT_VISION_FALLBACKS: tuple[str, ...] = (
+    "qwen/qwen2.5-vl-32b-instruct:free",
+    "google/gemma-3-4b-it:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+)
 
 
 def openrouter_model_primary() -> str:
@@ -67,6 +73,38 @@ def openrouter_model_fallback_1() -> str:
 def openrouter_model_fallback_2() -> str:
     s = (os.environ.get("OPENROUTER_MODEL_FALLBACK_2", "") or _DEFAULT_MODEL_FB2).strip()
     return s or _DEFAULT_MODEL_FB2
+
+
+def openrouter_model_vision() -> str:
+    s = (os.environ.get("OPENROUTER_MODEL_VISION", "") or _DEFAULT_MODEL_VISION).strip()
+    return s or _DEFAULT_MODEL_VISION
+
+
+def _parse_comma_model_list(raw: str) -> tuple[str, ...]:
+    return tuple(x.strip() for x in raw.split(",") if x.strip())
+
+
+def openrouter_vision_fallback_models() -> tuple[str, ...]:
+    raw = (os.environ.get("OPENROUTER_VISION_FALLBACKS") or "").strip()
+    if raw.lower() in {"0", "none", "false", "off"}:
+        return ()
+    if raw:
+        return _parse_comma_model_list(raw)
+    return _DEFAULT_VISION_FALLBACKS
+
+
+def openrouter_vision_model_chain() -> tuple[str, ...]:
+    seen: set[str] = set()
+    chain: list[str] = []
+    for model in (openrouter_model_vision(), *openrouter_vision_fallback_models()):
+        if model and model not in seen:
+            seen.add(model)
+            chain.append(model)
+    return tuple(chain)
+
+
+def openrouter_ssl_verify() -> bool:
+    return _truthy("OPENROUTER_SSL_VERIFY", "1")
 
 
 def openrouter_key_env_name_used() -> str:

@@ -1,43 +1,18 @@
+# TC_ID: TC_ED_17 - Scan AR video with AI screen verification
 appId: com.kodaksmile
-name: TC_ED_17_Scan AR video on printed photo
+name: TC_ED_17_Scan_AR_video_on_printed_photo
 ---
-- launchApp:
-    clearState: true
-- waitForAnimationToEnd
-
-# Load shared identifiers. This file must exist in ../../elements.
-- runFlow: ../../elements/loadElements.yaml
-
-# Common setup: skip account creation and reach onboarding/home path
-- runFlow: ../../flows/I will do it later.yaml
-- runFlow: ../../flows/Agree Term and Condition.yaml
-- runFlow: ../../flows/Onboarding Welcome Screen.yaml
-- runFlow: ../../flows/Swipe to continue.yaml
-- runFlow: ../../flows/permissionsFlow.yaml
-
-- runFlow: ../../flows/openAlbum.yaml
-- runFlow: ../../flows/Edit.yaml
-
-# ATP steps for traceability: ED_17 - Scan AR video on printed photo
-# Step 1: action=executeTestCase; target=ED_16; input=None; expected=AR photo created
-# TODO: Map ATP action 'executeTestCase' if this step is not already covered by reusable flows.
-
-# Step 2: action=tapOn; target=Print; input=None; expected=Print preview shown
-- tapOn: "Print"
-- waitForAnimationToEnd
-
-# Step 3: action=tapOn; target=Print; input=None; expected=Photo printed
-- tapOn: "Print"
-- waitForAnimationToEnd
-
-# Step 4: action=tapOn; target=Scan image now; input=None; expected=Camera/AR scanner opens
-- tapOn: "Scan image now"
-- waitForAnimationToEnd
-
-# Step 5: action=tapOn; target=While using the app; input=None; expected=Camera permission granted
-- tapOn: "While using the app"
-- waitForAnimationToEnd
-
-# Step 6: action=pointCamera; target=Printed photo; input=None; expected=AR video plays over photo
-# TODO: Map ATP action 'pointCamera' if this step is not already covered by reusable flows.
-
+- runFlow:
+    file: subflows/prepare_editor_cold_start.yaml
+    env:
+      SCREENSHOT_BASENAME: TC_ED_17_editor_ready
+      SCREEN_LABEL: TC_ED_17 editor before AR scan
+- runFlow: subflows/open_ar_tab.yaml
+- takeScreenshot: TC_ED_17_ar_scan_screen
+- runFlow:
+    file: subflows/verify_edit_screen_with_ai.yaml
+    env:
+      SCREEN_BASENAME: TC_ED_17_ar_scan_screen
+      SCREEN_LABEL: TC_ED_17 AR scan
+      SCREEN_PROFILE: edit_screen
+- runFlow: subflows/save_changes.yaml

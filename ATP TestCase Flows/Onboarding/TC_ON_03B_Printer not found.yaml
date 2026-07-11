@@ -5,41 +5,21 @@ name: TC_ON_03B_Printer not found
     clearState: true
 - waitForAnimationToEnd
 
-# Load shared identifiers. This file must exist in ../../elements.
 - runFlow: ../../elements/loadElements.yaml
 
-# Common setup: skip account creation and reach onboarding/home path- runFlow: ../../elements/loadElements.yaml
-
-# Step 2: action=tapOn; target=I'll do it later; input=None; expected=Terms screen appears
 - runFlow: ../../flows/I will do it later.yaml
 - waitForAnimationToEnd
 
-# Step 3: action=tapOn; target=Terms checkbox; input=None; expected=Checkbox selected
 - runFlow: ../../flows/Agree Term and Condition.yaml
 
-# Step 5: action=verify; target=Welcome screen; input=None; expected=Find My Printer and Find My Camera options visible
-- assertVisible: "Welcome"
-- assertVisible: "Which device would you like to connect?"
-- tapOn: "Find My Printer"
 - runFlow:
-    when:
-      visible: "Swipe to continue"
-    commands:
-      - tapOn:
-          point: "50%,50%"
-      - waitForAnimationToEnd
-      - swipe:
-          start: "75%,55%"
-          end: "15%,45%"
-      - waitForAnimationToEnd
-- tapOn: "Find My Printer"
-- waitForAnimationToEnd
-- waitForAnimationToEnd
-- waitForAnimationToEnd
-- waitForAnimationToEnd
+    file: ../../flows/onboardingFindDevice.yaml
+    env:
+      DEVICE_FIND_LABEL: "Find My Printer"
 
-# Step 5: action=waitFor; target=Search timeout; input=30 seconds; expected='Couldn't find your printer' screen displayed
-# TODO: Map ATP action 'waitFor' if this step is not already covered by reusable flows.
+# Expect printer search to time out when no printer is nearby
+- extendedWaitUntil:
+    visible: "We couldn't find"
+    timeout: 60000
 - assertVisible: "We couldn't find"
 - assertVisible: "your printer"
-

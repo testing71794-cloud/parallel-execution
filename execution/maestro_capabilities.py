@@ -149,8 +149,8 @@ def _native_startup_strategy(parallel_capability: str) -> str:
             "no_startup_gate+no_runtime_mutex+worker_pool"
         )
     return (
-        "native_parallel:isolated_user_home+adb_hygiene+"
-        "no_startup_gate+no_runtime_mutex+worker_pool"
+        "native_parallel:isolated_user_home+host_runtime_mutex+"
+        "adb_hygiene+no_startup_gate+worker_pool"
     )
 
 
@@ -161,10 +161,11 @@ def _legacy_startup_strategy() -> str:
 def legacy_runtime_mutex_active(device_count: int) -> bool:
     if device_count <= 1:
         return False
-    if native_parallel_active(device_count):
+    # True multi-device driver isolation does not need a host mutex.
+    if maestro_driver_ports_active(device_count):
         return False
-    if not legacy_serialized_allowed():
-        return False
+    # Env is source of truth after apply_*_env_defaults(). Keep mutex even when
+    # ATP_REQUIRE_NATIVE_PARALLEL=1 if CLI lacks --driver-host-port (shared :7001).
     raw = (os.environ.get("ATP_MAESTRO_LEGACY_RUNTIME_MUTEX") or "1").strip().lower()
     return raw not in ("0", "false", "no", "off")
 
@@ -189,16 +190,21 @@ def apply_native_parallel_env_defaults(
         caps = detect_maestro_capabilities(device_count=device_count)
     if not caps.native_parallel_enabled:
         return
-    # Force native runtime policy (override stale Jenkins env).
-    os.environ["ATP_MAESTRO_STARTUP_GATE"] = "0"
     os.environ.setdefault("ATP_PARALLEL_DEVICE_STAGGER_SEC", "2")
-    os.environ["ATP_MAESTRO_LEGACY_RUNTIME_MUTEX"] = "0"
     os.environ["ATP_MAESTRO_HANDSHAKE_GATE"] = "0"
-    os.environ["MAESTRO_PARALLEL_STARTUP_DELAY_SEC"] = "0"
     os.environ["ATP_NATIVE_PARALLEL_ACTIVE"] = "1"
     if caps.driver_host_port_supported:
+        # Real parallel: distinct --driver-host-port per device.
+        os.environ["ATP_MAESTRO_STARTUP_GATE"] = "0"
+        os.environ["ATP_MAESTRO_LEGACY_RUNTIME_MUTEX"] = "0"
+        os.environ["MAESTRO_PARALLEL_STARTUP_DELAY_SEC"] = "0"
         os.environ["ATP_MAESTRO_DRIVER_PORTS"] = "1"
     else:
+        # Isolated user.homes only — Android driver still defaults to host:7001.
+        # Serialize Maestro JVM sessions on the host to avoid Connection refused / empty exits.
+        os.environ["ATP_MAESTRO_STARTUP_GATE"] = "0"
+        os.environ["ATP_MAESTRO_LEGACY_RUNTIME_MUTEX"] = "1"
+        os.environ["MAESTRO_PARALLEL_STARTUP_DELAY_SEC"] = "3"
         os.environ["ATP_MAESTRO_DRIVER_PORTS"] = "0"
 
 
@@ -222,10 +228,13 @@ def log_native_parallel_runtime_config(caps: MaestroCapabilities) -> None:
         f"{str(caps.isolated_runtime_supported).lower()}",
         flush=True,
     )
-    print("[ATP] maestro_startup_gate=0", flush=True)
+    print(f"[ATP] maestro_startup_gate={os.environ.get('ATP_MAESTRO_STARTUP_GATE', '')}", flush=True)
     stagger = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or "2").strip()
     print(f"[ATP] parallel_device_stagger_sec={stagger}", flush=True)
-    print("[ATP] legacy_runtime_mutex=0", flush=True)
+    print(
+        f"[ATP] legacy_runtime_mutex={os.environ.get('ATP_MAESTRO_LEGACY_RUNTIME_MUTEX', '')}",
+        flush=True,
+    )
     print("[ATP] native_parallel_runtime_config end", flush=True)
 
 
@@ -472,5 +481,10 @@ def detect_maestro_capabilities(
 
 
 def maestro_driver_ports_active(device_count: int = 1) -> bool:
+    if device_count <= 1:
+        return False
     detect_maestro_capabilities(device_count=device_count)
-    return driver_host_port_supported()
+    if not driver_host_port_supported():
+        return False
+    raw = (os.environ.get("ATP_MAESTRO_DRIVER_PORTS") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")

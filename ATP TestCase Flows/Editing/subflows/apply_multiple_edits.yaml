@@ -1,0 +1,4 @@
+appId: com.kodaksmile
+---
+- runFlow: apply_brightness.yaml
+- runFlow: apply_contrast.yaml

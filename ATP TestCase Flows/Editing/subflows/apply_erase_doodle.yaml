@@ -1,0 +1,33 @@
+appId: com.kodaksmile
+---
+# Draw then erase within Doodle tool.
+- runFlow:
+    file: open_edit_tool.yaml
+    env:
+      TOOL_LABEL: "Doodle"
+- waitForAnimationToEnd
+- swipe:
+    start: "35%,45%"
+    end: "75%,65%"
+    duration: 400
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Erase"
+    commands:
+      - tapOn: "Erase"
+      - waitForAnimationToEnd
+      - swipe:
+          start: "45%,55%"
+          end: "60%,55%"
+          duration: 400
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Close"
+    timeout: 12000

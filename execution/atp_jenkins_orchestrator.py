@@ -1023,8 +1023,14 @@ def run_atp_folder_blocking(
             os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or _default_parallel_stagger_sec(len(devices))
         ).strip()
         gate_on = _handshake_gate_enabled(len(devices), exec_mode) and sched_mode == "wave"
-        startup_gate_env = os.environ.get("ATP_MAESTRO_STARTUP_GATE", "0" if caps.native_parallel_enabled else "1")
-        mutex_env = os.environ.get("ATP_MAESTRO_LEGACY_RUNTIME_MUTEX", "0" if caps.native_parallel_enabled else "1")
+        # Only disable host mutex when CLI can isolate drivers per device.
+        _true_parallel = bool(caps.driver_host_port_supported)
+        startup_gate_env = os.environ.get(
+            "ATP_MAESTRO_STARTUP_GATE", "0" if _true_parallel else "1"
+        )
+        mutex_env = os.environ.get(
+            "ATP_MAESTRO_LEGACY_RUNTIME_MUTEX", "0" if _true_parallel else "1"
+        )
         print(f"[ATP] legacy_runtime_mutex={mutex_env}", flush=True)
         print(
             f"[ATP] parallel_device_stagger_sec={stagger_env} "

@@ -1,0 +1,67 @@
+appId: com.kodaksmile
+---
+# Frames: category → select a real frame (not None) → Done → Close.
+# Done is grayed until a frame thumbnail is selected; many need download first.
+- runFlow:
+    file: open_edit_tool.yaml
+    env:
+      TOOL_LABEL: "Frames"
+- waitForAnimationToEnd
+- tapOn:
+    id: "ivFrameCategory"
+    index: 1
+    optional: true
+- tapOn:
+    id: "ivFrameCategory"
+    index: 0
+    optional: true
+- tapOn:
+    point: "30%,72%"
+    optional: true
+- waitForAnimationToEnd
+# Skip "None" (first cell); pick second/third frame thumbnail
+- tapOn:
+    id: "imageViewFilter"
+    index: 2
+    optional: true
+- tapOn:
+    point: "40%,78%"
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    id: "imageViewFilter"
+    index: 2
+    optional: true
+- tapOn:
+    point: "40%,78%"
+    optional: true
+- waitForAnimationToEnd
+- tapOn:
+    id: "saveRecentEditImageView"
+    optional: true
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Done"
+    timeout: 10000
+    optional: true
+- tapOn: "Done"
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Categories"
+    commands:
+      - tapOn: "Cancel"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Cancel"
+    commands:
+      - runFlow:
+          when:
+            notVisible: "Close"
+          commands:
+            - tapOn: "Cancel"
+            - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Close"
+    timeout: 15000

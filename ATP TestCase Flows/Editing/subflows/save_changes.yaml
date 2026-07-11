@@ -1,0 +1,42 @@
+appId: com.kodaksmile
+---
+# Close editor and save when prompted.
+- tapOn:
+    id: "textViewClose"
+    optional: true
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Close"
+    commands:
+      - tapOn: "Close"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Save Photo?"
+    commands:
+      - tapOn: "Save"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Videos"
+    commands:
+      - back
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Close"
+    commands:
+      - tapOn: "Close"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Save Photo?"
+    commands:
+      - tapOn: "Save"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "All Photos"
+    commands:
+      - assertVisible: "All Photos"

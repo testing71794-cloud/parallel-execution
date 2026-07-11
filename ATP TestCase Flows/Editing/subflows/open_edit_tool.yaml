@@ -1,0 +1,43 @@
+appId: com.kodaksmile
+---
+# Open Edit tab, then swipe recyclerViewEdit until TOOL_LABEL is visible.
+# Tool row is ~y 1834-2059 on 2400h (~81%), NOT the Filter/Edit/AR tab bar (~92%).
+# Do not use scrollUntilVisible — it swipes center-screen and misses this RecyclerView.
+# https://docs.maestro.dev/examples/recipes/custom-scrolling-for-screen-fragments
+- runFlow:
+    when:
+      visible: "Edit"
+    commands:
+      - tapOn: "Edit"
+      - waitForAnimationToEnd
+# Reveal tools to the right (swipe toolbar left along tool row)
+- repeat:
+    times: 12
+    commands:
+      - runFlow:
+          when:
+            notVisible: ${TOOL_LABEL}
+          commands:
+            - swipe:
+                start: "88%,81%"
+                end: "18%,81%"
+                duration: 300
+            - waitForAnimationToEnd
+# If overshot, swipe back
+- repeat:
+    times: 12
+    commands:
+      - runFlow:
+          when:
+            notVisible: ${TOOL_LABEL}
+          commands:
+            - swipe:
+                start: "18%,81%"
+                end: "88%,81%"
+                duration: 300
+            - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: ${TOOL_LABEL}
+    timeout: 10000
+- tapOn: ${TOOL_LABEL}
+- waitForAnimationToEnd

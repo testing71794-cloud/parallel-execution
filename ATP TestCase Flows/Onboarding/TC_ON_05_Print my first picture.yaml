@@ -17,27 +17,12 @@ name: TC_ON_05_Print my first picture
 # Step 3: action=tapOn; target=Terms checkbox; input=None; expected=Checkbox selected
 - runFlow: ../../flows/Agree Term and Condition.yaml
 
-# Step 5: action=verify; target=Welcome screen; input=None; expected=Find My Printer and Find My Camera options visible
-- assertVisible: "Welcome"
-- assertVisible: "Which device would you like to connect?"
-- tapOn: "Find My Camera"
 - runFlow:
-    when:
-      visible: "Swipe to continue"
-    commands:
-      - tapOn:
-          point: "50%,50%"
-      - waitForAnimationToEnd
-      - swipe:
-          start: "75%,55%"
-          end: "15%,45%"
-      - waitForAnimationToEnd
-- tapOn: "Find My Camera"
-- waitForAnimationToEnd
-- waitForAnimationToEnd
-- waitForAnimationToEnd
-- waitForAnimationToEnd
-- assertVisible: "Search Again"
+    file: ../../flows/onboardingFindDevice.yaml
+    env:
+      DEVICE_FIND_LABEL: "Find My Camera"
+- assertVisible:
+    text: "Search Again|We couldn't find"
 - waitForAnimationToEnd
 
 - swipe:

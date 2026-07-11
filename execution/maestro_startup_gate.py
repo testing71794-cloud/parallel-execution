@@ -34,7 +34,12 @@ _owned_pids_lock = threading.Lock()
 
 def startup_gate_enabled(device_count: int = 1) -> bool:
     """
-    Default off for native parallel (driver ports). Default on only for legacy serialized mode.
+    Serialize Maestro Android driver init across devices on one host (multi-device legacy only).
+
+    Default OFF for:
+    - single-device runs (log-marker gate caused ready_timeout while Maestro was healthy)
+    - native parallel (driver ports / isolated runtime)
+
     Override: ATP_MAESTRO_STARTUP_GATE=0|1
     """
     raw = os.environ.get("ATP_MAESTRO_STARTUP_GATE", "").strip().lower()
@@ -42,21 +47,17 @@ def startup_gate_enabled(device_count: int = 1) -> bool:
         return False
     if raw in ("1", "true", "yes", "on"):
         return True
-    if device_count > 1:
-        try:
-            from .maestro_capabilities import legacy_serialized_allowed, native_parallel_active
+    # Single USB device: no startup lock / log-marker gate unless explicitly forced.
+    if device_count <= 1:
+        return False
+    try:
+        from .maestro_capabilities import legacy_serialized_allowed, native_parallel_active
 
-            if native_parallel_active(device_count):
-                return False
-            return legacy_serialized_allowed()
-        except ImportError:
-            pass
-    return os.environ.get("ATP_MAESTRO_STARTUP_GATE", "1").strip().lower() not in (
-        "0",
-        "false",
-        "no",
-        "off",
-    )
+        if native_parallel_active(device_count):
+            return False
+        return legacy_serialized_allowed()
+    except ImportError:
+        return True
 
 
 def parallel_startup_delay_sec(*, legacy_mode: bool = False, device_count: int = 1) -> float:
@@ -126,6 +127,22 @@ def unregister_owned_child_pid(pid: int) -> None:
 def is_owned_child_pid(pid: int) -> bool:
     with _owned_pids_lock:
         return pid in _owned_child_pids
+
+
+def get_owned_child_pids() -> set[int]:
+    """Snapshot of Maestro child PIDs registered by this orchestrator process."""
+    with _owned_pids_lock:
+        return set(_owned_child_pids)
+
+
+def _kill_all_host_java_enabled() -> bool:
+    """Host-wide java kill is opt-in only (breaks concurrent device workers)."""
+    return os.environ.get("ATP_MAESTRO_KILL_ALL_JAVA", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 def _adb_exe() -> str | None:
@@ -420,6 +437,111 @@ def _startup_failed_in_log(text: str) -> str | None:
     return None
 
 
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _probe_adb_shell_ok(device_id: str) -> bool:
+    exe = _adb_exe()
+    if not exe:
+        return False
+    try:
+        proc = subprocess.run(
+            [exe, "-s", device_id, "shell", "echo", "ok"],
+            capture_output=True,
+            text=True,
+            timeout=12,
+            check=False,
+        )
+        return proc.returncode == 0 and "ok" in (proc.stdout or "").lower()
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _probe_host_port_listening(port: int) -> bool:
+    if port <= 0:
+        return False
+    token = f":{port}"
+    try:
+        if os.name == "nt":
+            proc = subprocess.run(
+                ["netstat", "-ano"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            for line in (proc.stdout or "").splitlines():
+                if token in line and "LISTENING" in line.upper():
+                    return True
+            return False
+        proc = subprocess.run(
+            ["ss", "-ltn"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        return token in (proc.stdout or "")
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _probe_child_java_maestro(device_id: str, child_pid: int) -> bool:
+    if os.name != "nt" or child_pid <= 0:
+        return False
+    dev = device_id.replace("'", "''")
+    ps = (
+        f"$d='{dev}'; "
+        "Get-CimInstance Win32_Process | "
+        "Where-Object { $_.Name -eq 'java.exe' -and $_.CommandLine -and "
+        "($_.CommandLine -match 'maestro\\.cli\\.AppKt') -and "
+        "($_.CommandLine -match [regex]::Escape($d)) } | "
+        "Select-Object -First 1 | ForEach-Object { $_.ProcessId }"
+    )
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        return bool((proc.stdout or "").strip())
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _match_ready_in_log(chunk: str, device_id: str) -> str | None:
+    if not chunk or not chunk.strip():
+        return None
+    device_re = re.compile(rf"Running on\s+{re.escape(device_id)}\b", re.I)
+    if device_re.search(chunk):
+        return "running_on"
+    patterns = [
+        (r">\s*Flow\s+", "flow_marker"),
+        (r"Launching\s+", "launching"),
+        (r"Executing\s+", "executing"),
+        (r"Android\s+Driver", "android_driver"),
+        (r"Maestro\s+Android\s+driver", "maestro_android_driver"),
+        (r"device\s+connected", "device_connected"),
+        (r"COMPLETED\b", "completed"),
+        (r"assertVisible", "yaml_step"),
+        (r"tap\s+on", "yaml_tap"),
+        (r"Starting\s+Maestro\s+test", "starting_maestro_test"),
+    ]
+    for pat, name in patterns:
+        if re.search(pat, chunk, re.I):
+            return name
+    return None
+
+
 def wait_for_maestro_session_ready(
     *,
     log_path: Path,
@@ -427,27 +549,85 @@ def wait_for_maestro_session_ready(
     log_start_offset: int = 0,
     timeout_sec: float | None = None,
     driver_port: int | None = None,
+    child_pid: int | None = None,
+    diagnostics: Any | None = None,
 ) -> tuple[bool, str]:
     """
-    Poll per-flow Maestro log (only bytes written after log_start_offset) until session ready.
-    Prefers '> Flow' over 'Running on' to ensure driver IPC is established.
+    Poll per-flow Maestro log until session ready, with fallback health probes.
+
+    Maestro output is redirected inside run_one_flow_on_device.bat; on Windows it may
+    buffer. Fallbacks: log growth, adb echo, localhost driver port, java process probe.
     """
     timeout = timeout_sec if timeout_sec is not None else startup_ready_timeout_sec()
     deadline = time.monotonic() + timeout
-    device_re = re.compile(rf"Running on\s+{re.escape(device_id)}\b", re.I)
-    flow_re = re.compile(r">\s*Flow\s+", re.I)
+    started = time.monotonic()
+    last_size = log_start_offset
+    poll = 0
+    fallback_after = min(25.0, timeout * 0.15)
+    probe_port = driver_port if driver_port else 7001
+
     while time.monotonic() < deadline:
+        poll += 1
+        elapsed = time.monotonic() - started
+        if child_pid and poll % 3 == 0 and not _pid_alive(child_pid):
+            chunk = _read_log_since(log_path, log_start_offset)
+            fail = _startup_failed_in_log(chunk) or "child_exited_early"
+            return False, fail if isinstance(fail, str) else "child_exited_early"
+
+        if diagnostics is not None:
+            last_size = diagnostics.snapshot_flow_log(log_path, start_offset=last_size, label=f"poll_{poll}")
+
         chunk = _read_log_since(log_path, log_start_offset)
         fail = _startup_failed_in_log(chunk)
         if fail:
+            if diagnostics is not None:
+                diagnostics.trace("ready_fail_log", reason=fail)
             return False, fail
-        if flow_re.search(chunk):
-            return True, "flow_marker"
-        if device_re.search(chunk):
-            # Accept Running on only after half timeout if > Flow never appears (slow devices)
-            if time.monotonic() > deadline - (timeout * 0.5):
-                return True, "running_on"
+
+        marker = _match_ready_in_log(chunk, device_id)
+        if marker:
+            if diagnostics is not None:
+                diagnostics.trace("ready_ok_log_marker", marker=marker, elapsed_sec=round(elapsed, 1))
+            return True, marker
+
+        try:
+            cur_size = log_path.stat().st_size if log_path.is_file() else log_start_offset
+        except OSError:
+            cur_size = log_start_offset
+
+        if elapsed >= fallback_after:
+            if cur_size > log_start_offset + 400 and chunk.strip():
+                if diagnostics is not None:
+                    diagnostics.trace(
+                        "ready_ok_log_growth",
+                        bytes=cur_size - log_start_offset,
+                        elapsed_sec=round(elapsed, 1),
+                    )
+                return True, "log_growth"
+            if poll % 5 == 0 and _probe_adb_shell_ok(device_id):
+                if diagnostics is not None:
+                    diagnostics.trace("ready_ok_adb_echo", elapsed_sec=round(elapsed, 1))
+                return True, "adb_echo_ok"
+            if poll % 7 == 0 and _probe_host_port_listening(probe_port):
+                if diagnostics is not None:
+                    diagnostics.trace("ready_ok_host_port", port=probe_port, elapsed_sec=round(elapsed, 1))
+                return True, "host_port_listen"
+            if child_pid and poll % 9 == 0 and _probe_child_java_maestro(device_id, child_pid):
+                if diagnostics is not None:
+                    diagnostics.trace("ready_ok_java_maestro", child_pid=child_pid, elapsed_sec=round(elapsed, 1))
+                return True, "java_maestro_process"
+
+        if poll % 30 == 0:
+            print(
+                f"[ATP] startup_ready_poll device={_dev_log(device_id)} "
+                f"elapsed_sec={elapsed:.1f} log_bytes={max(0, cur_size - log_start_offset)} "
+                f"child_pid={child_pid or 0} driver_port={driver_port or probe_port}",
+                flush=True,
+            )
         time.sleep(1.0)
+
+    if diagnostics is not None:
+        diagnostics.trace("ready_timeout", wait_sec=round(timeout, 1), log_path=str(log_path))
     return False, "ready_timeout"
 
 
@@ -479,8 +659,9 @@ def prepare_device_for_maestro_startup(
 ) -> None:
     """ADB + port hygiene while holding startup lock (before Maestro subprocess)."""
     log_adb_forwards(device_id, "pre_startup")
-    if legacy_mode:
-        cleanup_all_host_maestro_java(keep_pids=set())
+    keep = get_owned_child_pids()
+    if _kill_all_host_java_enabled():
+        cleanup_all_host_maestro_java(keep_pids=keep)
     ok, detail = clear_device_adb_forwards(device_id)
     print(
         f"[ATP] adb_forward_cleanup device={_dev_log(device_id)} ok={ok} detail={detail!r}",
@@ -494,7 +675,7 @@ def prepare_device_for_maestro_startup(
         )
     elif legacy_mode:
         wait_for_host_port_free(7001, timeout_sec=20.0)
-    cleanup_orphan_maestro_java(device_id, keep_pids=set())
+    cleanup_orphan_maestro_java(device_id, keep_pids=keep)
     if legacy_mode:
         wait_for_adb_forwards_stable(device_id)
     log_adb_forwards(device_id, "post_cleanup")
@@ -584,6 +765,7 @@ class MaestroStartupGate:
         log_path: Path,
         child_pid: int,
         log_start_offset: int = 0,
+        diagnostics: Any | None = None,
     ) -> tuple[bool, str]:
         """
         Wait for log-ready while holding lock, apply stabilization delay, then release lock.
@@ -598,6 +780,8 @@ class MaestroStartupGate:
                 device_id=self.device_id,
                 log_start_offset=log_start_offset,
                 driver_port=self.driver_port,
+                child_pid=child_pid,
+                diagnostics=diagnostics,
             )
             wait_sec = time.time() - t0
             if not ready:

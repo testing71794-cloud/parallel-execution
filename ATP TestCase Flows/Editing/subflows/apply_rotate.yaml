@@ -1,0 +1,21 @@
+appId: com.kodaksmile
+---
+- runFlow:
+    when:
+      visible: "Edit"
+    commands:
+      - tapOn: "Edit"
+      - waitForAnimationToEnd
+- tapOn: "Rotate"
+- waitForAnimationToEnd
+- assertVisible: "Slide to rotate picture"
+- swipe:
+    start: "20%,74%"
+    end: "80%,74%"
+- waitForAnimationToEnd
+- tapOn:
+    id: rotateLeftImageView
+    optional: true
+- waitForAnimationToEnd
+- tapOn: "Done"
+- waitForAnimationToEnd

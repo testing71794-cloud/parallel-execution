@@ -1,0 +1,54 @@
+appId: com.kodaksmile
+---
+# Fit/crop: open Edit tab, tap fit/crop control (id or label or point).
+- runFlow:
+    when:
+      visible: "Edit"
+    commands:
+      - tapOn: "Edit"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible:
+        id: imageViewEdit
+    commands:
+      - tapOn:
+          id: imageViewEdit
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Fit"
+    commands:
+      - tapOn: "Fit"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      notVisible: "Done"
+    commands:
+      - runFlow:
+          when:
+            notVisible: "Save"
+          commands:
+            - tapOn:
+                point: "12%,88%"
+            - waitForAnimationToEnd
+- swipe:
+    start: "50%,55%"
+    end: "70%,55%"
+- waitForAnimationToEnd
+- swipe:
+    start: "70%,55%"
+    end: "50%,55%"
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Done"
+    commands:
+      - tapOn: "Done"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Save"
+    commands:
+      - tapOn: "Save"
+      - waitForAnimationToEnd

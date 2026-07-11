@@ -1,0 +1,21 @@
+TC_ID,Functionality,File,AI
+TC_ED_01,Enter edit photo mode,TC_ED_01_Enter edit photo mode.yaml,screen
+TC_ED_02,Apply filter,TC_ED_02_Apply filter to photo.yaml,pair:filter
+TC_ED_03,Fit crop,TC_ED_03_Edit photo fit crop.yaml,pair:crop
+TC_ED_04,Rotate,TC_ED_04_Rotate photo.yaml,pair:rotate
+TC_ED_05,Brightness,TC_ED_05_Adjust brightness.yaml,pair:brightness
+TC_ED_06,Contrast,TC_ED_06_Adjust contrast.yaml,pair:adjust
+TC_ED_07,Warmth,TC_ED_07_Adjust warmth.yaml,pair:temperature
+TC_ED_08,Saturation,TC_ED_08_Adjust saturation.yaml,pair:adjust
+TC_ED_09,Highlights,TC_ED_09_Adjust highlights.yaml,pair:adjust
+TC_ED_10,Shadows,TC_ED_10_Adjust shadows.yaml,pair:adjust
+TC_ED_11,Stickers,TC_ED_11_Add stickers to photo.yaml,pair:sticker
+TC_ED_12,Text,TC_ED_12_Add text to photo.yaml,pair:text
+TC_ED_13,Doodle,TC_ED_13_Add doodle to photo.yaml,pair:draw
+TC_ED_14,Erase doodle,TC_ED_14_Erase doodle from photo.yaml,pair:draw
+TC_ED_15,Frame,TC_ED_15_Add frame to photo.yaml,pair:frame
+TC_ED_16,AR video,TC_ED_16_Add AR video to photo.yaml,screen
+TC_ED_17,Scan AR video,TC_ED_17_Scan AR video on printed photo.yaml,screen
+TC_ED_E01,Cancel without saving,TC_ED_E01_Cancel edit without saving.yaml,pair:unchanged
+TC_ED_E02,Multiple edits,TC_ED_E02_Multiple edits combined.yaml,pair:adjust
+TC_ED_E03,Very large image,TC_ED_E03_Edit very large image.yaml,pair:filter
