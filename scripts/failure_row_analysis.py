@@ -99,11 +99,18 @@ def analyze_failure_for_row(
     *,
     status: str = "",
     use_openrouter: bool = True,
+    flow_name: str = "",
+    suite: str = "",
+    device_id: str = "",
 ) -> dict[str, Any]:
     """
     Return keys: failure_step, error_message, ai_failure_summary, root_cause_category,
     suggested_fix, ai_confidence, analysis_source, ai_status, model_used, key_present
+
+    Optional ``flow_name`` / ``suite`` / ``device_id`` are accepted for callers that pass
+    context (e.g. generate_excel_report); unused by the heuristic path today.
     """
+    _ = (flow_name, suite, device_id)  # reserved for richer AI prompts
     meta = _read_build_ai_status_block()
     p = Path(log_path or "")
     log_text = _read_log_tail(p) if p else ""
@@ -120,6 +127,7 @@ def analyze_failure_for_row(
             "ai_status": meta.get("ai_status", "NOT_CHECKED"),
             "model_used": "—",
             "key_present": meta.get("key_present", "no"),
+            "screenshot_path": "",
         }
     if st == "FLAKY":
         return {

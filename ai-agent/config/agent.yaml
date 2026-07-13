@@ -1,0 +1,18 @@
+# Kodak Smile AI Agent — default configuration
+# Does not alter Jenkins / existing ATP reporting.
+
+enabled: true
+mode: assist  # observe | assist | autonomous
+app_package: com.kodaksmile
+maestro_cmd: maestro.bat
+clear_state: "true"
+max_retries: 1
+parallel_devices: true
+run_ai_analysis: true
+capture_logcat: true
+capture_screenshots: true
+capture_videos: true
+
+# Optional: restrict modules (empty = auto-discover all ATP folders)
+modules_include: []
+modules_exclude: []

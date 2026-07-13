@@ -549,6 +549,30 @@ def _apply_parallel_maestro_env(
     return meta
 
 
+def _flow_yaml_clear_state(flow_path: Path) -> str | None:
+    """Return 'true'/'false' if the flow YAML sets launchApp clearState; else None."""
+    try:
+        text = flow_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    # Prefer explicit launchApp clearState (Maestro docs: launchApp.clearState).
+    m = re.search(
+        r"(?ms)^\s*-\s*launchApp:\s*\n(?:\s+[^\n]*\n)*?\s+clearState:\s*(true|false)\b",
+        text,
+    )
+    if m:
+        return m.group(1).lower()
+    return None
+
+
+def resolve_clear_state_for_flow(flow_path: Path, suite_clear_state: str) -> str:
+    """Honor per-flow YAML clearState over the suite-level CLEAR_STATE flag."""
+    yaml_cs = _flow_yaml_clear_state(flow_path)
+    if yaml_cs is not None:
+        return yaml_cs
+    return (suite_clear_state or "true").strip() or "true"
+
+
 def run_run_one_flow_device_bat(
     *,
     repo: Path,
@@ -565,6 +589,7 @@ def run_run_one_flow_device_bat(
     """
     Blocking invocation of scripts/run_one_flow_on_device.bat (preserves reports/status/csv layout).
     """
+    clear_state = resolve_clear_state_for_flow(flow_path, clear_state)
     detect_maestro_capabilities(device_count=device_count)
     native_parallel = native_parallel_active(device_count)
     legacy_mode = not native_parallel

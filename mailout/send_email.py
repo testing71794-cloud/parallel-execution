@@ -1,9 +1,14 @@
 """
 Send final_execution_report.xlsx after parallel orchestration completes (HTML + attachments).
 
-Default (matches common Jenkins / Gmail flow): two attachments
+HTML body shows FAILED tests only (Suite / Flow / Device / Status / Failure Reason /
+AI Analysis / Screenshot / Video), matching the Jenkins Failed Tests report, plus a
+Failed Test Artifacts zip link when BUILD_URL is set.
+
+Default attachments:
   1) final_execution_report.xlsx
   2) execution_logs.zip (existing, or auto-built from reports/**/*.log)
+  3) failed_tests_artifacts.zip when present (failed logs/screenshots/videos)
 
 Optional AI files (intelligent_platform): set ORCH_EMAIL_ATTACH_AI=1, then
   + ai_intelligence_report.xlsx, intelligence_result.json when present.
@@ -626,35 +631,14 @@ def build_email_html(
     error_note: str | None,
     attachment_labels: list[str] | None = None,
     summary_pairs: list[tuple[str, str]] | None = None,
+    *,
+    artifact_url: str | None = None,
 ) -> str:
-    if error_note and not rows:
-        table_body = (
-            f'<p class="warn">{html.escape(error_note)}</p>'
-            "<p><em>No execution rows to display.</em></p>"
-        )
-    else:
-        trs = []
-        for r in rows:
-            cls = _status_html_class(r["status"])
-            trs.append(
-                "<tr>"
-                f'<td class="c-suite">{html.escape(r.get("suite", ""))}</td>'
-                f'<td class="c-flow">{html.escape(r.get("flow", ""))}</td>'
-                f'<td class="c-dev">{html.escape(r.get("device", ""))}</td>'
-                f'<td class="{cls}"><strong>{html.escape(r.get("status", ""))}</strong></td>'
-                f'<td class="c-ex">{html.escape(r.get("exit_code", ""))}</td>'
-                f'{_format_ai_for_html(r.get("ai_analyses", ""))}'
-                "</tr>"
-            )
-        if not trs:
-            table_body = (
-                f'<p class="warn">{html.escape(error_note or "No data rows in report.")}</p>'
-            )
-        else:
-            if error_note:
-                table_body = f'<p class="warn">{html.escape(error_note)}</p><table class="ex">{_thead()}{"".join(trs)}</table>'
-            else:
-                table_body = f'<table class="ex">{_thead()}{"".join(trs)}</table>'
+    # Email body shows FAILED tests only (Suite/Flow/Device/Status/Reason/AI/Screenshot/Video).
+    failed_rows = _filter_failed_email_rows(rows)
+    table_body = _failed_tests_summary_html(failed_rows, artifact_url=artifact_url)
+    if error_note:
+        table_body = f'<p class="warn">{html.escape(error_note)}</p>{table_body}'
 
     return f"""\
 <!DOCTYPE html>
@@ -666,14 +650,15 @@ def build_email_html(
   h1 {{ color: #1f4e79; font-size: 20px; margin-bottom: 8px; }}
   .sub {{ color: #666; font-size: 13px; margin-bottom: 16px; }}
   .warn {{ color: #a94442; background: #fbe8e6; padding: 8px; border-radius: 4px; }}
-  table.ex {{ border-collapse: collapse; width: 100%; max-width: 1000px; border: 1px solid #000; }}
+  table.ex {{ border-collapse: collapse; width: 100%; max-width: 1200px; border: 1px solid #000; }}
   table.ex th, table.ex td {{ border: 1px solid #000; padding: 8px 10px; text-align: left; vertical-align: top; word-break: break-word; }}
-  .c-ai {{ max-width: 360px; font-size: 13px; line-height: 1.35; color: #222; }}
+  .c-ai {{ max-width: 280px; font-size: 13px; line-height: 1.35; color: #222; }}
   table.ex th {{ background: #2e5c8a; color: #fff; font-weight: 600; }}
   .st-pass {{ color: #1b5e20; background: #e8f5e9; font-weight: bold; }}
   .st-fail {{ color: #b71c1c; background: #ffebee; font-weight: bold; }}
   .st-flaky {{ color: #e65100; background: #fff3e0; font-weight: bold; }}
   .st-other {{ color: #333; background: #f5f5f5; font-weight: bold; }}
+  a {{ color: #1565c0; }}
 </style>
 </head>
 <body>
@@ -689,7 +674,8 @@ def build_email_html(
 def _thead() -> str:
     return (
         "<tr>"
-        "<th>Suite</th><th>Flow</th><th>Device</th><th>Status</th><th>Exit Code</th><th>AI Analysis</th>"
+        "<th>Suite</th><th>Flow</th><th>Device</th><th>Status</th>"
+        "<th>Failure Reason</th><th>AI Analysis</th><th>Screenshot</th><th>Video</th>"
         "</tr>"
     )
 
@@ -700,6 +686,8 @@ def build_email_plain(
     error_note: str | None,
     attachment_labels: list[str] | None = None,
     summary_pairs: list[tuple[str, str]] | None = None,
+    *,
+    artifact_url: str | None = None,
 ) -> str:
     lines = [
         "Kodak Smile Execution Summary",
@@ -711,27 +699,8 @@ def build_email_plain(
     if error_note:
         lines.append(error_note)
         lines.append("")
-    if not rows:
-        lines.append("No execution rows in the report table.")
-    else:
-        colw = (12, 18, 20, 8, 4, 28)
-        lines.append("Suite | Flow | Device | Status | Exit | AI Analysis (trunc)")
-        lines.append("-" * 84)
-        for r in rows:
-            ai = (r.get("ai_analyses") or "")[: colw[5]]
-            if len((r.get("ai_analyses") or "")) > colw[5]:
-                ai += "…"
-            line = " | ".join(
-                [
-                    (r.get("suite") or "")[: colw[0]],
-                    (r.get("flow") or "")[: colw[1]],
-                    (r.get("device") or "")[: colw[2]],
-                    (r.get("status") or "")[: colw[3]],
-                    (r.get("exit_code") or "")[: colw[4]],
-                    ai,
-                ]
-            )
-            lines.append(line)
+    failed_rows = _filter_failed_email_rows(rows)
+    lines.append(_failed_tests_summary_plain(failed_rows, artifact_url=artifact_url))
     lines.append("")
     lines.append("Attachments:")
     for name in attachment_labels or []:
@@ -745,6 +714,196 @@ def build_email_plain(
         lines.append(
             "The execution workbook and execution_logs.zip (when log files are present) are attached."
         )
+    return "\n".join(lines)
+
+
+def _is_failure_status(status: str) -> bool:
+    return (status or "").upper() in {"FAIL", "FLAKY", "PARSE_ERROR", "ERROR"}
+
+
+def _filter_failed_email_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [r for r in rows if _is_failure_status(r.get("status", ""))]
+
+
+def load_failed_tests_summary(root: Path) -> tuple[list[dict], bool]:
+    """Read build-summary/failed_tests_summary.json from collect_failed_artifacts.py."""
+    import json
+
+    path = root.resolve() / "build-summary" / "failed_tests_summary.json"
+    if not path.is_file():
+        return [], False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not read failed_tests_summary.json: %s", exc)
+        return [], True
+    rows = data.get("failures") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return [], True
+    return [r for r in rows if isinstance(r, dict)], True
+
+
+def resolve_failed_tests_artifacts_zip(root: Path) -> Path | None:
+    p = root.resolve() / "build-summary" / "failed_tests_artifacts.zip"
+    return p if p.is_file() else None
+
+
+def _jenkins_artifact_url(relative_path: str) -> str | None:
+    base = getenv_any("BUILD_URL", "JENKINS_BUILD_URL", default="").rstrip("/")
+    if not base:
+        return None
+    rel = relative_path.lstrip("/").replace("\\", "/")
+    return f"{base}/artifact/{rel}"
+
+
+def _row_device_id(row: dict) -> str:
+    did = str(row.get("device_id") or "").strip()
+    if did:
+        return did
+    # Fallback: serial sometimes only lives in the Device column
+    return str(row.get("device") or "").strip()
+
+
+def _enrich_rows_from_failed_summary(
+    rows: list[dict[str, str]], failed_summary: list[dict]
+) -> list[dict[str, str]]:
+    if not failed_summary:
+        for row in rows:
+            if not row.get("failure_reason"):
+                row["failure_reason"] = "MAESTRO_FAILED"
+        return rows
+    by_key: dict[tuple[str, str, str], dict] = {}
+    for item in failed_summary:
+        suite = str(item.get("suite") or "").strip().casefold()
+        flow = str(item.get("test_name") or item.get("flow") or "").strip()
+        dev = str(item.get("device_id") or "").strip()
+        by_key[(suite, flow, dev)] = item
+
+    out: list[dict[str, str]] = []
+    for row in rows:
+        nr = dict(row)
+        key = (
+            str(nr.get("suite") or "").casefold(),
+            str(nr.get("flow") or "").strip(),
+            _row_device_id(nr),
+        )
+        hit = by_key.get(key)
+        if not hit:
+            # Retry without requiring exact device match when only one summary hit for suite+flow
+            soft = [
+                v
+                for (s, f, _d), v in by_key.items()
+                if s == key[0] and f == key[1]
+            ]
+            if len(soft) == 1:
+                hit = soft[0]
+        if hit:
+            if hit.get("video_artifact"):
+                nr["video_artifact"] = str(hit.get("video_artifact") or "")
+            if hit.get("screenshot_artifact"):
+                nr["screenshot_artifact"] = str(hit.get("screenshot_artifact") or "")
+            if hit.get("failure_reason") and not nr.get("failure_reason"):
+                nr["failure_reason"] = str(hit.get("failure_reason") or "")
+            if hit.get("device_id") and not nr.get("device_id"):
+                nr["device_id"] = str(hit.get("device_id") or "")
+        if not nr.get("failure_reason"):
+            nr["failure_reason"] = "MAESTRO_FAILED"
+        out.append(nr)
+    return out
+
+
+def _failed_tests_summary_html(rows: list[dict], *, artifact_url: str | None = None) -> str:
+    """Failed-tests-only table matching Step Print / Jenkins email layout."""
+    if not rows:
+        return (
+            '<p class="sub" style="margin:12px 0 16px; font-weight:600; color:#1b5e20;">'
+            "No failed tests detected."
+            "</p>"
+        )
+    trs = [
+        "<tr>"
+        "<th>Suite</th><th>Flow</th><th>Device</th><th>Status</th>"
+        "<th>Failure Reason</th><th>AI Analysis</th><th>Screenshot</th><th>Video</th>"
+        "</tr>"
+    ]
+    for row in rows:
+        suite = str(row.get("suite") or "—")
+        name = str(row.get("test_name") or row.get("flow") or "—")
+        device = str(row.get("device") or row.get("device_id") or "—")
+        status = str(row.get("status") or "FAIL")
+        reason = str(
+            row.get("failure_reason") or row.get("reason") or row.get("error_message") or "MAESTRO_FAILED"
+        )
+        ai = str(row.get("ai_analyses") or row.get("ai_analysis") or "—").strip() or "—"
+        shot = str(row.get("screenshot_artifact") or "").strip()
+        video = str(row.get("video_artifact") or "").strip()
+        shot_cell = html.escape(shot) if shot else "—"
+        video_cell = html.escape(video) if video else "—"
+        if shot:
+            shot_url = _jenkins_artifact_url(f"build-summary/failed-artifacts/{shot}")
+            if shot_url:
+                shot_cell = f'<a href="{html.escape(shot_url)}">{html.escape(shot)}</a>'
+        if video:
+            video_url = _jenkins_artifact_url(f"build-summary/failed-artifacts/{video}")
+            if video_url:
+                video_cell = f'<a href="{html.escape(video_url)}">{html.escape(video)}</a>'
+        cls = _status_html_class(status)
+        ai_short = ai if len(ai) <= 200 else ai[:200] + "…"
+        trs.append(
+            "<tr>"
+            f"<td>{html.escape(suite)}</td>"
+            f"<td>{html.escape(name)}</td>"
+            f"<td>{html.escape(device)}</td>"
+            f'<td class="{cls}"><strong>{html.escape(status)}</strong></td>'
+            f"<td>{html.escape(reason)}</td>"
+            f'<td class="c-ai" title="{html.escape(ai, quote=True)}">{html.escape(ai_short)}</td>'
+            f"<td>{shot_cell}</td>"
+            f"<td>{video_cell}</td>"
+            "</tr>"
+        )
+    block = (
+        '<p class="sub" style="margin:12px 0 6px; font-weight:600; color:#1f4e79;">'
+        "Failed Tests</p>"
+        '<table class="ex" role="presentation" style="margin-bottom:18px;">'
+        f'{"".join(trs)}</table>'
+    )
+    if artifact_url:
+        block += (
+            '<p class="sub"><b>Failed Test Artifacts:</b> '
+            f'<a href="{html.escape(artifact_url)}">{html.escape(artifact_url)}</a></p>'
+        )
+    else:
+        block += (
+            '<p class="sub"><b>Failed Test Artifacts:</b> '
+            "<code>build-summary/failed_tests_artifacts.zip</code> "
+            "(attached when available; set BUILD_URL on Jenkins for a clickable link)</p>"
+        )
+    return block
+
+
+def _failed_tests_summary_plain(rows: list[dict], *, artifact_url: str | None = None) -> str:
+    lines = [
+        "Failed Tests",
+        "Suite | Flow | Device | Status | Failure Reason | AI Analysis | Screenshot | Video",
+        "-" * 100,
+    ]
+    if not rows:
+        lines.append("No failed tests detected.")
+    else:
+        for row in rows:
+            suite = str(row.get("suite") or "—")
+            name = str(row.get("test_name") or row.get("flow") or "—")
+            device = str(row.get("device") or row.get("device_id") or "—")
+            status = str(row.get("status") or "FAIL")
+            reason = str(row.get("failure_reason") or row.get("reason") or "MAESTRO_FAILED")
+            ai = str(row.get("ai_analyses") or row.get("ai_analysis") or "—")[:80]
+            shot = str(row.get("screenshot_artifact") or "").strip() or "—"
+            video = str(row.get("video_artifact") or "").strip() or "—"
+            lines.append(
+                f"{suite} | {name} | {device} | {status} | {reason} | {ai} | {shot} | {video}"
+            )
+    if artifact_url:
+        lines.append(f"Failed Test Artifacts: {artifact_url}")
     return "\n".join(lines)
 
 
@@ -849,6 +1008,15 @@ def send_execution_report_email(
     rroot = root.resolve() if root is not None else None
     exc_resolved = excel_path.resolve()
 
+    failed_summary_rows: list[dict] = []
+    failed_zip: Path | None = None
+    artifact_url: str | None = None
+    if rroot is not None:
+        failed_summary_rows, _ = load_failed_tests_summary(rroot)
+        failed_zip = resolve_failed_tests_artifacts_zip(rroot)
+        if failed_zip is not None:
+            artifact_url = _jenkins_artifact_url("build-summary/failed_tests_artifacts.zip")
+
     ai_to_attach: list[Path] = (
         [p for p in resolve_ai_intelligence_artifacts(rroot) if p.resolve() != exc_resolved]
         if rroot is not None and _orch_email_attach_ai()
@@ -867,6 +1035,10 @@ def send_execution_report_email(
     )
     if logs_zip is not None:
         attachment_labels.append(f"{logs_zip.name} (execution logs)")
+    if failed_zip is not None:
+        attachment_labels.append(
+            f"{failed_zip.name} (failed test logs, screenshots, videos)"
+        )
 
     if body is not None:
         text_body = body
@@ -874,13 +1046,59 @@ def send_execution_report_email(
     else:
         table_rows, table_err = read_execution_table_rows(excel_path)
         table_rows = _apply_display_to_email_rows(table_rows)
+        # Email body: FAILED tests only (Suite/Flow/Device/Status/Reason/AI/Screenshot/Video)
+        failed_email_rows = _filter_failed_email_rows(table_rows)
+        failed_email_rows = _enrich_rows_from_failed_summary(
+            failed_email_rows, failed_summary_rows
+        )
+        # Include failures present in collect_failed_artifacts summary but missing from Excel
+        seen = {
+            (
+                str(r.get("suite") or "").casefold(),
+                str(r.get("flow") or "").strip(),
+                _row_device_id(r),
+            )
+            for r in failed_email_rows
+        }
+        for item in failed_summary_rows:
+            key = (
+                str(item.get("suite") or "").casefold(),
+                str(item.get("test_name") or item.get("flow") or "").strip(),
+                str(item.get("device_id") or "").strip(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            failed_email_rows.append(
+                {
+                    "suite": str(item.get("suite") or ""),
+                    "flow": str(item.get("test_name") or item.get("flow") or ""),
+                    "device": render_device_display("", str(item.get("device_id") or "")),
+                    "device_id": str(item.get("device_id") or ""),
+                    "status": str(item.get("status") or "FAIL"),
+                    "failure_reason": str(item.get("failure_reason") or "MAESTRO_FAILED"),
+                    "ai_analyses": "—",
+                    "video_artifact": str(item.get("video_artifact") or ""),
+                    "screenshot_artifact": str(item.get("screenshot_artifact") or ""),
+                }
+            )
         sheet_kv = read_summary_sheet_key_values(excel_path)
         summary_pairs = build_summary_display_pairs(sheet_kv, table_rows, gen_ts)
         text_body = build_email_plain(
-            table_rows, gen_ts, table_err, attachment_labels, summary_pairs
+            failed_email_rows,
+            gen_ts,
+            table_err,
+            attachment_labels,
+            summary_pairs,
+            artifact_url=artifact_url,
         )
         html_body = build_email_html(
-            table_rows, gen_ts, table_err, attachment_labels, summary_pairs
+            failed_email_rows,
+            gen_ts,
+            table_err,
+            attachment_labels,
+            summary_pairs,
+            artifact_url=artifact_url,
         )
 
     if not smtp_server or not smtp_user or not smtp_pass or not receiver:
@@ -909,6 +1127,8 @@ def send_execution_report_email(
         _add_file_attachment(msg, ap)
     if logs_zip is not None:
         _add_file_attachment(msg, logs_zip)
+    if failed_zip is not None:
+        _add_file_attachment(msg, failed_zip)
 
     context = ssl.create_default_context()
     try:

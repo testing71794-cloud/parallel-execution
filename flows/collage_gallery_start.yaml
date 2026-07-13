@@ -1,0 +1,78 @@
+appId: com.kodaksmile
+name: collage_gallery_start
+---
+# Recover to home after launchApp clearState:false (previous collage screen, Rate App, etc.).
+# Caller must already have run elements/loadElements.yaml.
+- runFlow:
+    when:
+      visible: "Rate App"
+    commands:
+      - tapOn: "No Thanks"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: ${output.common.rateAppText}
+    commands:
+      - tapOn: ${output.common.noThanksText}
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Save Photo?"
+    commands:
+      - tapOn: "Save"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Adjust Layout"
+    commands:
+      - back
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Select Layout"
+    commands:
+      - back
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Select Items"
+    commands:
+      - back
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Cancel"
+    commands:
+      - tapOn: "Cancel"
+      - waitForAnimationToEnd
+# Extra back if still inside All Photos album (no home title yet).
+- runFlow:
+    when:
+      notVisible: "KODAK SMILE"
+    commands:
+      - back
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Rate App"
+    commands:
+      - tapOn: "No Thanks"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "KODAK SMILE"
+    timeout: 25000
+- assertVisible: "KODAK SMILE"
+- assertVisible: ${output.home.titleText}
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Allow KODAK SMILE to access photos"
+    commands:
+      - tapOn: "Allow"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Photos Access Required"
+    commands:
+      - tapOn: "Ok"
+      - waitForAnimationToEnd
