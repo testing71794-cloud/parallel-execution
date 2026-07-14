@@ -850,12 +850,25 @@ def run_run_one_flow_device_bat(
                             log_path=str(log_path),
                             log_offset=log_start_offset,
                         )
-                        ready, reason = gate.release_after_session_ready(
-                            log_path=log_path,
-                            child_pid=child.pid,
-                            log_start_offset=log_start_offset,
-                            diagnostics=startup_diag,
-                        )
+                        try:
+                            ready, reason = gate.release_after_session_ready(
+                                log_path=log_path,
+                                child_pid=child.pid,
+                                log_start_offset=log_start_offset,
+                                diagnostics=startup_diag,
+                            )
+                        except TypeError as exc:
+                            # Tolerate mismatched workspace where gate lacks diagnostics=.
+                            print(
+                                f"[ATP] startup_gate_api_mismatch device={_dev_log(device_id)} "
+                                f"err={exc!s} — retrying without diagnostics",
+                                flush=True,
+                            )
+                            ready, reason = gate.release_after_session_ready(
+                                log_path=log_path,
+                                child_pid=child.pid,
+                                log_start_offset=log_start_offset,
+                            )
                         if not ready:
                             print(
                                 f"[ATP] startup_retry_root_cause device={_dev_log(device_id)} reason={reason}",

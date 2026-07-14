@@ -50,11 +50,21 @@ def withOpenRouterCredentials = { Object credsId, Closure action ->
 /** Shared Maestro/Java/ADB env list — deduped to avoid Jenkins CPS MethodTooLargeException on large pipelines. */
 def maestroEnvList() {
     def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+    def parallelHome = 'C:\\Tools\\maestro-parallel\\bin'
+    def maestroHome = (params.MAESTRO_HOME?.trim()) ?: parallelHome
+    // Sticky Jenkins job params often keep the old user install; always force parallel CLI.
+    def mhLower = maestroHome.toLowerCase()
+    if (mhLower.contains('users\\hp\\maestro') || mhLower.contains('users/hp/maestro') || mhLower.contains('\\maestro\\maestro\\bin')) {
+        echo "[WARN] Overriding stale MAESTRO_HOME=${maestroHome} -> ${parallelHome}"
+        maestroHome = parallelHome
+    }
     def envList = []
     envList << "MAESTRO_JAVA_HOME=${maestroJava}"
     envList << "JAVA_HOME=${maestroJava}"
     envList << "PATH+JAVA=${maestroJava}\\bin"
-    if (params.MAESTRO_HOME?.trim()) { envList << "MAESTRO_HOME=${params.MAESTRO_HOME}" }
+    envList << "MAESTRO_HOME=${maestroHome}"
+    envList << "ATP_MAESTRO_PARALLEL_HOME=${parallelHome}"
+    envList << "ATP_MAESTRO_PREFER_LATEST=1"
     if (params.ANDROID_HOME?.trim()) {
         envList << "ANDROID_HOME=${params.ANDROID_HOME}"
         envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"

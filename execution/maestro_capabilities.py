@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .maestro_install_resolver import (
     MaestroInstallCandidate,
+    get_maestro_selection_reason,
     probe_install,
     resolve_maestro_for_parallel,
 )
@@ -136,8 +137,6 @@ def isolated_runtime_supported() -> bool:
 
 
 def native_parallel_active(device_count: int = 1) -> bool:
-    if device_count <= 1:
-        return False
     caps = detect_maestro_capabilities(device_count=device_count)
     return caps.native_parallel_enabled
 
@@ -184,8 +183,6 @@ def apply_native_parallel_env_defaults(
     device_count: int,
     caps: MaestroCapabilities | None = None,
 ) -> None:
-    if device_count <= 1:
-        return
     if caps is None:
         caps = detect_maestro_capabilities(device_count=device_count)
     if not caps.native_parallel_enabled:
@@ -256,6 +253,37 @@ def _forced_isolated_parallel() -> bool:
     )
 
 
+def _enable_isolated_single_device() -> bool:
+    raw = (os.environ.get("ATP_MAESTRO_ISOLATED_SINGLE") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def _assume_isolated_for_parallel_install(inst: MaestroInstallCandidate) -> MaestroInstallCandidate:
+    """Parallel-home / latest install: enable isolated runtime without requiring 2 USB devices."""
+    if inst.isolated_runtime_supported:
+        return inst
+    label = (inst.label or "").lower()
+    parallel_env = (os.environ.get("ATP_MAESTRO_PARALLEL_HOME") or "").strip().strip('"')
+    on_parallel_home = label in ("parallel_home", "default_parallel") or (
+        parallel_env and str(inst.bin_dir).lower() == str(Path(parallel_env).resolve()).lower()
+    )
+    if not on_parallel_home and not _forced_isolated_parallel():
+        return inst
+    return MaestroInstallCandidate(
+        label=inst.label,
+        bin_dir=inst.bin_dir,
+        app_home=inst.app_home,
+        launcher=inst.launcher,
+        cli_version=inst.cli_version,
+        driver_host_port_supported=inst.driver_host_port_supported,
+        probe_detail=inst.probe_detail,
+        lib_mtime=inst.lib_mtime,
+        isolated_runtime_supported=True,
+        isolated_probe_detail="assumed:parallel_home_latest_install",
+        internal_driver_port_api=inst.internal_driver_port_api,
+    )
+
+
 def _run_isolated_probe(
     inst: MaestroInstallCandidate,
     *,
@@ -263,6 +291,11 @@ def _run_isolated_probe(
     devices: list[str] | None = None,
     repo: Path | None = None,
 ) -> MaestroInstallCandidate:
+    inst = _assume_isolated_for_parallel_install(inst)
+    if device_count <= 1 and inst.isolated_runtime_supported:
+        return inst
+    if device_count <= 1 and not _enable_isolated_single_device():
+        return inst
     if device_count <= 1:
         return inst
     if _forced_isolated_parallel():
@@ -312,7 +345,7 @@ def _capabilities_from_install(
         isolated = False
     if device_count <= 1:
         driver_port = False
-        isolated = False
+        # Keep assumed/forced isolated runtime for single-device latest Maestro.
 
     if driver_port:
         parallel_capability = "driver_port"
@@ -355,10 +388,15 @@ def _capabilities_from_install(
         startup_strategy=strategy,
         maestro_home=str(inst.bin_dir),
         maestro_app_home=str(inst.app_home),
-        native_parallel_enabled=native and device_count > 1,
+        native_parallel_enabled=native and (device_count > 1 or isolated),
         native_parallel_reason=reason,
         capability_detection_source=detection_source,
     )
+
+
+def emit_maestro_runtime_selection_summary(caps: MaestroCapabilities) -> None:
+    print(f"[ATP] maestro_selection_reason={get_maestro_selection_reason()}", flush=True)
+    print(f"[ATP] maestro_selected_version={caps.cli_version}", flush=True)
 
 
 def assert_native_parallel_ready(
@@ -368,14 +406,20 @@ def assert_native_parallel_ready(
     repo: Path | None = None,
 ) -> None:
     global _legacy_fallback_logged
-    if device_count <= 1:
-        return
     print(
         "[ATP] maestro_capability_detection begin "
         "(install probe + optional isolated runtime validation; progress lines follow)",
         flush=True,
     )
     caps = detect_maestro_capabilities(device_count=device_count, devices=devices, repo=repo)
+    emit_maestro_runtime_selection_summary(caps)
+    if device_count <= 1:
+        if caps.native_parallel_enabled:
+            apply_native_parallel_env_defaults(device_count=device_count, caps=caps)
+            log_native_parallel_runtime_config(caps)
+        elif legacy_serialized_allowed():
+            apply_legacy_parallel_env_defaults()
+        return
     if caps.native_parallel_enabled:
         apply_native_parallel_env_defaults(device_count=device_count, caps=caps)
         log_native_parallel_runtime_config(caps)
@@ -466,6 +510,8 @@ def detect_maestro_capabilities(
                 devices=devices,
                 repo=repo,
             )
+        else:
+            _selected_install = _assume_isolated_for_parallel_install(_selected_install)
 
         emit_parallel_readiness_report(
             maestro_cmd=maestro_cmd,
