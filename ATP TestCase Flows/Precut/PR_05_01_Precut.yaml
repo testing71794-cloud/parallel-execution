@@ -4,7 +4,6 @@ name: PR_05_01_Precut Print  + Back + Home screen
 - launchApp:
     clearState: true
 - waitForAnimationToEnd
-
 # Load elements (POM)
 - runFlow: ../../elements/loadElements.yaml
 - runFlow: ../../flows/I will do it later.yaml
@@ -23,6 +22,12 @@ name: PR_05_01_Precut Print  + Back + Home screen
           end: "15%,45%"
       - waitForAnimationToEnd
 - runFlow: ../../flows/onboardingSkip.yaml
+- runFlow:
+    when:
+      visible:
+        text: "Rate App"
+    commands:
+      - tapOn: "No Thanks"
 - assertVisible: ${output.home.titleText}
 - runFlow: ../../flows/openAlbum.yaml
 - runFlow: ../../flows/selectSinglePhoto.yaml

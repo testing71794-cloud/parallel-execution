@@ -1,5 +1,5 @@
 appId: com.kodaksmile
-name: TC_CA_02_Capture and print photo
+name: TC_CA_02_Capture 
 ---
 - runFlow: ../../flows/camera_module_setup.yaml
 # Kodak camera hardware path (phone-only runs skip to AR camera smoke check)
