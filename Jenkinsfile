@@ -60,6 +60,14 @@ def maestroEnvList() {
     return envList
 }
 
+/** Device stages can land on a clean executor workspace — restore stash without deleteDir mid-run. */
+def ensureDeviceRepo() {
+    if (!fileExists('scripts/jenkins_atp_stage.py')) {
+        echo '[INFO] Device workspace missing repo — unstash repo (no deleteDir)'
+        unstash 'repo'
+    }
+}
+
 pipeline {
     agent none
 
@@ -71,12 +79,12 @@ pipeline {
         )
         string(name: 'APP_PACKAGE', defaultValue: 'com.kodaksmile', description: 'App package id for Maestro/app launch checks')
         string(name: 'MAESTRO_CMD', defaultValue: 'maestro.bat', description: 'Maestro launcher (e.g. maestro.bat).')
-        string(name: 'MAESTRO_HOME', defaultValue: 'C:\\Users\\HP\\maestro\\maestro\\bin', description: 'Folder containing maestro.bat.')
+        string(name: 'MAESTRO_HOME', defaultValue: 'C:\\Tools\\maestro-parallel\\bin', description: 'Folder containing maestro.bat (Kodak agent default: C:\\Tools\\maestro-parallel\\bin).')
         string(name: 'ANDROID_HOME', defaultValue: 'C:\\Users\\HP\\AppData\\Local\\Android\\Sdk', description: 'Android SDK root.')
         string(name: 'JAVA_HOME_OVERRIDE', defaultValue: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8', description: 'JDK for Maestro (MAESTRO_JAVA_HOME/JAVA_HOME). Default is jbr-17.0.8.')
         booleanParam(name: 'RUN_ATP_CAMERA', defaultValue: true, description: 'ATP TestCase Flows: Camera')
         booleanParam(name: 'RUN_ATP_COLLAGE', defaultValue: true, description: 'ATP TestCase Flows: Collage')
-        booleanParam(name: 'RUN_ATP_CONNECTION', defaultValue: true, description: 'ATP TestCase Flows: Connection')
+        booleanParam(name: 'RUN_ATP_CONNECTION', defaultValue: false, description: 'ATP TestCase Flows: Connection (folder not present in Smile repo — leave false)')
         booleanParam(name: 'RUN_ATP_EDITING', defaultValue: true, description: 'ATP TestCase Flows: Editing')
         booleanParam(name: 'RUN_ATP_ONBOARDING', defaultValue: true, description: 'ATP TestCase Flows: Onboarding')
         booleanParam(name: 'RUN_ATP_PRECUT', defaultValue: true, description: 'ATP TestCase Flows: Precut')
@@ -143,6 +151,7 @@ pipeline {
             steps {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     script {
+                        ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                             bat """call scripts\\jenkins_ci_precheck.bat "${env.WORKSPACE}" "${params.MAESTRO_CMD}" "${params.APP_PACKAGE}" """
                         }
@@ -156,6 +165,7 @@ pipeline {
             steps {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     script {
+                        ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                             bat """call scripts\\jenkins_ci_devices.bat "${env.WORKSPACE}" """
                         }
@@ -170,6 +180,7 @@ pipeline {
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
+                        ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Camera "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
@@ -184,6 +195,7 @@ pipeline {
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
+                        ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Collage "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
@@ -198,6 +210,7 @@ pipeline {
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
+                        ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Connection "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
@@ -212,6 +225,7 @@ pipeline {
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
+                        ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Editing "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
@@ -226,6 +240,7 @@ pipeline {
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
+                        ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Onboarding "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
@@ -240,6 +255,7 @@ pipeline {
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
+                        ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Precut "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
@@ -254,6 +270,7 @@ pipeline {
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
+                        ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Printing "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
@@ -268,6 +285,7 @@ pipeline {
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
+                        ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Settings "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
@@ -282,6 +300,7 @@ pipeline {
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
+                        ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all SignUp_Login "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }

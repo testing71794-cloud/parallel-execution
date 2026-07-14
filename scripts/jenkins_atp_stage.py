@@ -446,6 +446,16 @@ def cmd_run(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
     _apply_printing_ci_defaults(folder)
     _apply_barbie_ci_defaults(folder)
     _log_folder_discovery(folder, resolved)
+    flows = discover_atp_yaml_files(REPO, resolved or folder, exclude_subflows=True)
+    if not flows:
+        # Missing / empty ATP folder (e.g. Connection) — do not mark the Jenkins stage UNSTABLE.
+        print(
+            f"[jenkins_atp_stage] SKIP: no yaml test files under folder={folder!r} "
+            f"resolved={resolved!r} — stage exits 0 (nothing to run on device)",
+            flush=True,
+        )
+        touch_flag(f"{sid}_skipped_empty.flag")
+        return 0
     yaml_rc = _validate_maestro_yaml_preflight()
     if yaml_rc != 0:
         touch_flag(f"{sid}_failed.flag")
@@ -467,10 +477,6 @@ def cmd_run(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
         maestro_cmd,
         resolved or folder,
     ]
-    if not discover_atp_yaml_files(REPO, resolved or folder, exclude_subflows=True):
-        print("[jenkins_atp_stage] ERROR: no yaml test files — aborting stage", flush=True)
-        touch_flag(f"{sid}_no_results.flag")
-        return 1
     print(f"[jenkins_atp_stage] maestro_command={' '.join(maestro_argv)!r}", flush=True)
     # Stack A: blocking Python orchestrator (no detached PowerShell Start-Process chain).
     p = subprocess.run(maestro_argv, cwd=str(REPO))
