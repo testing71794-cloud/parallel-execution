@@ -78,6 +78,13 @@ def ensureDeviceRepo() {
     }
 }
 
+/** Kill Maestro/java leftovers after each ATP suite so the next module cannot continue on-device. */
+def stopMaestroAfterSuite() {
+    if (fileExists('scripts/jenkins_abort_maestro_cleanup.bat')) {
+        bat """call scripts\\jenkins_abort_maestro_cleanup.bat "${env.WORKSPACE}" """
+    }
+}
+
 pipeline {
     agent none
 
@@ -136,7 +143,7 @@ pipeline {
         stage('Fetch Code from GitHub') {
             agent { label 'built-in' }
             steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', catchInterruptions: false) {
                     deleteDir()
                     checkout scm
                     // Stash sources only: exclude .git, deps, workspace screenshots (.maestro), generated dirs (docs/disk_cleanup_guide.md).
@@ -150,7 +157,7 @@ pipeline {
             steps {
                 deleteDir()
                 unstash 'repo'
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', catchInterruptions: false) {
                     bat """call scripts\\jenkins_ci_install.bat "${env.WORKSPACE}" """
                 }
             }
@@ -159,7 +166,7 @@ pipeline {
         stage('Environment Precheck') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', catchInterruptions: false) {
                     script {
                         ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
@@ -173,7 +180,7 @@ pipeline {
         stage('Detect Connected Devices') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', catchInterruptions: false) {
                     script {
                         ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
@@ -188,12 +195,13 @@ pipeline {
             when { expression { return params.RUN_ATP_CAMERA } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Camera "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
+                        stopMaestroAfterSuite()
                     }
                 }
             }
@@ -203,12 +211,13 @@ pipeline {
             when { expression { return params.RUN_ATP_COLLAGE } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Collage "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
+                        stopMaestroAfterSuite()
                     }
                 }
             }
@@ -218,12 +227,13 @@ pipeline {
             when { expression { return params.RUN_ATP_CONNECTION } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Connection "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
+                        stopMaestroAfterSuite()
                     }
                 }
             }
@@ -233,12 +243,13 @@ pipeline {
             when { expression { return params.RUN_ATP_EDITING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Editing "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
+                        stopMaestroAfterSuite()
                     }
                 }
             }
@@ -248,12 +259,13 @@ pipeline {
             when { expression { return params.RUN_ATP_ONBOARDING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Onboarding "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
+                        stopMaestroAfterSuite()
                     }
                 }
             }
@@ -263,12 +275,13 @@ pipeline {
             when { expression { return params.RUN_ATP_PRECUT } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Precut "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
+                        stopMaestroAfterSuite()
                     }
                 }
             }
@@ -278,12 +291,13 @@ pipeline {
             when { expression { return params.RUN_ATP_PRINTING } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Printing "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
+                        stopMaestroAfterSuite()
                     }
                 }
             }
@@ -293,12 +307,13 @@ pipeline {
             when { expression { return params.RUN_ATP_SETTINGS } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all Settings "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
+                        stopMaestroAfterSuite()
                     }
                 }
             }
@@ -308,12 +323,13 @@ pipeline {
             when { expression { return params.RUN_ATP_SIGNUP_LOGIN } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         ensureDeviceRepo()
                         withEnv(maestroEnvList()) {
                                 bat """cd /d "${env.WORKSPACE}" && python scripts/jenkins_atp_stage.py all SignUp_Login "${params.APP_PACKAGE}" "${params.CLEAR_STATE.toString()}" "${params.MAESTRO_CMD}" """
                             }
+                        stopMaestroAfterSuite()
                     }
                 }
             }
@@ -329,7 +345,7 @@ pipeline {
             }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             bat """call scripts\\jenkins_ci_merge_atp.bat "${env.WORKSPACE}" """
@@ -343,7 +359,7 @@ pipeline {
             when { expression { return params.RUN_AI_ANALYSIS } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             bat """call scripts\\jenkins_ci_ai_probe.bat "${env.WORKSPACE}" """
@@ -357,7 +373,7 @@ pipeline {
             when { expression { return params.RUN_AI_ANALYSIS } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         withOpenRouterCredentials(params.OPENROUTER_CREDENTIALS_ID) {
                             bat """call scripts\\jenkins_ci_ai_analysis.bat "${env.WORKSPACE}" """
@@ -370,7 +386,7 @@ pipeline {
         stage('Build Summary') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     bat """call scripts\\jenkins_ci_build_summary.bat "${env.WORKSPACE}" """
                 }
             }
@@ -379,7 +395,7 @@ pipeline {
         stage('Materialize execution_logs.zip for archive and email') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     bat """call scripts\\jenkins_ci_zip_logs.bat "${env.WORKSPACE}" """
                 }
             }
@@ -390,7 +406,7 @@ pipeline {
             when { expression { return params.SEND_FINAL_EMAIL } }
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
                         withCredentials([usernamePassword(credentialsId: 'gmail-smtp-kodak', usernameVariable: 'B_SMTP_USER', passwordVariable: 'B_SMTP_PASS')]) {
                             withEnv([
@@ -419,7 +435,7 @@ pipeline {
         stage('Archive Reports & Artifacts') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     archiveArtifacts artifacts: 'build-summary/final_execution_report.xlsx, build-summary/execution_logs.zip, .maestro/screenshots/**, detected_devices.txt', allowEmptyArchive: true
                 }
             }
@@ -460,7 +476,7 @@ pipeline {
         stage('Post-build workspace cleanup (C: agent disk)') {
             agent { label params.DEVICES_AGENT }
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     // Stop leftover Maestro/java left behind if the build was aborted mid-flow.
                     bat """call scripts\\jenkins_abort_maestro_cleanup.bat "${env.WORKSPACE}" """
                     bat """call scripts\\jenkins_ci_cleanup_post.bat "${env.WORKSPACE}" """
