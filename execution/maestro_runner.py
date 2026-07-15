@@ -54,6 +54,7 @@ from .maestro_startup_gate import (
     startup_gate_enabled,
     startup_max_retries,
     startup_retry_backoff_sec,
+    terminate_process_tree,
     unregister_owned_child_pid,
     validate_device_health,
 )
@@ -371,15 +372,23 @@ def _maestro_driver_host_port(launch_index: int, device_count: int = 1) -> int |
 
 
 def _windows_popen_creationflags() -> int:
+    """
+    Prefer CREATE_NO_WINDOW only.
+
+    CREATE_NEW_PROCESS_GROUP orphans java/maestro when Jenkins Stop kills the parent
+    tree — leave it opt-in via ATP_MAESTRO_NEW_PROCESS_GROUP=1.
+    """
     if os.name != "nt":
         return 0
     flags = 0
-    create_new_process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    if create_new_process_group:
-        flags |= create_new_process_group
     if create_no_window:
         flags |= create_no_window
+    raw = (os.environ.get("ATP_MAESTRO_NEW_PROCESS_GROUP") or "0").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        create_new_process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        if create_new_process_group:
+            flags |= create_new_process_group
     return flags
 
 
@@ -907,8 +916,12 @@ def run_run_one_flow_device_bat(
                 try:
                     child.wait(timeout=timeout_sec)
                 except subprocess.TimeoutExpired:
-                    child.kill()
-                    child.wait(timeout=30)
+                    # Kill full Windows process tree (cmd + java grandchildren).
+                    terminate_process_tree(child.pid)
+                    try:
+                        child.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        pass
                     log_lifecycle(
                         repo,
                         suite_id,

@@ -1125,6 +1125,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     repo = Path(argv[0]).resolve()
+    try:
+        from .maestro_abort_cleanup import install_abort_cleanup_handlers
+
+        install_abort_cleanup_handlers(repo=repo)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[ATP] WARN: abort cleanup handlers not installed: {exc}", flush=True)
     app = argv[1]
     clear_s = argv[2]
     maestro_c = argv[3]

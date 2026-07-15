@@ -471,6 +471,8 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    // Stop leftover Maestro/java left behind if the build was aborted mid-flow.
+                    bat """call scripts\\jenkins_abort_maestro_cleanup.bat "${env.WORKSPACE}" """
                     bat """call scripts\\jenkins_ci_cleanup_post.bat "${env.WORKSPACE}" """
                 }
             }
@@ -478,6 +480,28 @@ pipeline {
     }
 
     post {
-        always { echo "Build: ${currentBuild.currentResult}" }
+        always {
+            echo "Build: ${currentBuild.currentResult}"
+            // Jenkins Stop often kills python but leaves maestro.cli.AppKt java.exe orphans —
+            // always re-enter the devices agent and kill Maestro automation.
+            script {
+                try {
+                    node(params.DEVICES_AGENT) {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                            if (fileExists('scripts/jenkins_abort_maestro_cleanup.bat')) {
+                                bat """call scripts\\jenkins_abort_maestro_cleanup.bat "${env.WORKSPACE}" """
+                            } else {
+                                bat '''
+powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process -Filter \"Name='java.exe'\" | Where-Object { $_.CommandLine -match 'maestro\\.cli\\.AppKt' } | ForEach-Object { Write-Host ('[abort-cleanup] kill java ' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null }; Get-CimInstance Win32_Process -Filter \"Name='cmd.exe'\" | Where-Object { $_.CommandLine -match 'run_one_flow_on_device\\.bat|maestro\\.bat' } | ForEach-Object { taskkill /PID $_.ProcessId /T /F | Out-Null }"
+taskkill /IM maestro.exe /F /T >nul 2>&1
+'''
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    echo "[WARN] Maestro abort cleanup skipped: ${e}"
+                }
+            }
+        }
     }
 }

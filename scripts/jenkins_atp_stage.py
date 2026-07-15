@@ -533,6 +533,12 @@ def cmd_excel(folder: str) -> int:
 
 def cmd_all(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
     """One Jenkins stage per folder: run → validate → excel (shrinks CPS bytecode vs 3 stages)."""
+    try:
+        from execution.maestro_abort_cleanup import install_abort_cleanup_handlers
+
+        install_abort_cleanup_handlers(repo=REPO)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[jenkins_atp_stage] WARN: abort cleanup handlers not installed: {exc}", flush=True)
     resolved = resolve_atp_subfolder(REPO, folder)
     sid = folder_to_suite_id(resolved or folder)
     print(f"[jenkins_atp_stage] === ATP folder={folder!r} resolved={resolved!r} suite={sid!r} ===", flush=True)
