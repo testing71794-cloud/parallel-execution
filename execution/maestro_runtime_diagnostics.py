@@ -97,10 +97,11 @@ def build_runtime_mapping(
     maestro_cmd: str | None = None,
     selected: MaestroInstallCandidate | None = None,
 ) -> dict[str, str]:
-    installs = discover_maestro_installs(maestro_cmd=maestro_cmd)
-    if selected is None and installs:
-        selected = installs[0]
     mapping: dict[str, str] = {}
+    if selected is None:
+        installs = discover_maestro_installs(maestro_cmd=maestro_cmd)
+        if installs:
+            selected = installs[0]
     if selected:
         from .maestro_runner import resolve_maestro_java_exe
 

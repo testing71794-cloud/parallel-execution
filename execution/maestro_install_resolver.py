@@ -323,7 +323,7 @@ def _discover_bin_dirs(maestro_cmd: str | None = None) -> list[tuple[str, Path]]
                             add(f"scan:{bat.parent.parent.name}", bat.parent)
                 except OSError:
                     continue
-    elif os.name == "nt":
+    elif os.name == "nt" and not _skip_legacy_maestro_scan():
         user_maestro = Path(os.environ.get("USERPROFILE", "")) / "maestro" / "maestro" / "bin"
         if user_maestro.is_dir():
             add("scan:user_maestro_default", user_maestro)
@@ -370,6 +370,46 @@ def log_install_audit(installs: list[MaestroInstallCandidate]) -> None:
 def _prefer_latest_install() -> bool:
     raw = (os.environ.get("ATP_MAESTRO_PREFER_LATEST") or "1").strip().lower()
     return raw not in ("0", "false", "no", "off")
+
+
+def _skip_legacy_maestro_scan() -> bool:
+    """When parallel home is configured, skip probing stale C:\\Users\\...\\maestro (saves ~20s per discovery)."""
+    raw = (os.environ.get("ATP_MAESTRO_SKIP_LEGACY_SCAN") or "1").strip().lower()
+    if raw in ("0", "false", "no", "off"):
+        return False
+    parallel = (os.environ.get("ATP_MAESTRO_PARALLEL_HOME") or "").strip().strip('"')
+    if parallel:
+        return True
+    default = Path(r"C:\Tools\maestro-parallel\bin")
+    return default.is_dir()
+
+
+def _parallel_home_from_installs(
+    installs: list[MaestroInstallCandidate],
+) -> MaestroInstallCandidate | None:
+    parallel_env = (os.environ.get("ATP_MAESTRO_PARALLEL_HOME") or "").strip().strip('"')
+    targets: set[str] = set()
+    if parallel_env:
+        try:
+            targets.add(str(Path(parallel_env).resolve()).lower())
+        except OSError:
+            targets.add(parallel_env.lower())
+    for default in (Path(r"C:\Tools\maestro-parallel\bin"), Path(r"C:\Tools\maestro-parallel\maestro\bin")):
+        if default.is_dir():
+            try:
+                targets.add(str(default.resolve()).lower())
+            except OSError:
+                targets.add(str(default).lower())
+    for inst in installs:
+        if inst.label in ("parallel_home", "default_parallel"):
+            return inst
+        try:
+            if str(inst.bin_dir.resolve()).lower() in targets:
+                return inst
+        except OSError:
+            if str(inst.bin_dir).lower() in targets:
+                return inst
+    return None
 
 
 def _probe_parallel_home_if_valid() -> MaestroInstallCandidate | None:
@@ -442,7 +482,9 @@ def resolve_maestro_for_parallel(
 
     selected: MaestroInstallCandidate | None = None
     if _prefer_latest_install():
-        parallel_home = _probe_parallel_home_if_valid()
+        parallel_home = _parallel_home_from_installs(installs)
+        if parallel_home is None:
+            parallel_home = _probe_parallel_home_if_valid()
         if parallel_home is not None:
             selected = parallel_home
             _set_selection_reason("forced_parallel_home")
