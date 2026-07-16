@@ -332,7 +332,20 @@ def _discover_bin_dirs(maestro_cmd: str | None = None) -> list[tuple[str, Path]]
 
 
 def discover_maestro_installs(*, maestro_cmd: str | None = None) -> list[MaestroInstallCandidate]:
-    print("[ATP] maestro_install_discovery begin", flush=True)
+    skip_legacy = _skip_legacy_maestro_scan()
+    parallel = (os.environ.get("ATP_MAESTRO_PARALLEL_HOME") or "").strip().strip('"')
+    print(
+        f"[ATP] maestro_install_discovery begin skip_legacy_scan={str(skip_legacy).lower()}",
+        flush=True,
+    )
+    # Fast path: one probe only (Jenkins hybrid — avoids ~40s legacy 2.2.0 JVM startups).
+    if skip_legacy and parallel and _quick_probe_mode():
+        ph = Path(parallel).resolve()
+        if ph.is_dir():
+            cand = probe_install(ph, label="parallel_home")
+            installs = [cand] if cand is not None else []
+            print(f"[ATP] maestro_install_discovery end count={len(installs)} fast_path=1", flush=True)
+            return installs
     bin_dirs = _discover_bin_dirs(maestro_cmd)
     # Fast path: prefer parallel home first when Jenkins pins an old MAESTRO_HOME.
     parallel = (os.environ.get("ATP_MAESTRO_PARALLEL_HOME") or "").strip().strip('"')
