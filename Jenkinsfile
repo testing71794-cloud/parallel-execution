@@ -62,7 +62,6 @@ def maestroEnvList() {
     envList << "MAESTRO_HOME=${maestroHome}"
     envList << "ATP_MAESTRO_PARALLEL_HOME=${parallelHome}"
     envList << "ATP_MAESTRO_PREFER_LATEST=1"
-    envList << "ATP_MAESTRO_SKIP_LEGACY_SCAN=1"
     if (params.ANDROID_HOME?.trim()) {
         envList << "ANDROID_HOME=${params.ANDROID_HOME}"
         envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
@@ -71,17 +70,11 @@ def maestroEnvList() {
     return envList
 }
 
-/** Refresh repo sources each ATP stage (fixes Restart-Onboarding with stale execution/*.py). */
+/** Device stages can land on a clean executor workspace — restore stash without deleteDir mid-run. */
 def ensureDeviceRepo() {
-    try {
+    if (!fileExists('scripts/jenkins_atp_stage.py')) {
+        echo '[INFO] Device workspace missing repo — unstash repo (no deleteDir)'
         unstash 'repo'
-        echo '[INFO] Refreshed repo sources from stash (reports/status preserved on agent)'
-    } catch (Exception e) {
-        if (!fileExists('scripts/jenkins_atp_stage.py')) {
-            echo "[ERROR] Workspace empty and unstash failed: ${e}"
-            throw e
-        }
-        echo "[WARN] unstash repo unavailable — using existing workspace: ${e}"
     }
 }
 

@@ -183,6 +183,15 @@ pipeline {
         stage('Install Windows device dependencies (light)') {
             agent { label params.DEVICES_AGENT }
             steps {
+                // Kill any lingering java/maestro/python processes from a prior build that may
+                // hold file locks on the workspace, causing deleteDir() to fail.
+                bat '''
+powershell -NoProfile -NonInteractive -Command "
+  Get-CimInstance Win32_Process -Filter \\"Name='java.exe'\\" | Where-Object { $_.CommandLine -match 'maestro\\.cli\\.AppKt|agent\\.jar' } | ForEach-Object { Write-Host ('[pre-clean] kill java PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null }
+  Get-CimInstance Win32_Process -Filter \\"Name='python.exe'\\" | Where-Object { $_.CommandLine -match 'jenkins_atp_stage|run_parallel' } | ForEach-Object { Write-Host ('[pre-clean] kill python PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null }
+  taskkill /IM maestro.exe /F /T 2>$null
+"
+'''
                 deleteDir()
                 unstash 'repo'
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', catchInterruptions: false) {
