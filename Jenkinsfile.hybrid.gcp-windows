@@ -186,14 +186,26 @@ pipeline {
         stage('Install Windows device dependencies (light)') {
             agent { label params.DEVICES_AGENT }
             steps {
-                // Kill any lingering java/maestro/python processes from a prior build that may
-                // hold file locks on the workspace, causing deleteDir() to fail.
+                // Kill leftover maestro/python locking the workspace (never agent.jar).
+                // Prefer repo script when present; else caret-safe inline PowerShell (no multiline -Command ").
                 bat '''
-powershell -NoProfile -NonInteractive -Command "
-  Get-CimInstance Win32_Process -Filter \\"Name='java.exe'\\" | Where-Object { $_.CommandLine -match 'maestro\\.cli\\.AppKt|agent\\.jar' } | ForEach-Object { Write-Host ('[pre-clean] kill java PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null }
-  Get-CimInstance Win32_Process -Filter \\"Name='python.exe'\\" | Where-Object { $_.CommandLine -match 'jenkins_atp_stage|run_parallel' } | ForEach-Object { Write-Host ('[pre-clean] kill python PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null }
-  taskkill /IM maestro.exe /F /T 2>$null
-"
+@echo off
+if exist scripts\\jenkins_pre_clean_locks.bat (
+  call scripts\\jenkins_pre_clean_locks.bat
+  goto :pre_clean_done
+)
+powershell -NoProfile -NonInteractive -Command ^
+  "$ErrorActionPreference='SilentlyContinue';" ^
+  "Get-CimInstance Win32_Process -Filter \"Name='java.exe'\" |" ^
+  "  Where-Object { $_.CommandLine -match 'maestro\.cli\.AppKt' } |" ^
+  "  ForEach-Object { Write-Host ('[pre-clean] kill java PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null };" ^
+  "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" |" ^
+  "  Where-Object { $_.CommandLine -match 'jenkins_atp_stage|run_parallel' } |" ^
+  "  ForEach-Object { Write-Host ('[pre-clean] kill python PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null };" ^
+  "Write-Host '[pre-clean] done'"
+taskkill /IM maestro.exe /F /T >nul 2>&1
+:pre_clean_done
+exit /b 0
 '''
                 deleteDir()
                 unstash 'repo'
