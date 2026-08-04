@@ -1,8 +1,9 @@
 # Run adb with a hard timeout (Jenkins-safe).
-# IMPORTANT: Never RedirectStandardOutput/Error on "adb start-server" on Windows —
+# IMPORTANT: Never RedirectStandardOutput/Error on "adb start-server" on Windows -
 # that pipe pattern deadlocks and looks like a hang/timeout.
-# Prefer ADB_SERVER_PORT (default 5038) — port 5037 hangs on some CA Global agents.
+# Prefer ADB_SERVER_PORT (default 5038) - port 5037 hangs on some CA Global agents.
 # Avoid cmd.exe /c redirects when USERPROFILE has spaces (breaks quoting).
+# ASCII-only strings: Unicode dashes break PowerShell parse when checkout encoding differs.
 param(
     [Parameter(Mandatory = $true)][string]$AdbExe,
     [Parameter(Mandatory = $false)][string[]]$AdbArgs = @(),
@@ -48,7 +49,7 @@ $workDir = Split-Path -Parent $AdbExe
 # Ensure ADB server on ADB_SERVER_PORT without double-binding (WSAEADDRINUSE 10048).
 if ($EnsureServer) {
     if (Test-AdbPortListening -LocalPort $portNum) {
-        Write-Host ("[DEBUG] ADB already listening on port " + $port + " — skip nodaemon")
+        Write-Host ("[DEBUG] ADB already listening on port " + $port + " - skip nodaemon")
         exit 0
     }
     Write-Host ("[DEBUG] starting nodaemon server on port " + $port)
@@ -97,7 +98,7 @@ $errPath = Join-Path $env:TEMP ("adb_err_" + [guid]::NewGuid().ToString("N") + "
 
 try {
     if ($isStartServer -or $isKillServer) {
-        # start-server is a no-op if already listening — avoid needless churn across ATP modules.
+        # start-server is a no-op if already listening - avoid needless churn across ATP modules.
         if ($isStartServer -and (Test-AdbPortListening -LocalPort $portNum)) {
             Write-Host ("[DEBUG] start-server skipped; port " + $port + " already listening")
             exit 0
@@ -119,7 +120,7 @@ try {
                     Start-Sleep -Seconds 2
                     Write-Host ("[DEBUG] started nodaemon server on port " + $port)
                 } else {
-                    Write-Host ("[DEBUG] port " + $port + " listening after start-server hang — reuse")
+                    Write-Host ("[DEBUG] port " + $port + " listening after start-server hang - reuse")
                 }
             }
             exit 0
