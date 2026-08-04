@@ -46,7 +46,8 @@ def withOpenRouterCredentials = { Object credsId, Closure action ->
 
 /** Shared Maestro/Java/ADB env list — deduped to avoid Jenkins CPS MethodTooLargeException on large pipelines. */
 def maestroEnvList() {
-    def maestroJava = (params.JAVA_HOME_OVERRIDE?.trim()) ?: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8'
+    // Empty override → scripts/set_maestro_java.bat discovers Temurin 17/21 (no hardcoded jdk-25 / HP paths).
+    def maestroJava = params.JAVA_HOME_OVERRIDE?.trim() ?: ''
     def parallelHome = 'C:\\Tools\\maestro-parallel\\bin'
     def maestroHome = (params.MAESTRO_HOME?.trim()) ?: parallelHome
     // Sticky Jenkins job params often keep the old user install; always force parallel CLI.
@@ -56,12 +57,15 @@ def maestroEnvList() {
         maestroHome = parallelHome
     }
     def envList = []
-    envList << "MAESTRO_JAVA_HOME=${maestroJava}"
-    envList << "JAVA_HOME=${maestroJava}"
-    envList << "PATH+JAVA=${maestroJava}\\bin"
+    if (maestroJava) {
+        envList << "MAESTRO_JAVA_HOME=${maestroJava}"
+        envList << "JAVA_HOME=${maestroJava}"
+        envList << "PATH+JAVA=${maestroJava}\\bin"
+    }
     envList << "MAESTRO_HOME=${maestroHome}"
     envList << "ATP_MAESTRO_PARALLEL_HOME=${parallelHome}"
     envList << "ATP_MAESTRO_PREFER_LATEST=1"
+    envList << "ATP_MAESTRO_SKIP_LEGACY_SCAN=1"
     if (params.ANDROID_HOME?.trim()) {
         envList << "ANDROID_HOME=${params.ANDROID_HOME}"
         envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
@@ -70,11 +74,17 @@ def maestroEnvList() {
     return envList
 }
 
-/** Device stages can land on a clean executor workspace — restore stash without deleteDir mid-run. */
+/** Refresh repo sources each ATP stage (fixes Restart-Onboarding with stale execution/*.py). */
 def ensureDeviceRepo() {
-    if (!fileExists('scripts/jenkins_atp_stage.py')) {
-        echo '[INFO] Device workspace missing repo — unstash repo (no deleteDir)'
+    try {
         unstash 'repo'
+        echo '[INFO] Refreshed repo sources from stash (reports/status preserved on agent)'
+    } catch (Exception e) {
+        if (!fileExists('scripts/jenkins_atp_stage.py')) {
+            echo "[ERROR] Workspace empty and unstash failed: ${e}"
+            throw e
+        }
+        echo "[WARN] unstash repo unavailable — using existing workspace: ${e}"
     }
 }
 
@@ -98,7 +108,7 @@ pipeline {
         string(name: 'MAESTRO_CMD', defaultValue: 'maestro.bat', description: 'Maestro launcher (e.g. maestro.bat).')
         string(name: 'MAESTRO_HOME', defaultValue: 'C:\\Tools\\maestro-parallel\\bin', description: 'Folder containing maestro.bat (Kodak agent default: C:\\Tools\\maestro-parallel\\bin).')
         string(name: 'ANDROID_HOME', defaultValue: 'C:\\Users\\HP\\AppData\\Local\\Android\\Sdk', description: 'Android SDK root.')
-        string(name: 'JAVA_HOME_OVERRIDE', defaultValue: 'C:\\Users\\HP\\.jdks\\jbr-17.0.8', description: 'JDK for Maestro (MAESTRO_JAVA_HOME/JAVA_HOME). Default is jbr-17.0.8.')
+        string(name: 'JAVA_HOME_OVERRIDE', defaultValue: '', description: 'Optional JDK for Maestro (MAESTRO_JAVA_HOME). Leave empty to auto-detect Temurin 17/21 under Eclipse Adoptium.')
         booleanParam(name: 'RUN_ATP_CAMERA', defaultValue: true, description: 'ATP TestCase Flows: Camera')
         booleanParam(name: 'RUN_ATP_COLLAGE', defaultValue: true, description: 'ATP TestCase Flows: Collage')
         booleanParam(name: 'RUN_ATP_CONNECTION', defaultValue: false, description: 'ATP TestCase Flows: Connection (folder not present in Smile repo — leave false)')
