@@ -5,9 +5,10 @@
 # Avoid cmd.exe /c redirects when USERPROFILE has spaces (breaks quoting).
 param(
     [Parameter(Mandatory = $true)][string]$AdbExe,
-    [Parameter(Mandatory = $true)][string[]]$AdbArgs,
+    [Parameter(Mandatory = $false)][string[]]$AdbArgs = @(),
     [int]$TimeoutSec = 20,
-    [string]$OutFile = ""
+    [string]$OutFile = "",
+    [switch]$EnsureServer
 )
 
 $ErrorActionPreference = "Continue"
@@ -18,6 +19,55 @@ if (-not (Test-Path -LiteralPath $AdbExe)) {
 
 $port = $env:ADB_SERVER_PORT
 if ([string]::IsNullOrWhiteSpace($port)) { $port = "5038" }
+$portNum = 0
+[void][int]::TryParse($port, [ref]$portNum)
+if ($portNum -le 0) { $portNum = 5038; $port = "5038" }
+
+function Test-AdbPortListening {
+    param([int]$LocalPort)
+    try {
+        $conns = Get-NetTCPConnection -LocalPort $LocalPort -State Listen -ErrorAction SilentlyContinue
+        if ($conns) { return $true }
+    } catch {}
+    try {
+        $c = New-Object System.Net.Sockets.TcpClient
+        $iar = $c.BeginConnect("127.0.0.1", $LocalPort, $null, $null)
+        $ok = $iar.AsyncWaitHandle.WaitOne(500, $false)
+        if ($ok -and $c.Connected) {
+            $c.EndConnect($iar)
+            $c.Close()
+            return $true
+        }
+        try { $c.Close() } catch {}
+    } catch {}
+    return $false
+}
+
+$workDir = Split-Path -Parent $AdbExe
+
+# Ensure ADB server on ADB_SERVER_PORT without double-binding (WSAEADDRINUSE 10048).
+if ($EnsureServer) {
+    if (Test-AdbPortListening -LocalPort $portNum) {
+        Write-Host ("[DEBUG] ADB already listening on port " + $port + " — skip nodaemon")
+        exit 0
+    }
+    Write-Host ("[DEBUG] starting nodaemon server on port " + $port)
+    Start-Process -FilePath $AdbExe -ArgumentList @("-P", $port, "nodaemon", "server") `
+        -WorkingDirectory $workDir -WindowStyle Hidden | Out-Null
+    Start-Sleep -Seconds 2
+    if (Test-AdbPortListening -LocalPort $portNum) {
+        Write-Host ("[DEBUG] nodaemon listening on port " + $port)
+        exit 0
+    }
+    Write-Host ("WARN: ADB port " + $port + " still not listening after nodaemon start")
+    exit 0
+}
+
+if ($null -eq $AdbArgs -or $AdbArgs.Count -eq 0) {
+    Write-Host "ERROR: -AdbArgs required unless -EnsureServer"
+    exit 1
+}
+
 $hasPort = $false
 for ($i = 0; $i -lt $AdbArgs.Count; $i++) {
     if ($AdbArgs[$i] -eq "-P" -or $AdbArgs[$i] -eq "--port") { $hasPort = $true; break }
@@ -27,7 +77,6 @@ if (-not $hasPort) {
     if (-not $env:ADB_SERVER_PORT) { $env:ADB_SERVER_PORT = $port }
 }
 
-$workDir = Split-Path -Parent $AdbExe
 $argText = ($AdbArgs -join " ")
 $cmdName = ""
 for ($i = 0; $i -lt $AdbArgs.Count; $i++) {
@@ -48,6 +97,11 @@ $errPath = Join-Path $env:TEMP ("adb_err_" + [guid]::NewGuid().ToString("N") + "
 
 try {
     if ($isStartServer -or $isKillServer) {
+        # start-server is a no-op if already listening — avoid needless churn across ATP modules.
+        if ($isStartServer -and (Test-AdbPortListening -LocalPort $portNum)) {
+            Write-Host ("[DEBUG] start-server skipped; port " + $port + " already listening")
+            exit 0
+        }
         $p = Start-Process -FilePath $AdbExe -ArgumentList $AdbArgs `
             -WorkingDirectory $workDir `
             -WindowStyle Hidden -PassThru
@@ -57,12 +111,16 @@ try {
             Write-Host ("WARN: adb " + $argText + " still running after " + ($waitMs / 1000) + "s; continuing")
             try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
             if ($isStartServer) {
-                Get-Process adb -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 1
-                Start-Process -FilePath $AdbExe -ArgumentList @("-P", $port, "nodaemon", "server") `
-                    -WorkingDirectory $workDir -WindowStyle Hidden
-                Start-Sleep -Seconds 2
-                Write-Host ("[DEBUG] started nodaemon server on port " + $port)
+                if (-not (Test-AdbPortListening -LocalPort $portNum)) {
+                    Get-Process adb -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Seconds 1
+                    Start-Process -FilePath $AdbExe -ArgumentList @("-P", $port, "nodaemon", "server") `
+                        -WorkingDirectory $workDir -WindowStyle Hidden | Out-Null
+                    Start-Sleep -Seconds 2
+                    Write-Host ("[DEBUG] started nodaemon server on port " + $port)
+                } else {
+                    Write-Host ("[DEBUG] port " + $port + " listening after start-server hang — reuse")
+                }
             }
             exit 0
         }

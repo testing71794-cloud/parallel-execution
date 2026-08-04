@@ -1,8 +1,9 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-REM script_rev=2026-07-windows-agent-list-devices-adb-timeout-2
+REM script_rev=2026-08-windows-agent-list-devices-adb-reuse-3
 REM Writes detected_devices.txt under the Jenkins workspace (paths may contain spaces).
 REM Force ADB_SERVER_PORT=5038 — default 5037 hangs on CA Global agent.
+REM Reuse existing ADB on 5038 across ATP modules (Camera/Collage/...) — no double bind 10048.
 goto :script_body
 
 REM Sleep without timeout.exe (Jenkins non-TTY safe).
@@ -41,7 +42,7 @@ if not exist "%REPO_ROOT%\reports\_agent" mkdir "%REPO_ROOT%\reports\_agent"
 echo =====================================
 echo LIST DEVICES ^(windows_agent^)
 echo =====================================
-echo script_rev        : 2026-07-windows-agent-list-devices-adb-timeout-2
+echo script_rev        : 2026-08-windows-agent-list-devices-adb-reuse-3
 echo arg1 workspace    : %~1
 echo WORKSPACE env     : %WORKSPACE%
 echo REPO_ROOT         : %REPO_ROOT%
@@ -109,15 +110,12 @@ if !_ATT! GTR 1 (
   call :sleep_seconds 2
 )
 
-echo Starting ADB server on port %ADB_SERVER_PORT%...>> "%DEBUG_LOG%"
-echo Starting ADB server on port %ADB_SERVER_PORT%...
-REM Timed start-server; on hang, adb_run_timeout.ps1 starts nodaemon on ADB_SERVER_PORT.
+echo Starting/reusing ADB server on port %ADB_SERVER_PORT%...>> "%DEBUG_LOG%"
+echo Starting/reusing ADB server on port %ADB_SERVER_PORT%...
+REM Timed start-server (skipped if port already listening). Never force a second nodaemon.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ADB_TIMEOUT_PS%" -AdbExe "%ADB_EXE%" -AdbArgs start-server -TimeoutSec 8 >> "%DEBUG_LOG%" 2>&1
-
-REM Always ensure nodaemon is listening on 5038 (idempotent if already up).
-echo [DEBUG] ensuring nodaemon on port %ADB_SERVER_PORT%>> "%DEBUG_LOG%"
-start "" /B "%ADB_EXE%" -P %ADB_SERVER_PORT% nodaemon server
-call :sleep_seconds 3
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ADB_TIMEOUT_PS%" -AdbExe "%ADB_EXE%" -EnsureServer >> "%DEBUG_LOG%" 2>&1
+call :sleep_seconds 1
 
 REM Write adb devices to a temp file first — for /f ('"path with spaces" ...') breaks on users like "CA Global".
 set "ADB_DEVICES_TMP=%REPO_ROOT%\reports\_agent\adb_devices_list.txt"

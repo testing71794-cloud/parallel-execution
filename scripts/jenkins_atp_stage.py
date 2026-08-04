@@ -38,10 +38,102 @@ def touch_flag(name: str) -> None:
     (REPO / name).write_text("1\n", encoding="utf-8")
 
 
+def _read_detected_device_ids(repo: Path) -> list[str]:
+    path = repo / "detected_devices.txt"
+    if not path.is_file():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    return [ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")]
+
+
+def _adb_devices_quick_ok(repo: Path, expected: list[str]) -> bool:
+    """True when current ADB lists the same (or more) devices than detected_devices.txt."""
+    if not expected:
+        return False
+    adb = (
+        (os.environ.get("ADB_EXE") or "").strip().strip('"')
+        or (
+            str(Path(os.environ["ADB_HOME"]) / "adb.exe")
+            if (os.environ.get("ADB_HOME") or "").strip()
+            else ""
+        )
+        or r"C:\Tools\platform-tools\adb.exe"
+    )
+    if not Path(adb).is_file():
+        return False
+    port = (os.environ.get("ADB_SERVER_PORT") or "5038").strip() or "5038"
+    ps1 = repo / "scripts" / "windows_agent" / "adb_run_timeout.ps1"
+    tmp = repo / "reports" / "_agent" / "adb_devices_quick.txt"
+    try:
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+    env = os.environ.copy()
+    env["ADB_SERVER_PORT"] = port
+    if ps1.is_file():
+        cmd = [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ps1),
+            "-AdbExe",
+            adb,
+            "-AdbArgs",
+            "devices",
+            "-TimeoutSec",
+            "12",
+            "-OutFile",
+            str(tmp),
+        ]
+    else:
+        cmd = [adb, "-P", port, "devices"]
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(repo.resolve()),
+            env=env,
+            check=False,
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    text = ""
+    if tmp.is_file():
+        try:
+            text = tmp.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+    if not text:
+        text = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    present = set()
+    for ln in text.splitlines():
+        parts = ln.split()
+        if len(parts) >= 2 and parts[1].lower() == "device":
+            present.add(parts[0].strip())
+    missing = [d for d in expected if d not in present]
+    if missing:
+        print(
+            f"[jenkins_atp_stage] detected_devices stale/missing on ADB: {missing}",
+            flush=True,
+        )
+        return False
+    return True
+
+
 def _refresh_devices_on_this_agent(repo: Path) -> None:
     """
     Re-run adb device discovery on the current Windows agent before Maestro.
     Hybrid: Detect Connected Devices may run on a different executor than ATP stages.
+    Camera/Collage/... each call this — reuse detected_devices.txt when ADB still healthy
+    (avoids port-5038 double-bind churn every module).
     """
     if os.environ.get("ATP_REFRESH_DEVICES_BEFORE_RUN", "1").strip().lower() in (
         "0",
@@ -50,6 +142,20 @@ def _refresh_devices_on_this_agent(repo: Path) -> None:
         "off",
     ):
         print("[jenkins_atp_stage] ATP_REFRESH_DEVICES_BEFORE_RUN=0 — skip device refresh", flush=True)
+        return
+    existing = _read_detected_device_ids(repo)
+    force = os.environ.get("ATP_FORCE_DEVICE_REFRESH", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    if existing and not force and _adb_devices_quick_ok(repo, existing):
+        print(
+            f"[jenkins_atp_stage] reusing {len(existing)} device(s) from detected_devices.txt "
+            f"(ADB ok; set ATP_FORCE_DEVICE_REFRESH=1 to re-scan)",
+            flush=True,
+        )
         return
     bat = repo / "scripts" / "windows_agent" / "list_devices.bat"
     if not bat.is_file():
@@ -61,6 +167,8 @@ def _refresh_devices_on_this_agent(repo: Path) -> None:
         flush=True,
     )
     env = os.environ.copy()
+    if not (env.get("ADB_SERVER_PORT") or "").strip():
+        env["ADB_SERVER_PORT"] = "5038"
     # Avoid cmd.exe splitting workspace paths if a prior stage set MAESTRO_OPTS with -Duser.home=...
     for _k in (
         "MAESTRO_OPTS",
