@@ -187,24 +187,15 @@ pipeline {
             agent { label params.DEVICES_AGENT }
             steps {
                 // Kill leftover maestro/python locking the workspace (never agent.jar).
-                // Prefer repo script when present; else caret-safe inline PowerShell (no multiline -Command ").
+                // Do not put PowerShell regex escapes in this Jenkinsfile — Groovy rejects '\.'.
                 bat '''
 @echo off
 if exist scripts\\jenkins_pre_clean_locks.bat (
   call scripts\\jenkins_pre_clean_locks.bat
-  goto :pre_clean_done
+) else (
+  echo [pre-clean] locks script missing; taskkill maestro.exe only
+  taskkill /IM maestro.exe /F /T >nul 2>&1
 )
-powershell -NoProfile -NonInteractive -Command ^
-  "$ErrorActionPreference='SilentlyContinue';" ^
-  "Get-CimInstance Win32_Process -Filter \"Name='java.exe'\" |" ^
-  "  Where-Object { $_.CommandLine -match 'maestro\.cli\.AppKt' } |" ^
-  "  ForEach-Object { Write-Host ('[pre-clean] kill java PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null };" ^
-  "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" |" ^
-  "  Where-Object { $_.CommandLine -match 'jenkins_atp_stage|run_parallel' } |" ^
-  "  ForEach-Object { Write-Host ('[pre-clean] kill python PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null };" ^
-  "Write-Host '[pre-clean] done'"
-taskkill /IM maestro.exe /F /T >nul 2>&1
-:pre_clean_done
 exit /b 0
 '''
                 deleteDir()
