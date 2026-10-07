@@ -137,6 +137,11 @@ pipeline {
             defaultValue: 'OPENROUTER_API_KEY',
             description: 'Jenkins "Secret text" credential ID only (e.g. OPENROUTER_API_KEY). Injects as OPENROUTER_API_KEY. Do not paste the whole parameter line. Leave empty to use env already set on the agent.'
         )
+        string(
+            name: 'PIPELINE_TIMEOUT_MINUTES',
+            defaultValue: '480',
+            description: 'Whole-pipeline timeout in minutes. Full ATP (Camera..SignUp) on 3 devices often exceeds 180m; abort skips all later modules.'
+        )
     }
 
     options {
@@ -151,7 +156,8 @@ pipeline {
                 artifactNumToKeepStr: '3',
             )
         )
-        timeout(time: 180, unit: 'MINUTES')
+        // 480m default: Editing alone can take 1–2h with 20 flows x 3 devices; 180m aborted mid-Editing.
+        timeout(time: 480, unit: 'MINUTES')
     }
 
     triggers {

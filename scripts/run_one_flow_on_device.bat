@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-REM script_rev=2026-10-maestro-adb-5037-bridge
+REM script_rev=2026-10-pipeline-timeout-recording-eof
 goto :script_body
 
 REM Approximate sleep without timeout.exe (Jenkins + non-TTY stdin makes timeout print
@@ -19,7 +19,7 @@ exit /b 0
 
 REM Log resolved paths before Maestro (Jenkins workspace may contain spaces).
 :log_maestro_invoke_context
-echo [DEBUG] script_rev=2026-10-maestro-adb-5037-bridge>> "%LOG_FILE%"
+echo [DEBUG] script_rev=2026-10-pipeline-timeout-recording-eof>> "%LOG_FILE%"
 echo [DEBUG] CD=!CD!>> "%LOG_FILE%"
 echo [DEBUG] REPO_ROOT=!REPO_ROOT!>> "%LOG_FILE%"
 echo [DEBUG] FLOW_PATH=!FLOW_PATH!>> "%LOG_FILE%"
@@ -533,6 +533,23 @@ call :run_maestro_isolated
 set "RUN_EXIT=%ERRORLEVEL%"
 if "!RUN_EXIT!"=="0" goto :maestro_default_pass
 
+REM Flow body finished but stopRecording crashed (dadb EOF) — treat as pass/flaky, not FAIL.
+findstr /i /c:"Stop recording" "%LOG_FILE%" >nul 2>&1
+if errorlevel 1 goto :skip_record_eof_pass
+findstr /i /c:"EOFException" "%LOG_FILE%" >nul 2>&1
+if errorlevel 1 goto :skip_record_eof_pass
+findstr /i /c:"\TC_" "%LOG_FILE%" | findstr /i /c:"COMPLETED" >nul 2>&1
+if errorlevel 1 (
+  findstr /i /c:".yaml... COMPLETED" "%LOG_FILE%" >nul 2>&1
+  if errorlevel 1 goto :skip_record_eof_pass
+)
+echo [WARN] Flow completed but stopRecording hit EOFException; counting as PASS ^(recording teardown^)>> "%LOG_FILE%"
+set "RUN_EXIT=0"
+set "STATUS_VALUE=FLAKY"
+set "REASON=RECORDING_STOP_EOF_FLOW_OK"
+goto :maestro_default_pass
+:skip_record_eof_pass
+
 REM ---- One retry: Android driver IPC (log shows localhost:7001 + Connection refused) — reinstall driver on device ----
 if "!MAESTRO_DRIVER_7001_RETRY!"=="1" goto :skip_maestro_driver_7001_retry
 findstr /i /c:"7001" "%LOG_FILE%" >nul 2>&1
@@ -573,12 +590,16 @@ call :sleep_seconds 2
 goto :maestro_retry_wait_dev
 
 :maestro_default_pass
+if /I "!REASON!"=="RECORDING_STOP_EOF_FLOW_OK" goto :after_flow1b_maestro
 if "!MAESTRO_DRIVER_7001_RETRY!"=="1" (
     set "STATUS_VALUE=FLAKY"
     set "REASON=MAESTRO_DRIVER_REINSTALL_OK"
 ) else if "!MAESTRO_DEVICE_RETRY_USED!"=="1" (
     set "STATUS_VALUE=FLAKY"
     set "REASON=MAESTRO_DEVICE_RETRY_OK"
+) else (
+    set "STATUS_VALUE=PASS"
+    set "REASON=OK"
 )
 goto :after_flow1b_maestro
 
