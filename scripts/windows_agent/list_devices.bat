@@ -145,5 +145,6 @@ echo Devices detected: !COUNT!
 echo Device list saved to: "%OUT_FILE%"
 echo [DEBUG] list_devices OK - wrote "%OUT_FILE%"
 type "%OUT_FILE%"
-del /q "%ADB_DEVICES_TMP%" 2>nul
+REM Do not del temp here — locked files can hang Jenkins bat after success.
+echo [DEBUG] list_devices exit=0
 exit /b 0
