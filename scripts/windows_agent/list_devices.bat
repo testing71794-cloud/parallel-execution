@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-REM script_rev=2026-10-windows-agent-list-devices-utf8-parse-4
+REM script_rev=2026-10-windows-agent-list-devices-ascii-capture-5
 REM Writes detected_devices.txt under the Jenkins workspace (paths may contain spaces).
 REM Force ADB_SERVER_PORT=5038 - default 5037 hangs on CA Global agent.
 REM Reuse existing ADB on 5038 across ATP modules - no double bind 10048.
@@ -42,7 +42,7 @@ set "ADB_DEVICES_TMP=%TEMP%\kodak_adb_devices_%RANDOM%.txt"
 echo =====================================
 echo LIST DEVICES (windows_agent)
 echo =====================================
-echo script_rev        : 2026-10-windows-agent-list-devices-utf8-parse-4
+echo script_rev        : 2026-10-windows-agent-list-devices-ascii-capture-5
 echo arg1 workspace    : %~1
 echo WORKSPACE env     : %WORKSPACE%
 echo REPO_ROOT         : %REPO_ROOT%
@@ -118,6 +118,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%ADB_TIMEOUT_PS%" -AdbExe "
 if not exist "%ADB_DEVICES_TMP%" (
   echo. > "%ADB_DEVICES_TMP%"
 )
+REM Fallback: direct adb ASCII redirect if PS capture looks empty/corrupt (???? lines).
+findstr /C:"device" "%ADB_DEVICES_TMP%" >nul 2>&1
+if errorlevel 1 (
+  echo [detect] PS capture missed devices — fallback direct adb redirect
+  "%ADB_EXE%" -P %ADB_SERVER_PORT% devices > "%ADB_DEVICES_TMP%" 2>&1
+)
+type "%ADB_DEVICES_TMP%"
 echo --- end adb devices ---
 
 set "COUNT=0"

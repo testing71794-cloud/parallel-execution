@@ -129,42 +129,37 @@ try {
         exit $p.ExitCode
     }
 
-    # devices / other: Start-Process redirect (UTF-16) then convert to UTF-8 no BOM.
-    # Avoid Process+ReadToEndAsync — incomplete tasks can keep powershell.exe alive and
-    # leave Jenkins bat steps hanging after devices were already printed.
-    $rawOut = Join-Path $env:TEMP ("adb_raw_out_" + [guid]::NewGuid().ToString("N") + ".txt")
-    $rawErr = Join-Path $env:TEMP ("adb_raw_err_" + [guid]::NewGuid().ToString("N") + ".txt")
-    Remove-Item -LiteralPath $rawOut,$rawErr -Force -ErrorAction SilentlyContinue
-    $argList = @($AdbArgs)
-    $p = Start-Process -FilePath $AdbExe -ArgumentList $argList `
-        -WorkingDirectory $workDir `
-        -WindowStyle Hidden -PassThru `
-        -RedirectStandardOutput $rawOut `
-        -RedirectStandardError $rawErr
+    # devices / other: .NET Process + sync ReadToEnd AFTER WaitForExit.
+    # adb devices output is tiny (no pipe-buffer deadlock). Avoid:
+    #  - ReadToEndAsync (can keep powershell alive -> Jenkins hang)
+    #  - Start-Process file redirect read as Unicode (mis-decode -> "????" and 0 devices)
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $AdbExe
+    $psi.Arguments = ($AdbArgs | ForEach-Object {
+        $a = [string]$_
+        if ($a -match '\s') { '"' + ($a -replace '"', '\"') + '"' } else { $a }
+    }) -join ' '
+    $psi.WorkingDirectory = $workDir
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    # Default encoding is fine for adb ASCII; forcing UTF8 broke some hosts.
+
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    [void]$p.Start()
     $finished = $p.WaitForExit([Math]::Max($TimeoutSec, 1) * 1000)
     if (-not $finished) {
         Write-Host ("ERROR: adb " + $argText + " timed out after " + $TimeoutSec + "s - killing hung adb")
-        try { if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } } catch {}
+        try { if (-not $p.HasExited) { $p.Kill() } } catch {}
         Get-Process adb -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $rawOut,$rawErr -Force -ErrorAction SilentlyContinue
         exit 2
     }
-
-    function Read-AdbCaptureFile([string]$path) {
-        if (-not (Test-Path -LiteralPath $path)) { return "" }
-        try {
-            # Start-Process redirect is typically UTF-16 LE on Windows PowerShell.
-            return [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::Unicode)
-        } catch {
-            try {
-                return Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue
-            } catch { return "" }
-        }
-    }
-
-    $outText = Read-AdbCaptureFile $rawOut
-    $errText = Read-AdbCaptureFile $rawErr
-    Remove-Item -LiteralPath $rawOut,$rawErr -Force -ErrorAction SilentlyContinue
+    $outText = ""
+    $errText = ""
+    try { $outText = $p.StandardOutput.ReadToEnd() } catch { $outText = "" }
+    try { $errText = $p.StandardError.ReadToEnd() } catch { $errText = "" }
 
     $utf8 = New-Object System.Text.UTF8Encoding $false
     if (-not $tempOut) {
