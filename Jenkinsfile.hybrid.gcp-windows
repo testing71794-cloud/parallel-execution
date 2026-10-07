@@ -529,9 +529,13 @@ exit /b 0
                             if (fileExists('scripts/jenkins_abort_maestro_cleanup.bat')) {
                                 bat """call scripts\\jenkins_abort_maestro_cleanup.bat "${env.WORKSPACE}" """
                             } else {
+                                // Inline fallback when workspace has no scripts (e.g. fresh node()).
+                                // Do not use -Filter \"Name='...'\": cmd strips \", WMI returns Invalid query.
+                                // Prefer single-quoted Filter 'Name=''java.exe'''. Always exit 0 (taskkill=128 if absent).
                                 bat '''
-powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process -Filter \"Name='java.exe'\" | Where-Object { $_.CommandLine -match 'maestro\\.cli\\.AppKt' } | ForEach-Object { Write-Host ('[abort-cleanup] kill java ' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null }; Get-CimInstance Win32_Process -Filter \"Name='cmd.exe'\" | Where-Object { $_.CommandLine -match 'run_one_flow_on_device\\.bat|maestro\\.bat' } | ForEach-Object { taskkill /PID $_.ProcessId /T /F | Out-Null }"
+powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='SilentlyContinue'; Get-CimInstance Win32_Process -Filter 'Name=''java.exe''' | Where-Object { $_.CommandLine -match 'maestro\\.cli\\.AppKt' } | ForEach-Object { Write-Host ('[abort-cleanup] kill java ' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null }; Get-CimInstance Win32_Process -Filter 'Name=''cmd.exe''' | Where-Object { $_.CommandLine -match 'run_one_flow_on_device\\.bat|maestro\\.bat' } | ForEach-Object { taskkill /PID $_.ProcessId /T /F | Out-Null }"
 taskkill /IM maestro.exe /F /T >nul 2>&1
+exit /b 0
 '''
                             }
                         }
