@@ -50,7 +50,11 @@ def _read_detected_device_ids(repo: Path) -> list[str]:
 
 
 def _adb_devices_quick_ok(repo: Path, expected: list[str]) -> bool:
-    """True when current ADB lists the same (or more) devices than detected_devices.txt."""
+    """True when current ADB lists the same (or more) devices than detected_devices.txt.
+
+    Uses adb.exe directly (no PowerShell). capture_output+powershell previously hung
+    past Python's timeout on Windows when adb/pipes stalled.
+    """
     if not expected:
         return False
     adb = (
@@ -63,9 +67,9 @@ def _adb_devices_quick_ok(repo: Path, expected: list[str]) -> bool:
         or r"C:\Tools\platform-tools\adb.exe"
     )
     if not Path(adb).is_file():
+        print(f"[jenkins_atp_stage] quick ADB check: adb not found ({adb})", flush=True)
         return False
     port = (os.environ.get("ADB_SERVER_PORT") or "5038").strip() or "5038"
-    ps1 = repo / "scripts" / "windows_agent" / "adb_run_timeout.ps1"
     tmp = repo / "reports" / "_agent" / "adb_devices_quick.txt"
     try:
         tmp.parent.mkdir(parents=True, exist_ok=True)
@@ -73,46 +77,44 @@ def _adb_devices_quick_ok(repo: Path, expected: list[str]) -> bool:
         return False
     env = os.environ.copy()
     env["ADB_SERVER_PORT"] = port
-    if ps1.is_file():
-        cmd = [
-            "powershell",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(ps1),
-            "-AdbExe",
-            adb,
-            "-AdbArgs",
-            "devices",
-            "-TimeoutSec",
-            "12",
-            "-OutFile",
-            str(tmp),
-        ]
-    else:
-        cmd = [adb, "-P", port, "devices"]
+    cmd = [adb, "-P", port, "devices"]
+    # File redirect + Popen/wait: avoids capture_output pipe deadlocks; taskkill /T on timeout.
+    popen_kwargs: dict = {
+        "cwd": str(repo.resolve()),
+        "env": env,
+        "shell": False,
+        "stderr": subprocess.DEVNULL,
+    }
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(repo.resolve()),
-            env=env,
-            check=False,
-            shell=False,
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+        with open(tmp, "w", encoding="utf-8", errors="replace") as out_f:
+            proc = subprocess.Popen(cmd, stdout=out_f, **popen_kwargs)
+            try:
+                proc.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                print("[jenkins_atp_stage] quick ADB check: timed out after 8s — killing adb tree", flush=True)
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                        capture_output=True,
+                        check=False,
+                        timeout=10,
+                    )
+                else:
+                    proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+                return False
+    except OSError as exc:
+        print(f"[jenkins_atp_stage] quick ADB check: failed to start adb: {exc}", flush=True)
         return False
-    text = ""
-    if tmp.is_file():
-        try:
-            text = tmp.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            text = ""
-    if not text:
-        text = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    try:
+        text = tmp.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        text = ""
     present = set()
     for ln in text.splitlines():
         parts = ln.split()
@@ -125,6 +127,10 @@ def _adb_devices_quick_ok(repo: Path, expected: list[str]) -> bool:
             flush=True,
         )
         return False
+    print(
+        f"[jenkins_atp_stage] quick ADB check: ok ({len(present)} device(s) visible)",
+        flush=True,
+    )
     return True
 
 
