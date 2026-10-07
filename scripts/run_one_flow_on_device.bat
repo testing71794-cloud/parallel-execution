@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-REM script_rev=2026-06-jenkins-gallery-appium-pinch-10
+REM script_rev=2026-10-maestro-adb-5037-bridge
 goto :script_body
 
 REM Approximate sleep without timeout.exe (Jenkins + non-TTY stdin makes timeout print
@@ -19,7 +19,7 @@ exit /b 0
 
 REM Log resolved paths before Maestro (Jenkins workspace may contain spaces).
 :log_maestro_invoke_context
-echo [DEBUG] script_rev=2026-06-jenkins-gallery-appium-pinch-10>> "%LOG_FILE%"
+echo [DEBUG] script_rev=2026-10-maestro-adb-5037-bridge>> "%LOG_FILE%"
 echo [DEBUG] CD=!CD!>> "%LOG_FILE%"
 echo [DEBUG] REPO_ROOT=!REPO_ROOT!>> "%LOG_FILE%"
 echo [DEBUG] FLOW_PATH=!FLOW_PATH!>> "%LOG_FILE%"
@@ -309,7 +309,8 @@ REM ---- ADB: ensure server is up (mitigates stale Jenkins adb on Windows) ----
 REM Must match list_devices / orchestrator (port 5037 hangs on this agent).
 if not defined ADB_SERVER_PORT set "ADB_SERVER_PORT=5038"
 if not defined ADB_EXE set "ADB_EXE=adb"
-echo [INFO] ADB_SERVER_PORT=%ADB_SERVER_PORT% ADB_EXE=%ADB_EXE%>> "%LOG_FILE%"
+set "ANDROID_ADB_SERVER_PORT=%ADB_SERVER_PORT%"
+echo [INFO] ADB_SERVER_PORT=%ADB_SERVER_PORT% ANDROID_ADB_SERVER_PORT=%ANDROID_ADB_SERVER_PORT% ADB_EXE=%ADB_EXE%>> "%LOG_FILE%"
 "%ADB_EXE%" -P %ADB_SERVER_PORT% start-server >> "%LOG_FILE%" 2>&1
 
 REM ---- Wait until device reports get-state=device (Jenkins parallel / USB flake) ----
