@@ -71,6 +71,8 @@ def maestroEnvList() {
         envList << "ADB_HOME=${params.ANDROID_HOME}\\platform-tools"
         envList << "PATH+ADB=${params.ANDROID_HOME}\\platform-tools"
     }
+    // Must match scripts/windows_agent/list_devices.bat (5037 hangs on this agent).
+    envList << "ADB_SERVER_PORT=5038"
     return envList
 }
 

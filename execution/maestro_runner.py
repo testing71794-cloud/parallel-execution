@@ -122,13 +122,16 @@ def _adb_exe() -> str | None:
 
 
 def adb_start_server(suite_id: str, repo: Path) -> None:
-    exe = _adb_exe()
-    if not exe:
+    from .subprocess_launch import adb_argv, ensure_adb_server_port_env
+
+    ensure_adb_server_port_env()
+    cmd = adb_argv("start-server")
+    if not cmd:
         log_lifecycle(repo, suite_id, WorkerState.ADB_READY, "adb not on PATH; skip start-server")
         return
     try:
-        subprocess.run([exe, "start-server"], capture_output=True, text=True, timeout=90, check=False)
-        log_lifecycle(repo, suite_id, WorkerState.ADB_READY, "adb start-server", adb=exe)
+        subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False)
+        log_lifecycle(repo, suite_id, WorkerState.ADB_READY, "adb start-server", adb=cmd[0], port=cmd[2])
     except (OSError, subprocess.TimeoutExpired) as e:
         log_lifecycle(repo, suite_id, WorkerState.FAILED, "adb start-server failed", error=str(e))
 

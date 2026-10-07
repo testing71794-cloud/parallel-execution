@@ -11,7 +11,7 @@ from pathlib import Path
 
 from utils.device_utils import get_device_display_name
 
-from .subprocess_launch import resolve_adb_executable
+from .subprocess_launch import adb_argv
 
 
 def _dev_log(device_id: str) -> str:
@@ -30,12 +30,12 @@ def check_app_installed(device_id: str, app_id: str) -> DeviceAppCheck:
     app_id = (app_id or "").strip()
     if not app_id:
         return DeviceAppCheck(device_id=device_id, installed=False, detail="empty_app_id")
-    adb = resolve_adb_executable()
-    if not adb:
+    cmd = adb_argv("-s", device_id, "shell", "pm", "path", app_id)
+    if not cmd:
         return DeviceAppCheck(device_id=device_id, installed=False, detail="adb_not_found")
     try:
         proc = subprocess.run(
-            [adb, "-s", device_id, "shell", "pm", "path", app_id],
+            cmd,
             capture_output=True,
             text=True,
             timeout=45,

@@ -53,3 +53,25 @@ def resolve_adb_executable() -> str | None:
                 return str(exe.resolve())
     found = shutil.which("adb")
     return found
+
+
+def adb_server_port() -> str:
+    """Jenkins Windows agent uses 5038 (5037 hangs on some hosts)."""
+    port = (os.environ.get("ADB_SERVER_PORT") or "").strip()
+    return port if port else "5038"
+
+
+def ensure_adb_server_port_env() -> str:
+    """Force ADB_SERVER_PORT into the process env so child adb/Maestro hit the same daemon."""
+    port = adb_server_port()
+    os.environ["ADB_SERVER_PORT"] = port
+    return port
+
+
+def adb_argv(*args: str) -> list[str] | None:
+    """``[adb.exe, -P, PORT, ...]`` or None if adb is missing."""
+    exe = resolve_adb_executable()
+    if not exe:
+        return None
+    port = ensure_adb_server_port_env()
+    return [exe, "-P", port, *[str(a) for a in args]]

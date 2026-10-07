@@ -193,12 +193,13 @@ def add_adb_from_env_to_path() -> None:
 
 
 def get_authorized_serials_from_adb() -> list[str]:
-    from .subprocess_launch import resolve_adb_executable
+    from .subprocess_launch import adb_argv, ensure_adb_server_port_env
 
-    adb = resolve_adb_executable()
-    if not adb:
+    ensure_adb_server_port_env()
+    cmd = adb_argv("devices")
+    if not cmd:
         raise RuntimeError("adb not on PATH. Set ADB_HOME or ANDROID_HOME/platform-tools.")
-    proc = subprocess.run([adb, "devices"], capture_output=True, text=True, timeout=60, check=False)
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
     if proc.returncode != 0:
         raise RuntimeError(f"adb devices failed (exit {proc.returncode})")
     text = proc.stdout or ""
@@ -954,23 +955,25 @@ def run_atp_folder_blocking(
     clear_state = (clear_state or "true").strip()
 
     add_adb_from_env_to_path()
-    from .subprocess_launch import log_subprocess_launch, resolve_adb_executable
+    from .subprocess_launch import adb_argv, ensure_adb_server_port_env, log_subprocess_launch
 
-    adb_exe = resolve_adb_executable()
-    if adb_exe:
-        for adb_args in (["start-server"], ["devices"]):
-            adb_cmd = [adb_exe, *adb_args]
-            log_subprocess_launch(adb_cmd, cwd=repo, shell=False, label="atp_orchestrator_adb")
-            try:
-                subprocess.run(
-                    adb_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    check=False,
-                )
-            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-                pass
+    port = ensure_adb_server_port_env()
+    print(f"[ATP] ADB_SERVER_PORT={port} (orchestrator adb must match list_devices)", flush=True)
+    for adb_args in (("start-server",), ("devices",)):
+        adb_cmd = adb_argv(*adb_args)
+        if not adb_cmd:
+            break
+        log_subprocess_launch(adb_cmd, cwd=repo, shell=False, label="atp_orchestrator_adb")
+        try:
+            subprocess.run(
+                adb_cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            pass
 
     time.sleep(1)
 

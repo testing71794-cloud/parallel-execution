@@ -163,10 +163,12 @@ def _adb_exe() -> str | None:
 
 
 def list_adb_forwards(*, device_id: str | None = None) -> str:
-    exe = _adb_exe()
-    if not exe:
+    from .subprocess_launch import adb_argv, ensure_adb_server_port_env
+
+    ensure_adb_server_port_env()
+    cmd = adb_argv("forward", "--list")
+    if not cmd:
         return ""
-    cmd = [exe, "forward", "--list"]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
         text = ((proc.stdout or "") + (proc.stderr or "")).strip()
@@ -190,12 +192,15 @@ def log_adb_forwards(device_id: str, phase: str) -> None:
 
 
 def clear_device_adb_forwards(device_id: str) -> tuple[bool, str]:
-    exe = _adb_exe()
-    if not exe:
+    from .subprocess_launch import adb_argv, ensure_adb_server_port_env
+
+    ensure_adb_server_port_env()
+    cmd = adb_argv("-s", device_id, "forward", "--remove-all")
+    if not cmd:
         return False, "adb_not_found"
     try:
         proc = subprocess.run(
-            [exe, "-s", device_id, "forward", "--remove-all"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=30,
