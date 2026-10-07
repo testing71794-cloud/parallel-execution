@@ -121,7 +121,7 @@ pipeline {
         booleanParam(name: 'RUN_ATP_SETTINGS', defaultValue: true, description: 'ATP TestCase Flows: Settings')
         booleanParam(name: 'RUN_ATP_SIGNUP_LOGIN', defaultValue: true, description: 'ATP TestCase Flows: SignUp_Login')
         booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Test OpenRouter + run intelligent_platform failure analysis')
-        booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: false, description: 'Send final summary email')
+        booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: true, description: 'Send final summary email with detailed Excel (Flow Report) attached')
         booleanParam(name: 'CLEAR_STATE', defaultValue: true, description: 'Clear app state in suite runners')
         booleanParam(name: 'RETRY_FAILED', defaultValue: false, description: 'Reserved for future retry logic')
         string(

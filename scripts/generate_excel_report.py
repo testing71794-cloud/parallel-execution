@@ -32,9 +32,14 @@ from utils.project_identity import PROJECT_DISPLAY_NAME
 PASS_FILL = PatternFill(fill_type="solid", fgColor="C6EFCE")
 FAIL_FILL = PatternFill(fill_type="solid", fgColor="FFC7CE")
 FLAKY_FILL = PatternFill(fill_type="solid", fgColor="FFF2CC")
-HEADER_FILL = PatternFill(fill_type="solid", fgColor="D9EAF7")
+HEADER_FILL = PatternFill(fill_type="solid", fgColor="2E5C8A")
 TITLE_FILL = PatternFill(fill_type="solid", fgColor="B4C7E7")
 GRAY_FILL = PatternFill(fill_type="solid", fgColor="D9D9D9")
+PASS_FONT = Font(bold=True, color="006100")
+FAIL_FONT = Font(bold=True, color="9C0006")
+FLAKY_FONT = Font(bold=True, color="9C5700")
+HEADER_FONT = Font(bold=True, color="FFFFFF")
+ALT_ROW_FILL = PatternFill(fill_type="solid", fgColor="F2F2F2")
 
 COLS = [
     "Suite",
@@ -62,7 +67,7 @@ COLS = [
 
 _SCREEN_DEFAULT = str((REPO / ".maestro" / "screenshots").resolve())
 
-# Flow-only view for final report / email (no suite-level rows without a flow)
+# Detailed view for final report / email (same columns as existing Flow Report workbook)
 FLOW_REPORT_HEADERS: tuple[str, ...] = (
     "Suite",
     "Flow",
@@ -88,13 +93,41 @@ def _augment_merged_row(rowd: dict) -> None:
     rowd["AI Analysis"] = ai
 
 
+def _style_status_cell(cell, status: str) -> None:
+    st = (status or "").strip().upper()
+    if st == "PASS":
+        cell.fill = PASS_FILL
+        cell.font = PASS_FONT
+    elif st == "FLAKY":
+        cell.fill = FLAKY_FILL
+        cell.font = FLAKY_FONT
+    elif st in ("FAIL", "PARSE_ERROR", "ERROR", "UNKNOWN"):
+        cell.fill = FAIL_FILL
+        cell.font = FAIL_FONT
+    else:
+        cell.fill = GRAY_FILL
+        cell.font = Font(bold=True)
+
+
 def _write_flow_report_sheet(wb: Workbook, all_rows: list[dict]) -> None:
+    """Detailed Suite/Flow/Device/Status/Exit Code/AI Analysis sheet (email + Excel)."""
     w = wb.create_sheet("Flow Report", 1)
     w.append(list(FLOW_REPORT_HEADERS))
     for c in w[1]:
         c.fill = HEADER_FILL
-        c.font = Font(bold=True)
-    for r in all_rows:
+        c.font = HEADER_FONT
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    sorted_rows = sorted(
+        all_rows,
+        key=lambda r: (
+            str(r.get("Suite", "") or "").casefold(),
+            str(r.get("Flow Name", "") or "").casefold(),
+            str(r.get("Device Name", "") or "").casefold(),
+            str(r.get("Device ID", "") or "").casefold(),
+        ),
+    )
+    for r in sorted_rows:
         flow = str(r.get("Flow Name", "") or "").strip()
         if not flow:
             continue
@@ -111,8 +144,22 @@ def _write_flow_report_sheet(wb: Workbook, all_rows: list[dict]) -> None:
             or str(r.get("AI Failure Summary", "") or "").strip()
             or "—"
         )
+        if (st or "").upper() == "PASS" and (not ai or ai in ("—", "N/A", "NOT_CHECKED")):
+            ai = "—"
+        elif (st or "").upper() not in ("PASS",) and (not ai or ai in ("—", "N/A", "NOT_CHECKED")):
+            ai = "Failure recorded; inspect log for the exact Maestro line."
         w.append([suite_s, flow, dev, did, st, ex, ai])
-    _autosize(w, 60)
+
+    for i in range(2, (w.max_row or 1) + 1):
+        _style_status_cell(w.cell(i, 5), str(w.cell(i, 5).value or ""))
+        if i % 2 == 0:
+            for col in (1, 2, 3, 4, 6, 7):
+                w.cell(i, col).fill = ALT_ROW_FILL
+        for col in range(1, 8):
+            w.cell(i, col).alignment = Alignment(vertical="center", wrap_text=(col == 7))
+    w.freeze_panes = "A2"
+    _autosize(w, 70)
+    w.column_dimensions["G"].width = 55
 
 
 def parse_status_file(file_path: Path) -> dict:
@@ -468,14 +515,26 @@ def _merge_build_summary(
                 fl += 1
             else:
                 nf += 1
+        branch = detect_git_branch(REPO)
+        if branch.lower() in ("unknown", "null", "none", ""):
+            branch = (os.environ.get("GIT_BRANCH") or os.environ.get("BRANCH_NAME") or "unknown").strip()
+            if branch.startswith("origin/"):
+                branch = branch[len("origin/") :]
+        gen_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ws0["A1"] = f"{PROJECT_DISPLAY_NAME} — merged execution report"
-        ws0["A1"].font = Font(bold=True, size=14)
-        ws0["A2"], ws0["B2"] = "Total rows", str(t)
+        ws0["A1"].font = Font(bold=True, size=14, color="1F4E79")
+        ws0["A2"], ws0["B2"] = "Total", str(t)
         ws0["A3"], ws0["B3"] = "Passed", str(p)
-        ws0["A4"], ws0["B4"] = "Failed (non-PASS, excl. flaky count below)", str(nf)
+        ws0["A4"], ws0["B4"] = "Failed", str(nf)
         ws0["A5"], ws0["B5"] = "Flaky", str(fl)
-        ws0["A6"], ws0["B6"] = "Generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ws0["A7"], ws0["B7"] = "Git Branch", detect_git_branch(REPO)
+        ws0["A6"], ws0["B6"] = "Git Branch", branch or "unknown"
+        ws0["A7"], ws0["B7"] = "Generated on", gen_ts
+        # Keep legacy keys for email Summary parsers
+        ws0["A9"], ws0["B9"] = "Total rows", str(t)
+        ws0["A10"], ws0["B10"] = "Generated", gen_ts
+        for row_i in range(2, 8):
+            ws0.cell(row_i, 1).font = Font(bold=True)
+            ws0.cell(row_i, 1).fill = PatternFill(fill_type="solid", fgColor="E8F0F8")
         _write_flow_report_sheet(wb, all_rows)
         wdev = wb.create_sheet("Device Summary")
         wdev.append(["Device Name", "Device ID", "Total", "Passed", "Failed", "Flaky"])

@@ -78,11 +78,14 @@ def _is_likely_device_serial(value: str) -> bool:
 
 def render_device_display(display: str = "", device_id: str = "") -> str:
     """
-    Human-facing label for reports/email/HTML only. Resolves serial via
-    :func:`get_device_display_name`; leaves an already-friendly name unchanged.
+    Human-facing label for reports/email/HTML only. Prefer an already-friendly
+    display name; otherwise resolve serial via :func:`get_device_display_name`.
     """
     disp = (display or "").strip()
     did = (device_id or "").strip()
+    # Keep labels that are already human-readable (e.g. "16091FDD4004 N6", "Motorola Fusion 50")
+    if disp and not _is_likely_device_serial(disp):
+        return disp
     if did:
         return get_device_display_name(did)
     if disp and _is_likely_device_serial(disp):
