@@ -300,7 +300,11 @@ goto :write_result
 :flow_file_ok
 
 REM ---- ADB: ensure server is up (mitigates stale Jenkins adb on Windows) ----
-adb start-server >> "%LOG_FILE%" 2>&1
+REM Must match list_devices / orchestrator (port 5037 hangs on this agent).
+if not defined ADB_SERVER_PORT set "ADB_SERVER_PORT=5038"
+if not defined ADB_EXE set "ADB_EXE=adb"
+echo [INFO] ADB_SERVER_PORT=%ADB_SERVER_PORT% ADB_EXE=%ADB_EXE%>> "%LOG_FILE%"
+"%ADB_EXE%" -P %ADB_SERVER_PORT% start-server >> "%LOG_FILE%" 2>&1
 
 REM ---- Wait until device reports get-state=device (Jenkins parallel / USB flake) ----
 REM Override: set ADB_DEVICE_WAIT_ATTEMPTS=30 (default 60) x ADB_DEVICE_WAIT_SECS=2 (default 2) ~= 120s max
@@ -318,7 +322,7 @@ if !_ADB_W! GTR %ADB_DEVICE_WAIT_ATTEMPTS% (
     goto :write_result
 )
 set "_ADB_STATE="
-for /f "delims=" %%S in ('adb -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _ADB_STATE set "_ADB_STATE=%%S"
+for /f "delims=" %%S in ('"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _ADB_STATE set "_ADB_STATE=%%S"
 if /I "!_ADB_STATE!"=="device" (
     echo [INFO] Device %DEVICE_ID% online ^(get-state=device^) after !_ADB_W! attempt(s)>> "%LOG_FILE%"
     goto :adb_wait_device_done
@@ -331,7 +335,7 @@ goto :adb_wait_device_loop
 echo.>> "%LOG_FILE%"
 echo [INFO] Verifying app package is installed on device %DEVICE_ID%: %APP_ID%>> "%LOG_FILE%"
 set "_PM_PATH_OUT="
-for /f "delims=" %%L in ('adb -s "%DEVICE_ID%" shell pm path "%APP_ID%" 2^>^&1') do if not defined _PM_PATH_OUT set "_PM_PATH_OUT=%%L"
+for /f "delims=" %%L in ('"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" shell pm path "%APP_ID%" 2^>^&1') do if not defined _PM_PATH_OUT set "_PM_PATH_OUT=%%L"
 echo [INFO] adb shell pm path output: !_PM_PATH_OUT!>> "%LOG_FILE%"
 echo !_PM_PATH_OUT! | findstr /i "package:" >nul 2>&1
 if errorlevel 1 (
@@ -346,12 +350,12 @@ if errorlevel 1 (
 
 echo.>> "%LOG_FILE%"
 echo [INFO] Device %DEVICE_ID% - checking autofill service>> "%LOG_FILE%"
-for /f "delims=" %%A in ('adb -s "%DEVICE_ID%" shell settings get secure autofill_service 2^>^&1') do (
+for /f "delims=" %%A in ('"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" shell settings get secure autofill_service 2^>^&1') do (
     if not defined ORIG_AUTOFILL_SERVICE_RESULT set "ORIG_AUTOFILL_SERVICE_RESULT=%%A"
 )
 if defined ORIG_AUTOFILL_SERVICE_RESULT set "ORIG_AUTOFILL_SERVICE=!ORIG_AUTOFILL_SERVICE_RESULT!"
 echo [INFO] Device %DEVICE_ID% - autofill_service before change: !ORIG_AUTOFILL_SERVICE!>> "%LOG_FILE%"
-adb -s "%DEVICE_ID%" shell settings put secure autofill_service null >> "%LOG_FILE%" 2>&1
+"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" shell settings put secure autofill_service null >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
     echo [WARN] Device %DEVICE_ID% - could not disable autofill_service, continuing>> "%LOG_FILE%"
 ) else (
@@ -359,7 +363,7 @@ if errorlevel 1 (
 )
 
 for %%P in (com.samsung.android.samsungpassautofill com.samsung.android.authfw) do (
-    adb -s "%DEVICE_ID%" shell cmd package disable-user --user 0 %%P >> "%LOG_FILE%" 2>&1
+    "%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" shell cmd package disable-user --user 0 %%P >> "%LOG_FILE%" 2>&1
     if errorlevel 1 (
         echo [WARN] Device %DEVICE_ID% - Samsung package not disabled/supported: %%P>> "%LOG_FILE%"
     ) else (
@@ -369,12 +373,12 @@ for %%P in (com.samsung.android.samsungpassautofill com.samsung.android.authfw) 
 
 if /I "%CLEAR_STATE%"=="true" (
     echo Clearing app state...>> "%LOG_FILE%"
-    adb -s "%DEVICE_ID%" shell pm clear "%APP_ID%" >> "%LOG_FILE%" 2>&1
+    "%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" shell pm clear "%APP_ID%" >> "%LOG_FILE%" 2>&1
     echo Clear-state exit code: !errorlevel!>> "%LOG_FILE%"
 )
 
 echo [INFO] Waking device display ^(KEYCODE_WAKEUP=224^) before Maestro...>> "%LOG_FILE%"
-adb -s "%DEVICE_ID%" shell input keyevent 224 >> "%LOG_FILE%" 2>&1
+"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" shell input keyevent 224 >> "%LOG_FILE%" 2>&1
 
 set "SIGNUP_RETRY_USED=0"
 if /I not "%FLOW_NAME%"=="flow1b" goto :run_maestro_default
@@ -460,9 +464,9 @@ REM ---- TC_ON_E02_* : Bluetooth must be off before the flow ----
 echo "%FLOW_NAME%" | findstr /I /C:"TC_ON_E02" >nul 2>&1
 if errorlevel 1 goto :skip_bt_off_for_on_e02
 echo [INFO] Flow %FLOW_NAME% - disabling Bluetooth via adb before Maestro ^(TC_ON_E02^)>> "%LOG_FILE%"
-adb -s "%DEVICE_ID%" shell cmd bluetooth_manager disable >> "%LOG_FILE%" 2>&1
+"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" shell cmd bluetooth_manager disable >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    adb -s "%DEVICE_ID%" shell svc bluetooth disable >> "%LOG_FILE%" 2>&1
+    "%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" shell svc bluetooth disable >> "%LOG_FILE%" 2>&1
 )
 echo [INFO] Bluetooth disable attempted for TC_ON_E02>> "%LOG_FILE%"
 :skip_bt_off_for_on_e02
@@ -490,7 +494,7 @@ if !_PREM! GTR 20 (
     goto :write_result
 )
 set "_PRE_ST="
-for /f "delims=" %%S in ('adb -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _PRE_ST set "_PRE_ST=%%S"
+for /f "delims=" %%S in ('"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _PRE_ST set "_PRE_ST=%%S"
 if /I "!_PRE_ST!"=="device" goto :pre_maestro_adb_ok
 call :sleep_seconds 1
 goto :pre_maestro_adb
@@ -527,7 +531,7 @@ if errorlevel 1 goto :maestro_default_fail
 
 echo [WARN] Log suggests ADB lost device %DEVICE_ID%; adb start-server, pause, re-wait, then Maestro once more...>> "%LOG_FILE%"
 set "MAESTRO_DEVICE_RETRY_USED=1"
-adb start-server >> "%LOG_FILE%" 2>&1
+"%ADB_EXE%" -P %ADB_SERVER_PORT% start-server >> "%LOG_FILE%" 2>&1
 call :sleep_seconds 5
 set /a "_MRW=0"
 :maestro_retry_wait_dev
@@ -537,7 +541,7 @@ if !_MRW! GTR 45 (
     goto :maestro_default_attempt
 )
 set "_MRW_ST="
-for /f "delims=" %%S in ('adb -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _MRW_ST set "_MRW_ST=%%S"
+for /f "delims=" %%S in ('"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _MRW_ST set "_MRW_ST=%%S"
 if /I "!_MRW_ST!"=="device" goto :maestro_default_attempt
 call :sleep_seconds 2
 goto :maestro_retry_wait_dev
@@ -641,7 +645,7 @@ if /I "%AUTOFILL_RESTORE_AFTER_TEST%"=="1" (
         echo [WARN] Device %DEVICE_ID% - no original autofill_service captured; skip restore>> "%LOG_FILE%"
     ) else (
         echo [INFO] Device %DEVICE_ID% - restoring autofill_service to !ORIG_AUTOFILL_SERVICE!>> "%LOG_FILE%"
-        adb -s "%DEVICE_ID%" shell settings put secure autofill_service "!ORIG_AUTOFILL_SERVICE!" >> "%LOG_FILE%" 2>&1
+        "%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" shell settings put secure autofill_service "!ORIG_AUTOFILL_SERVICE!" >> "%LOG_FILE%" 2>&1
         if errorlevel 1 (
             echo [WARN] Device %DEVICE_ID% - autofill restore failed, continuing>> "%LOG_FILE%"
         ) else (

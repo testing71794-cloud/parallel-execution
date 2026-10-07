@@ -361,14 +361,18 @@ def validate_device_health(device_id: str, *, suite_id: str, repo: Path) -> bool
     """adb responsive + boot completed before Maestro startup."""
     if os.environ.get("ATP_DEVICE_HEALTH_CHECK", "1").strip().lower() in ("0", "false", "no", "off"):
         return True
-    exe = _adb_exe()
-    if not exe:
+    from .subprocess_launch import adb_argv, ensure_adb_server_port_env
+
+    ensure_adb_server_port_env()
+    wait_cmd = adb_argv("-s", device_id, "wait-for-device")
+    boot_cmd = adb_argv("-s", device_id, "shell", "getprop", "sys.boot_completed")
+    if not wait_cmd or not boot_cmd:
         print(f"[ATP] device_health_skip device={_dev_log(device_id)} reason=adb_not_found", flush=True)
         return True
     t0 = time.time()
     try:
         w = subprocess.run(
-            [exe, "-s", device_id, "wait-for-device"],
+            wait_cmd,
             capture_output=True,
             text=True,
             timeout=45,
@@ -382,7 +386,7 @@ def validate_device_health(device_id: str, *, suite_id: str, repo: Path) -> bool
             return False
         for _ in range(15):
             proc = subprocess.run(
-                [exe, "-s", device_id, "shell", "getprop", "sys.boot_completed"],
+                boot_cmd,
                 capture_output=True,
                 text=True,
                 timeout=20,
@@ -453,12 +457,15 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _probe_adb_shell_ok(device_id: str) -> bool:
-    exe = _adb_exe()
-    if not exe:
+    from .subprocess_launch import adb_argv, ensure_adb_server_port_env
+
+    ensure_adb_server_port_env()
+    cmd = adb_argv("-s", device_id, "shell", "echo", "ok")
+    if not cmd:
         return False
     try:
         proc = subprocess.run(
-            [exe, "-s", device_id, "shell", "echo", "ok"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=12,

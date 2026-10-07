@@ -137,11 +137,14 @@ def adb_start_server(suite_id: str, repo: Path) -> None:
 
 
 def snapshot_adb_forwards(suite_id: str, repo: Path) -> None:
-    exe = _adb_exe()
-    if not exe:
+    from .subprocess_launch import adb_argv, ensure_adb_server_port_env
+
+    ensure_adb_server_port_env()
+    cmd = adb_argv("forward", "--list")
+    if not cmd:
         return
     try:
-        proc = subprocess.run([exe, "forward", "--list"], capture_output=True, text=True, timeout=30, check=False)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
         tail = ((proc.stdout or "") + (proc.stderr or ""))[:4000]
         log_lifecycle(repo, suite_id, WorkerState.CLEANUP, "adb forward --list snapshot", snapshot=tail)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -152,12 +155,15 @@ def _adb_clear_device_forwards(device_id: str, suite_id: str, repo: Path) -> Non
     """Remove stale tcp forwards for one serial before Maestro (parallel same-host safety)."""
     if os.environ.get("ATP_ORCH_CLEAR_DEVICE_FORWARDS", "1").strip().lower() in ("0", "false", "no", "off"):
         return
-    exe = _adb_exe()
-    if not exe:
+    from .subprocess_launch import adb_argv, ensure_adb_server_port_env
+
+    ensure_adb_server_port_env()
+    cmd = adb_argv("-s", device_id, "forward", "--remove-all")
+    if not cmd:
         return
     try:
         proc = subprocess.run(
-            [exe, "-s", device_id, "forward", "--remove-all"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=30,
@@ -535,6 +541,14 @@ def _apply_parallel_maestro_env(
 
     env["ANDROID_SERIAL"] = device_id
     env.pop("ANDROID_DEBUG_SERIAL", None)
+    # Keep bat/Maestro child on the same daemon as list_devices / orchestrator (not 5037).
+    from .subprocess_launch import ensure_adb_server_port_env, resolve_adb_executable
+
+    env["ADB_SERVER_PORT"] = ensure_adb_server_port_env()
+    adb_resolved = resolve_adb_executable()
+    if adb_resolved:
+        env["ADB_EXE"] = adb_resolved
+        env["ADB_HOME"] = str(Path(adb_resolved).parent)
 
     port_plan = planned_driver_port(launch_index)
     meta["driver_port_plan"] = port_plan
