@@ -18,13 +18,28 @@ if errorlevel 1 exit /b 1
 echo =====================================
 
 echo Checking ADB...
-where adb
+if not defined ADB_SERVER_PORT set "ADB_SERVER_PORT=5038"
+set "ANDROID_ADB_SERVER_PORT=%ADB_SERVER_PORT%"
+if not defined ADB_EXE (
+  if defined ADB_HOME if exist "%ADB_HOME%\adb.exe" set "ADB_EXE=%ADB_HOME%\adb.exe"
+)
+if not defined ADB_EXE (
+  where adb >nul 2>&1
+  if errorlevel 1 (
+    echo ERROR: adb not found on PATH. Set ANDROID_HOME or ADB_HOME.
+    exit /b 1
+  )
+  set "ADB_EXE=adb"
+)
+echo ADB_EXE=%ADB_EXE%
+echo ADB_SERVER_PORT=%ADB_SERVER_PORT%
+REM Must use -P: stock adb ignores ADB_SERVER_PORT; default 5037 hangs / conflicts on this agent.
+"%ADB_EXE%" -P %ADB_SERVER_PORT% start-server
 if errorlevel 1 (
-  echo ERROR: adb not found on PATH. Set ANDROID_HOME or ADB_HOME.
+  echo ERROR: adb start-server failed on port %ADB_SERVER_PORT%
   exit /b 1
 )
-adb start-server >nul 2>&1
-adb devices
+"%ADB_EXE%" -P %ADB_SERVER_PORT% devices
 if errorlevel 1 exit /b 1
 echo =====================================
 
