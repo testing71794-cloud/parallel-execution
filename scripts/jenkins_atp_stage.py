@@ -135,6 +135,7 @@ def _refresh_devices_on_this_agent(repo: Path) -> None:
     Camera/Collage/... each call this — reuse detected_devices.txt when ADB still healthy
     (avoids port-5038 double-bind churn every module).
     """
+    print("[jenkins_atp_stage] device refresh: begin", flush=True)
     if os.environ.get("ATP_REFRESH_DEVICES_BEFORE_RUN", "1").strip().lower() in (
         "0",
         "false",
@@ -150,17 +151,24 @@ def _refresh_devices_on_this_agent(repo: Path) -> None:
         "yes",
         "on",
     )
-    if existing and not force and _adb_devices_quick_ok(repo, existing):
+    if existing and not force:
         print(
-            f"[jenkins_atp_stage] reusing {len(existing)} device(s) from detected_devices.txt "
-            f"(ADB ok; set ATP_FORCE_DEVICE_REFRESH=1 to re-scan)",
+            f"[jenkins_atp_stage] device refresh: quick ADB check for {len(existing)} serial(s)...",
             flush=True,
         )
-        return
+        if _adb_devices_quick_ok(repo, existing):
+            print(
+                f"[jenkins_atp_stage] reusing {len(existing)} device(s) from detected_devices.txt "
+                f"(ADB ok; set ATP_FORCE_DEVICE_REFRESH=1 to re-scan)",
+                flush=True,
+            )
+            return
+        print("[jenkins_atp_stage] device refresh: quick check failed — full list_devices", flush=True)
     bat = repo / "scripts" / "windows_agent" / "list_devices.bat"
     if not bat.is_file():
         bat = repo / "scripts" / "list_devices.bat"
     if not bat.is_file():
+        print("[jenkins_atp_stage] WARN: list_devices.bat missing — skip refresh", flush=True)
         return
     print(
         f"[jenkins_atp_stage] refreshing detected_devices.txt on this agent ({bat.name})",
@@ -180,13 +188,22 @@ def _refresh_devices_on_this_agent(repo: Path) -> None:
         env.pop(_k, None)
     cmd = windows_cmd_bat_argv(bat, str(repo.resolve()))
     log_subprocess_launch(cmd, cwd=repo.resolve(), shell=False, label="list_devices")
-    subprocess.run(
-        cmd,
-        cwd=str(repo.resolve()),
-        env=env,
-        check=False,
-        shell=False,
-    )
+    # Cap wait: list_devices has internal retries; never block Camera stage forever.
+    try:
+        subprocess.run(
+            cmd,
+            cwd=str(repo.resolve()),
+            env=env,
+            check=False,
+            shell=False,
+            timeout=180,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            "[jenkins_atp_stage] WARN: list_devices timed out after 180s — continuing with existing detected_devices.txt",
+            flush=True,
+        )
+    print("[jenkins_atp_stage] device refresh: end", flush=True)
 
 
 def _log_orchestrator_fingerprint(repo: Path) -> None:
@@ -568,6 +585,7 @@ def cmd_run(folder: str, app: str, clear_state: str, maestro_cmd: str) -> int:
     if yaml_rc != 0:
         touch_flag(f"{sid}_failed.flag")
         return yaml_rc
+    print("[jenkins_atp_stage] YAML preflight OK — preparing suite / refreshing devices", flush=True)
     _prepare_gallery_openrouter(folder)
     _prepare_gallery_appium(folder)
     _prepare_editing_openrouter(folder)

@@ -153,21 +153,31 @@ try {
     $finished = $p.WaitForExit([Math]::Max($TimeoutSec, 1) * 1000)
     if (-not $finished) {
         Write-Host ("ERROR: adb " + $argText + " timed out after " + $TimeoutSec + "s - killing hung adb")
-        try { $p.Kill() } catch {}
+        try { if (-not $p.HasExited) { $p.Kill() } } catch {}
         Get-Process adb -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        # Never call Task.Result after a kill — it can block forever if pipes stay open.
         exit 2
     }
-    try { [void]$outTask.Wait(2000) } catch {}
-    try { [void]$errTask.Wait(2000) } catch {}
+    # Drain pipes briefly; never block forever on .Result
     $outText = ""
     $errText = ""
-    try { $outText = [string]$outTask.Result } catch {}
-    try { $errText = [string]$errTask.Result } catch {}
+    try { [void]$outTask.Wait(3000) } catch {}
+    try { [void]$errTask.Wait(3000) } catch {}
+    if ($outTask.IsCompleted) {
+        try { $outText = [string]$outTask.Result } catch { $outText = "" }
+    }
+    if ($errTask.IsCompleted) {
+        try { $errText = [string]$errTask.Result } catch { $errText = "" }
+    }
 
     # ASCII/UTF8 no BOM so cmd for /f and batch parsers work.
     $utf8 = New-Object System.Text.UTF8Encoding $false
     if (-not $tempOut) {
-        [System.IO.File]::WriteAllText($outPath, $outText, $utf8)
+        try {
+            [System.IO.File]::WriteAllText($outPath, $outText, $utf8)
+        } catch {
+            Write-Host ("WARN: could not write OutFile: " + $_.Exception.Message)
+        }
     }
     if (-not [string]::IsNullOrWhiteSpace($outText)) {
         Write-Host $outText.TrimEnd()
