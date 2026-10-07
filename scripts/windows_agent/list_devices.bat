@@ -1,9 +1,10 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-REM script_rev=2026-08-windows-agent-list-devices-adb-reuse-3
+REM script_rev=2026-10-windows-agent-list-devices-utf8-parse-4
 REM Writes detected_devices.txt under the Jenkins workspace (paths may contain spaces).
-REM Force ADB_SERVER_PORT=5038 — default 5037 hangs on CA Global agent.
-REM Reuse existing ADB on 5038 across ATP modules (Camera/Collage/...) — no double bind 10048.
+REM Force ADB_SERVER_PORT=5038 - default 5037 hangs on CA Global agent.
+REM Reuse existing ADB on 5038 across ATP modules - no double bind 10048.
+REM Parse device serials in PowerShell (UTF-8 safe). Avoid cmd for /f on UTF-16 dumps.
 goto :script_body
 
 REM Sleep without timeout.exe (Jenkins non-TTY safe).
@@ -16,7 +17,7 @@ ping 127.0.0.1 -n !_ss_ping! >nul
 exit /b 0
 
 :script_body
-REM Optional %1 = workspace root (from Python cmd.exe argv); else WORKSPACE env; else parent of scripts\.
+REM Optional %1 = workspace root; else WORKSPACE env; else parent of scripts\.
 set "REPO_ROOT="
 if not "%~1"=="" (
   for %%I in ("%~1") do set "REPO_ROOT=%%~fI"
@@ -35,14 +36,13 @@ cd /d "%REPO_ROOT%"
 if not defined ADB_SERVER_PORT set "ADB_SERVER_PORT=5038"
 
 set "OUT_FILE=%REPO_ROOT%\detected_devices.txt"
-set "DEBUG_LOG=%REPO_ROOT%\reports\_agent\list_devices_debug.log"
-if not exist "%REPO_ROOT%\reports\_agent" mkdir "%REPO_ROOT%\reports\_agent"
+REM Prefer %%TEMP%% for intermediates to avoid workspace file locks.
+set "ADB_DEVICES_TMP=%TEMP%\kodak_adb_devices_%RANDOM%.txt"
 
-(
 echo =====================================
-echo LIST DEVICES ^(windows_agent^)
+echo LIST DEVICES (windows_agent)
 echo =====================================
-echo script_rev        : 2026-08-windows-agent-list-devices-adb-reuse-3
+echo script_rev        : 2026-10-windows-agent-list-devices-utf8-parse-4
 echo arg1 workspace    : %~1
 echo WORKSPACE env     : %WORKSPACE%
 echo REPO_ROOT         : %REPO_ROOT%
@@ -50,46 +50,45 @@ echo CD                : %CD%
 echo OUT_FILE          : %OUT_FILE%
 echo ADB_SERVER_PORT   : %ADB_SERVER_PORT%
 echo =====================================
-) > "%DEBUG_LOG%"
 
-call "%~dp0set_adb_env.bat" >> "%DEBUG_LOG%" 2>&1
+call "%~dp0set_adb_env.bat"
 if errorlevel 1 (
-  echo ERROR: set_adb_env.bat failed>> "%DEBUG_LOG%"
-  type "%DEBUG_LOG%"
+  echo ERROR: set_adb_env.bat failed
   exit /b 1
 )
 if not defined ADB_SERVER_PORT set "ADB_SERVER_PORT=5038"
 
-REM Optional: log Java/Maestro paths when set_maestro_java is available (not required for adb).
 if exist "%~dp0..\set_maestro_java.bat" (
-  call "%~dp0..\set_maestro_java.bat" >> "%DEBUG_LOG%" 2>&1
+  call "%~dp0..\set_maestro_java.bat" >nul 2>&1
 )
 if not defined ADB_SERVER_PORT set "ADB_SERVER_PORT=5038"
 
 if not defined ADB_DETECT_WAIT_ATTEMPTS set "ADB_DETECT_WAIT_ATTEMPTS=4"
 if not defined ADB_DETECT_WAIT_SECS set "ADB_DETECT_WAIT_SECS=3"
 
-echo =========================>> "%DEBUG_LOG%"
-echo Connected Android devices>> "%DEBUG_LOG%"
-echo =========================>> "%DEBUG_LOG%"
+echo =========================
+echo Connected Android devices
+echo =========================
 
 if not defined ADB_EXE (
   if defined ADB_HOME if exist "%ADB_HOME%\adb.exe" set "ADB_EXE=%ADB_HOME%\adb.exe"
 )
 if not defined ADB_EXE if exist "C:\Tools\platform-tools\adb.exe" set "ADB_EXE=C:\Tools\platform-tools\adb.exe"
 if not defined ADB_EXE (
-  echo ERROR: adb.exe not found. Set ANDROID_HOME or add platform-tools to PATH.>> "%DEBUG_LOG%"
-  type "%DEBUG_LOG%"
+  echo ERROR: adb.exe not found. Set ANDROID_HOME or add platform-tools to PATH.
   exit /b 1
 )
-echo ADB_EXE=%ADB_EXE%>> "%DEBUG_LOG%"
-echo ADB_SERVER_PORT=%ADB_SERVER_PORT%>> "%DEBUG_LOG%"
 echo ADB_EXE="%ADB_EXE%"
+echo ADB_SERVER_PORT=%ADB_SERVER_PORT%
 
 set "ADB_TIMEOUT_PS=%~dp0adb_run_timeout.ps1"
+set "PARSE_PS=%~dp0parse_adb_devices.ps1"
 if not exist "%ADB_TIMEOUT_PS%" (
-  echo ERROR: missing "%ADB_TIMEOUT_PS%">> "%DEBUG_LOG%"
-  type "%DEBUG_LOG%"
+  echo ERROR: missing "%ADB_TIMEOUT_PS%"
+  exit /b 1
+)
+if not exist "%PARSE_PS%" (
+  echo ERROR: missing "%PARSE_PS%"
   exit /b 1
 )
 
@@ -98,73 +97,53 @@ del /q "%OUT_FILE%" 2>nul
 set /a "_ATT=0"
 :detect_loop
 set /a "_ATT+=1"
-echo.>> "%DEBUG_LOG%"
-echo [detect] attempt !_ATT!/%ADB_DETECT_WAIT_ATTEMPTS% ^(wait %ADB_DETECT_WAIT_SECS%s^)>> "%DEBUG_LOG%"
 echo.
-echo [detect] attempt !_ATT!/%ADB_DETECT_WAIT_ATTEMPTS% ^(wait %ADB_DETECT_WAIT_SECS%s^)
+echo [detect] attempt !_ATT!/%ADB_DETECT_WAIT_ATTEMPTS% (wait %ADB_DETECT_WAIT_SECS%s)
 
-if !_ATT! GTR 1 (
-  echo [detect] restarting ADB server...>> "%DEBUG_LOG%"
+REM Only restart ADB on later attempts - early kills race with device enumeration.
+if !_ATT! GEQ 3 (
   echo [detect] restarting ADB server...
   taskkill /F /IM adb.exe /T >nul 2>&1
   call :sleep_seconds 2
 )
 
-echo Starting/reusing ADB server on port %ADB_SERVER_PORT%...>> "%DEBUG_LOG%"
 echo Starting/reusing ADB server on port %ADB_SERVER_PORT%...
-REM Timed start-server (skipped if port already listening). Never force a second nodaemon.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ADB_TIMEOUT_PS%" -AdbExe "%ADB_EXE%" -AdbArgs start-server -TimeoutSec 8 >> "%DEBUG_LOG%" 2>&1
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ADB_TIMEOUT_PS%" -AdbExe "%ADB_EXE%" -EnsureServer >> "%DEBUG_LOG%" 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ADB_TIMEOUT_PS%" -AdbExe "%ADB_EXE%" -AdbArgs start-server -TimeoutSec 8
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ADB_TIMEOUT_PS%" -AdbExe "%ADB_EXE%" -EnsureServer
 call :sleep_seconds 1
 
-REM Write adb devices to a temp file first — for /f ('"path with spaces" ...') breaks on users like "CA Global".
-set "ADB_DEVICES_TMP=%REPO_ROOT%\reports\_agent\adb_devices_list.txt"
 del /q "%ADB_DEVICES_TMP%" 2>nul
-echo.>> "%DEBUG_LOG%"
-echo --- adb devices ^(full output, timeout 25s, port %ADB_SERVER_PORT%^) --->> "%DEBUG_LOG%"
-echo --- adb devices ^(full output, timeout 25s^) ---
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ADB_TIMEOUT_PS%" -AdbExe "%ADB_EXE%" -AdbArgs devices -TimeoutSec 25 -OutFile "%ADB_DEVICES_TMP%" >> "%DEBUG_LOG%" 2>&1
-set "ADB_EC=!ERRORLEVEL!"
+echo --- adb devices (full output, timeout 25s, port %ADB_SERVER_PORT%) ---
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ADB_TIMEOUT_PS%" -AdbExe "%ADB_EXE%" -AdbArgs devices -TimeoutSec 25 -OutFile "%ADB_DEVICES_TMP%"
 if not exist "%ADB_DEVICES_TMP%" (
   echo. > "%ADB_DEVICES_TMP%"
 )
-if not "!ADB_EC!"=="0" if not "!ADB_EC!"=="1" (
-  echo [WARN] adb devices soft-fail exit=!ADB_EC! on attempt !_ATT!>> "%DEBUG_LOG%"
-)
-type "%ADB_DEVICES_TMP%" >> "%DEBUG_LOG%"
-type "%ADB_DEVICES_TMP%"
-echo --- end adb devices --->> "%DEBUG_LOG%"
 echo --- end adb devices ---
-(
-for /f "usebackq skip=1 tokens=1,2" %%A in ("%ADB_DEVICES_TMP%") do (
-  if /I "%%B"=="device" echo %%A
-)
-) > "%OUT_FILE%"
 
-set /a COUNT=0
-for /f "usebackq delims=" %%A in ("%OUT_FILE%") do set /a COUNT+=1
+set "COUNT=0"
+for /f "usebackq delims=" %%C in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%PARSE_PS%" -InFile "%ADB_DEVICES_TMP%" -OutFile "%OUT_FILE%"`) do set "COUNT=%%C"
+if not defined COUNT set "COUNT=0"
+echo !COUNT!| findstr /r "^[0-9][0-9]*$" >nul || set "COUNT=0"
 
 if !COUNT! GTR 0 goto :detect_done
 
 if !_ATT! LSS %ADB_DETECT_WAIT_ATTEMPTS% (
-  echo [WARN] No device in state "device" yet; waiting %ADB_DETECT_WAIT_SECS%s...>> "%DEBUG_LOG%"
   echo [WARN] No device in state "device" yet; waiting %ADB_DETECT_WAIT_SECS%s...
   call :sleep_seconds %ADB_DETECT_WAIT_SECS%
   goto :detect_loop
 )
 
-echo.>> "%DEBUG_LOG%"
-echo Devices detected: 0>> "%DEBUG_LOG%"
-echo Device list saved to: "%OUT_FILE%">> "%DEBUG_LOG%"
-type "%DEBUG_LOG%"
+echo.
+echo Devices detected: 0
+echo Device list saved to: "%OUT_FILE%"
+del /q "%ADB_DEVICES_TMP%" 2>nul
 exit /b 1
 
 :detect_done
-echo.>> "%DEBUG_LOG%"
-echo Devices detected: !COUNT!>> "%DEBUG_LOG%"
-echo Device list saved to: "%OUT_FILE%">> "%DEBUG_LOG%"
-echo [DEBUG] list_devices OK — wrote "%OUT_FILE%">> "%DEBUG_LOG%"
 echo.
 echo Devices detected: !COUNT!
+echo Device list saved to: "%OUT_FILE%"
+echo [DEBUG] list_devices OK - wrote "%OUT_FILE%"
 type "%OUT_FILE%"
+del /q "%ADB_DEVICES_TMP%" 2>nul
 exit /b 0

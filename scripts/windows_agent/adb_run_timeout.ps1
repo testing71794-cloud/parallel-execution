@@ -129,36 +129,54 @@ try {
         exit $p.ExitCode
     }
 
-    # devices / other: redirect via Start-Process (safe with spaces in paths)
-    Remove-Item -LiteralPath $outPath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $errPath -Force -ErrorAction SilentlyContinue
-    $p = Start-Process -FilePath $AdbExe -ArgumentList $AdbArgs `
-        -WorkingDirectory $workDir `
-        -WindowStyle Hidden -PassThru `
-        -RedirectStandardOutput $outPath `
-        -RedirectStandardError $errPath
-    $finished = $p.WaitForExit($TimeoutSec * 1000)
+    # devices / other: use Process + UTF8 streams.
+    # Start-Process -RedirectStandardOutput writes UTF-16; cmd for /f then fails to
+    # match "device" even though type/console still shows serials (Jenkins false negative).
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $AdbExe
+    $psi.Arguments = ($AdbArgs | ForEach-Object {
+        if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ }
+    }) -join ' '
+    $psi.WorkingDirectory = $workDir
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    [void]$p.Start()
+    $outTask = $p.StandardOutput.ReadToEndAsync()
+    $errTask = $p.StandardError.ReadToEndAsync()
+    $finished = $p.WaitForExit([Math]::Max($TimeoutSec, 1) * 1000)
     if (-not $finished) {
         Write-Host ("ERROR: adb " + $argText + " timed out after " + $TimeoutSec + "s - killing hung adb")
-        try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
+        try { $p.Kill() } catch {}
         Get-Process adb -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        if (Test-Path -LiteralPath $outPath) { Get-Content -LiteralPath $outPath -ErrorAction SilentlyContinue | Write-Host }
-        if (Test-Path -LiteralPath $errPath) { Get-Content -LiteralPath $errPath -ErrorAction SilentlyContinue | Write-Host }
         exit 2
     }
-    if (Test-Path -LiteralPath $outPath) {
-        Get-Content -LiteralPath $outPath -ErrorAction SilentlyContinue | Write-Host
+    try { [void]$outTask.Wait(2000) } catch {}
+    try { [void]$errTask.Wait(2000) } catch {}
+    $outText = ""
+    $errText = ""
+    try { $outText = [string]$outTask.Result } catch {}
+    try { $errText = [string]$errTask.Result } catch {}
+
+    # ASCII/UTF8 no BOM so cmd for /f and batch parsers work.
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    if (-not $tempOut) {
+        [System.IO.File]::WriteAllText($outPath, $outText, $utf8)
     }
-    if (Test-Path -LiteralPath $errPath) {
-        $errText = Get-Content -LiteralPath $errPath -Raw -ErrorAction SilentlyContinue
-        if (-not [string]::IsNullOrWhiteSpace($errText)) { Write-Host $errText.TrimEnd() }
+    if (-not [string]::IsNullOrWhiteSpace($outText)) {
+        Write-Host $outText.TrimEnd()
+    }
+    if (-not [string]::IsNullOrWhiteSpace($errText)) {
+        Write-Host $errText.TrimEnd()
     }
     $code = 0
     if ($null -ne $p.ExitCode) { $code = [int]$p.ExitCode }
-    if ($tempOut -and (Test-Path -LiteralPath $outPath)) {
-        Remove-Item -LiteralPath $outPath -Force -ErrorAction SilentlyContinue
-    }
-    Remove-Item -LiteralPath $errPath -Force -ErrorAction SilentlyContinue
     exit $code
 } catch {
     Write-Host ("ERROR: failed to run adb: " + $_.Exception.Message)
