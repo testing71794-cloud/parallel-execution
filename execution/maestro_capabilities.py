@@ -174,7 +174,7 @@ def apply_legacy_parallel_env_defaults() -> None:
     os.environ.setdefault("ATP_MAESTRO_LEGACY_RUNTIME_MUTEX", "1")
     os.environ.setdefault("ATP_MAESTRO_DRIVER_PORTS", "0")
     if os.name == "nt":
-        os.environ.setdefault("ATP_PARALLEL_DEVICE_STAGGER_SEC", "2")
+        os.environ.setdefault("ATP_PARALLEL_DEVICE_STAGGER_SEC", "1")
     os.environ.setdefault("MAESTRO_PARALLEL_STARTUP_DELAY_SEC", "8")
 
 
@@ -187,7 +187,7 @@ def apply_native_parallel_env_defaults(
         caps = detect_maestro_capabilities(device_count=device_count)
     if not caps.native_parallel_enabled:
         return
-    os.environ.setdefault("ATP_PARALLEL_DEVICE_STAGGER_SEC", "2")
+    os.environ.setdefault("ATP_PARALLEL_DEVICE_STAGGER_SEC", "1")
     os.environ["ATP_MAESTRO_HANDSHAKE_GATE"] = "0"
     os.environ["ATP_NATIVE_PARALLEL_ACTIVE"] = "1"
     if caps.driver_host_port_supported:
@@ -226,7 +226,7 @@ def log_native_parallel_runtime_config(caps: MaestroCapabilities) -> None:
         flush=True,
     )
     print(f"[ATP] maestro_startup_gate={os.environ.get('ATP_MAESTRO_STARTUP_GATE', '')}", flush=True)
-    stagger = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or "2").strip()
+    stagger = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or "1").strip()
     print(f"[ATP] parallel_device_stagger_sec={stagger}", flush=True)
     print(
         f"[ATP] legacy_runtime_mutex={os.environ.get('ATP_MAESTRO_LEGACY_RUNTIME_MUTEX', '')}",
