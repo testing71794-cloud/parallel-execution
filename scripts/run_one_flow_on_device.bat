@@ -207,6 +207,12 @@ if exist "%MAESTRO_HOME%\maestro.bat" (
     set "MAESTRO_BIN=%MAESTRO_CMD%"
 )
 if not exist "%MAESTRO_BIN%" if exist "%MAESTRO_CMD%" set "MAESTRO_BIN=%MAESTRO_CMD%"
+REM Orchestrator passes a full path to maestro.bat — prefer that over set_maestro_java guess.
+if exist "%MAESTRO_CMD%" (
+  set "MAESTRO_BIN=%MAESTRO_CMD%"
+  for %%F in ("%MAESTRO_CMD%") do set "MAESTRO_HOME=%%~dpF"
+  set "MAESTRO_HOME=!MAESTRO_HOME:~0,-1!"
+)
 
 REM Maestro app root (parent of bin/) — used for direct java launch (no maestro.bat wrapper).
 set "MAESTRO_APP_HOME=%MAESTRO_HOME%\.."
@@ -322,7 +328,10 @@ if !_ADB_W! GTR %ADB_DEVICE_WAIT_ATTEMPTS% (
     goto :write_result
 )
 set "_ADB_STATE="
-for /f "delims=" %%S in ('"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _ADB_STATE set "_ADB_STATE=%%S"
+set "_ST_TMP=%TEMP%\atp_adb_state_%RANDOM%.txt"
+"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" get-state > "%_ST_TMP%" 2>nul
+if exist "%_ST_TMP%" set /p _ADB_STATE=<"%_ST_TMP%"
+del /q "%_ST_TMP%" 2>nul
 if /I "!_ADB_STATE!"=="device" (
     echo [INFO] Device %DEVICE_ID% online ^(get-state=device^) after !_ADB_W! attempt(s)>> "%LOG_FILE%"
     goto :adb_wait_device_done
@@ -334,19 +343,27 @@ goto :adb_wait_device_loop
 
 echo.>> "%LOG_FILE%"
 echo [INFO] Verifying app package is installed on device %DEVICE_ID%: %APP_ID%>> "%LOG_FILE%"
+REM Do NOT use for /f with quoted adb.exe paths — cmd breaks the command and falsely reports APP_NOT_INSTALLED.
+set "_PM_TMP=%TEMP%\atp_pm_path_%RANDOM%.txt"
 set "_PM_PATH_OUT="
-for /f "delims=" %%L in ('"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" shell pm path "%APP_ID%" 2^>^&1') do if not defined _PM_PATH_OUT set "_PM_PATH_OUT=%%L"
+"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" shell pm path %APP_ID% > "%_PM_TMP%" 2>&1
+if exist "%_PM_TMP%" (
+  set /p _PM_PATH_OUT=<"%_PM_TMP%"
+  type "%_PM_TMP%" >> "%LOG_FILE%"
+)
 echo [INFO] adb shell pm path output: !_PM_PATH_OUT!>> "%LOG_FILE%"
-echo !_PM_PATH_OUT! | findstr /i "package:" >nul 2>&1
+findstr /i "package:" "%_PM_TMP%" >nul 2>&1
 if errorlevel 1 (
     echo ERROR: App package not installed on device %DEVICE_ID%: %APP_ID%>> "%LOG_FILE%"
     echo ERROR: adb shell pm path must return a line starting with package:/>> "%LOG_FILE%"
     echo ERROR: Install the APK on this phone, then re-run. Jenkins does not install the app.>> "%LOG_FILE%"
+    del /q "%_PM_TMP%" 2>nul
     set "RUN_EXIT=23"
     set "STATUS_VALUE=FAIL"
     set "REASON=APP_NOT_INSTALLED"
     goto :write_result
 )
+del /q "%_PM_TMP%" 2>nul
 
 echo.>> "%LOG_FILE%"
 echo [INFO] Device %DEVICE_ID% - checking autofill service>> "%LOG_FILE%"
@@ -494,7 +511,11 @@ if !_PREM! GTR 20 (
     goto :write_result
 )
 set "_PRE_ST="
-for /f "delims=" %%S in ('"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _PRE_ST set "_PRE_ST=%%S"
+set "_PRE_ST="
+set "_PRE_TMP=%TEMP%\atp_adb_pre_%RANDOM%.txt"
+"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" get-state > "%_PRE_TMP%" 2>nul
+if exist "%_PRE_TMP%" set /p _PRE_ST=<"%_PRE_TMP%"
+del /q "%_PRE_TMP%" 2>nul
 if /I "!_PRE_ST!"=="device" goto :pre_maestro_adb_ok
 call :sleep_seconds 1
 goto :pre_maestro_adb
@@ -541,7 +562,11 @@ if !_MRW! GTR 45 (
     goto :maestro_default_attempt
 )
 set "_MRW_ST="
-for /f "delims=" %%S in ('"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" get-state 2^>nul') do if not defined _MRW_ST set "_MRW_ST=%%S"
+set "_MRW_ST="
+set "_MRW_TMP=%TEMP%\atp_adb_mrw_%RANDOM%.txt"
+"%ADB_EXE%" -P %ADB_SERVER_PORT% -s "%DEVICE_ID%" get-state > "%_MRW_TMP%" 2>nul
+if exist "%_MRW_TMP%" set /p _MRW_ST=<"%_MRW_TMP%"
+del /q "%_MRW_TMP%" 2>nul
 if /I "!_MRW_ST!"=="device" goto :maestro_default_attempt
 call :sleep_seconds 2
 goto :maestro_retry_wait_dev
