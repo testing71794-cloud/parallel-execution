@@ -34,16 +34,16 @@ def _dev_log(device_id: str) -> str:
 
 def parallel_device_stagger_sec(launch_index: int) -> float:
     """
-    Startup-only stagger: index 0 -> 0s, index 1 -> 2s, index 2 -> 4s (default step 2s).
-  Does not serialize flow execution after workers start.
+    Startup-only stagger: index 0 -> 0s, index 1 -> 1s, index 2 -> 2s (default step 1s).
+    Does not serialize flow execution after workers start.
     """
     if launch_index <= 0:
         return 0.0
-    raw = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or "2").strip()
+    raw = (os.environ.get("ATP_PARALLEL_DEVICE_STAGGER_SEC") or "1").strip()
     try:
         step = max(0.0, float(raw))
     except ValueError:
-        step = 2.0
+        step = 1.0
     return step * launch_index
 
 
@@ -56,6 +56,12 @@ def log_startup_stagger(device_id: str, launch_index: int) -> None:
         flush=True,
     )
     time.sleep(delay)
+
+
+def mark_startup_stagger_done(device_id: str) -> None:
+    """Record that this device already received its worker-start stagger (skip duplicate sleep)."""
+    with _stagger_lock:
+        _staggered_devices.add(device_id)
 
 
 def maybe_startup_stagger_once(device_id: str, launch_index: int) -> None:

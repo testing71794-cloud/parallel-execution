@@ -418,7 +418,7 @@ class _DeviceFlowOutcome:
 def _default_parallel_stagger_sec(device_count: int = 1) -> str:
     """Default startup stagger step (seconds per device index); execution stays parallel."""
     if device_count > 1:
-        return "2"
+        return "1"
     return "0"
 
 

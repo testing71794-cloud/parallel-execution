@@ -159,6 +159,24 @@ class DynamicDeviceScheduler:
             f"[ATP] worker_start device={_dev_log(device_id)} tasks={len(tasks)} ts={worker_t0:.3f}",
             flush=True,
         )
+        # Stagger worker begin so device N starts ~N seconds after device 0 (default 1s step).
+        try:
+            delay = float(self._worker_stagger_sec_fn(device_index) or 0.0)
+        except Exception:
+            delay = 0.0
+        if delay > 0:
+            print(
+                f"[ATP] worker_stagger device={_dev_log(device_id)} "
+                f"index={device_index} delay_sec={delay:.1f}",
+                flush=True,
+            )
+            time.sleep(delay)
+        try:
+            from .maestro_stabilization import mark_startup_stagger_done
+
+            mark_startup_stagger_done(device_id)
+        except Exception:
+            pass
         self._log_queue_status(device_id, len(tasks), "worker_start")
 
         for task_idx, task in enumerate(tasks):
