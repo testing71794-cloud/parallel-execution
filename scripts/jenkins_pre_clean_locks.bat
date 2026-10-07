@@ -1,24 +1,45 @@
 @echo off
 setlocal EnableExtensions
-REM Kill leftover Maestro/python holding workspace locks before deleteDir.
+REM Kill leftover Maestro/python/cmd holding workspace locks before deleteDir.
 REM Does NOT touch Jenkins agent.jar java processes.
 REM Safe with empty workspace (no repo scripts required).
+REM Optional arg: workspace path (defaults to %%CD%%).
 
-echo [pre-clean] Killing leftover maestro/python (not agent.jar)...
+set "WS=%~1"
+if "%WS%"=="" set "WS=%CD%"
+set "PRE_CLEAN_WS=%WS%"
+echo [pre-clean] workspace=%WS%
+echo [pre-clean] Killing leftover maestro/python/cmd (not agent.jar)...
 
-REM Use single-quoted -Filter only — cmd.exe does not treat \" as an escape,
-REM so -Filter \"Name='java.exe'\" becomes an invalid WMI query (HRESULT 0x80041017).
+REM No -Filter \"...\"; no regex \\. — WMI/cmd/Groovy-safe via -like and Name -eq.
 powershell -NoProfile -NonInteractive -Command ^
   "$ErrorActionPreference='SilentlyContinue';" ^
-  "Get-CimInstance Win32_Process -Filter 'Name=''java.exe''' |" ^
-  "  Where-Object { $_.CommandLine -match 'maestro\.cli\.AppKt' } |" ^
-  "  ForEach-Object { Write-Host ('[pre-clean] kill java PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null };" ^
-  "Get-CimInstance Win32_Process -Filter 'Name=''python.exe''' |" ^
-  "  Where-Object { $_.CommandLine -match 'jenkins_atp_stage|run_parallel' } |" ^
-  "  ForEach-Object { Write-Host ('[pre-clean] kill python PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null };" ^
+  "$ws = $env:PRE_CLEAN_WS;" ^
+  "$my = $PID;" ^
+  "Get-CimInstance Win32_Process | Where-Object {" ^
+  "  $_.ProcessId -ne $my -and $_.CommandLine -and" ^
+  "  ($_.CommandLine -notlike '*agent.jar*') -and ($_.CommandLine -notlike '*jenkins-agent*') -and (" ^
+  "    ($_.Name -eq 'java.exe' -and $_.CommandLine -like '*maestro.cli.AppKt*') -or" ^
+  "    ($_.Name -eq 'java.exe' -and $ws -and $_.CommandLine -like ('*' + $ws + '*')) -or" ^
+  "    ($_.Name -eq 'python.exe' -and (" ^
+  "      $_.CommandLine -like '*jenkins_atp_stage*' -or $_.CommandLine -like '*run_parallel*' -or" ^
+  "      $_.CommandLine -like '*atp_jenkins*' -or ($ws -and $_.CommandLine -like ('*' + $ws + '*')" ^
+  "    ))) -or" ^
+  "    ($_.Name -eq 'cmd.exe' -and (" ^
+  "      $_.CommandLine -like '*run_one_flow_on_device.bat*' -or $_.CommandLine -like '*maestro.bat*' -or" ^
+  "      ($ws -and $_.CommandLine -like ('*' + $ws + '*') -and $_.CommandLine -notlike '*jenkins_pre_clean_locks*')" ^
+  "    )) -or" ^
+  "    ($_.Name -eq 'maestro.exe')" ^
+  "  )" ^
+  "} | ForEach-Object {" ^
+  "  Write-Host ('[pre-clean] taskkill name=' + $_.Name + ' pid=' + $_.ProcessId);" ^
+  "  taskkill /PID $_.ProcessId /T /F | Out-Null" ^
+  "};" ^
   "Write-Host '[pre-clean] powershell pass done'"
 
 REM taskkill returns 128 when the image is not running — ignore that.
 taskkill /IM maestro.exe /F /T >nul 2>&1
+REM ping-sleep: timeout.exe fails under some Jenkins non-interactive redirects.
+ping -n 3 127.0.0.1 >nul
 echo [pre-clean] done
 exit /b 0

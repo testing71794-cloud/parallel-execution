@@ -165,7 +165,46 @@ pipeline {
         stage('Install Dependencies') {
             agent { label params.DEVICES_AGENT }
             steps {
-                deleteDir()
+                // Inline kill required when scripts/ wiped by a previous partial deleteDir.
+                bat '''
+@echo off
+echo [pre-clean] Killing leftover maestro/python/cmd locks...
+powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='SilentlyContinue'; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'java.exe' -and $_.CommandLine -like '*maestro.cli.AppKt*' } | ForEach-Object { Write-Host ('[pre-clean] kill java PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null }; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and ($_.CommandLine -like '*jenkins_atp_stage*' -or $_.CommandLine -like '*run_parallel*' -or $_.CommandLine -like '*atp_jenkins*') } | ForEach-Object { Write-Host ('[pre-clean] kill python PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null }; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'cmd.exe' -and ($_.CommandLine -like '*run_one_flow_on_device.bat*' -or $_.CommandLine -like '*maestro.bat*') } | ForEach-Object { Write-Host ('[pre-clean] kill cmd PID=' + $_.ProcessId); taskkill /PID $_.ProcessId /T /F | Out-Null }"
+taskkill /IM maestro.exe /F /T >nul 2>&1
+if exist scripts\\jenkins_pre_clean_locks.bat call scripts\\jenkins_pre_clean_locks.bat "%CD%"
+ping -n 3 127.0.0.1 >nul
+exit /b 0
+'''
+                script {
+                    def cleaned = false
+                    for (int i = 1; i <= 5; i++) {
+                        try {
+                            deleteDir()
+                            cleaned = true
+                            echo "[INFO] deleteDir ok on attempt ${i}"
+                            break
+                        } catch (Exception e) {
+                            echo "[WARN] deleteDir attempt ${i}/5 failed: ${e}"
+                            bat '''
+@echo off
+powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='SilentlyContinue'; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'java.exe' -and $_.CommandLine -like '*maestro.cli.AppKt*' } | ForEach-Object { taskkill /PID $_.ProcessId /T /F | Out-Null }; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and ($_.CommandLine -like '*jenkins_atp_stage*' -or $_.CommandLine -like '*run_parallel*') } | ForEach-Object { taskkill /PID $_.ProcessId /T /F | Out-Null }"
+taskkill /IM maestro.exe /F /T >nul 2>&1
+ping -n 4 127.0.0.1 >nul
+exit /b 0
+'''
+                        }
+                    }
+                    if (!cleaned) {
+                        bat '''
+@echo off
+echo [WARN] deleteDir exhausted — best-effort rd of workspace children
+for /d %%D in (*) do rd /s /q "%%D" 2>nul
+del /f /q * 2>nul
+exit /b 0
+'''
+                        echo '[WARN] Proceeding after best-effort workspace wipe (locked files may remain)'
+                    }
+                }
                 unstash 'repo'
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE', catchInterruptions: false) {
                     bat """call scripts\\jenkins_ci_install.bat "${env.WORKSPACE}" """
