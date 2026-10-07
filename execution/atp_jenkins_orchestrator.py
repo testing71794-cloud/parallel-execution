@@ -975,6 +975,28 @@ def run_atp_folder_blocking(
         except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
             pass
 
+    # Maestro/dadb discovers devices only on localhost:5037 (ignores ADB_SERVER_PORT).
+    # Bridge 5037 -> real daemon port so --device SERIAL works on this agent.
+    try:
+        from .adb_port_bridge import ensure_maestro_adb_bridge
+
+        bridge = ensure_maestro_adb_bridge(repo=repo, target_port=port)
+        print(
+            f"[ATP] maestro_adb_bridge ok={bridge.get('ok')} "
+            f"listen={bridge.get('listen_port')}->target={bridge.get('target_port')} "
+            f"started={bridge.get('started')} reused={bridge.get('reused')} "
+            f"detail={bridge.get('detail')}",
+            flush=True,
+        )
+        if not bridge.get("ok") and str(port) != "5037":
+            print(
+                "[ATP] WARN: Maestro will not see devices on non-default ADB port "
+                "(expect 'Device ... is not connected'). Fix bridge or set ADB_SERVER_PORT=5037.",
+                flush=True,
+            )
+    except Exception as e:
+        print(f"[ATP] WARN: maestro_adb_bridge failed: {e}", flush=True)
+
     time.sleep(1)
 
     try:

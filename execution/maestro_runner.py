@@ -541,10 +541,14 @@ def _apply_parallel_maestro_env(
 
     env["ANDROID_SERIAL"] = device_id
     env.pop("ANDROID_DEBUG_SERIAL", None)
-    # Keep bat/Maestro child on the same daemon as list_devices / orchestrator (not 5037).
+    # Scripts use ADB_SERVER_PORT (5038). Maestro/dadb still probes 5037 — orchestrator
+    # starts execution.adb_port_bridge (5037->5038). Also set ANDROID_ADB_SERVER_PORT for
+    # Maestro builds that honor it (mobile-dev-inc/maestro#3461 / PR #3578).
     from .subprocess_launch import ensure_adb_server_port_env, resolve_adb_executable
 
-    env["ADB_SERVER_PORT"] = ensure_adb_server_port_env()
+    adb_port = ensure_adb_server_port_env()
+    env["ADB_SERVER_PORT"] = adb_port
+    env["ANDROID_ADB_SERVER_PORT"] = adb_port
     adb_resolved = resolve_adb_executable()
     if adb_resolved:
         env["ADB_EXE"] = adb_resolved
