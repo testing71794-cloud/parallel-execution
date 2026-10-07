@@ -143,7 +143,8 @@ pipeline {
                 artifactNumToKeepStr: '3',
             )
         )
-        timeout(time: 180, unit: 'MINUTES')
+        // Full multi-module ATP on 3 devices often exceeds 3h; timeout abort skips later stages.
+        timeout(time: 480, unit: 'MINUTES')
     }
 
     triggers {

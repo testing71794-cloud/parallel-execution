@@ -14,12 +14,15 @@ def build_wrapper(app_id: str, target_flow: Path, out_path: Path) -> None:
     body = f"""appId: {app_id}
 ---
 # Auto-generated ATP recording wrapper (startRecording/stopRecording around target flow).
+# stopRecording is optional: parallel ADB often hits EOFException on stop even when the
+# flow body COMPLETED — without optional that falsely fails the whole run.
 - startRecording:
     path: recording
     optional: true
 - runFlow:
     file: "{flow_yaml}"
-- stopRecording
+- stopRecording:
+    optional: true
 """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(body, encoding="utf-8", newline="\n")
