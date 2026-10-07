@@ -1,14 +1,16 @@
 """
 Send final_execution_report.xlsx after parallel orchestration completes (HTML + attachments).
 
-HTML body shows FAILED tests only (Suite / Flow / Device / Status / Failure Reason /
-AI Analysis / Screenshot / Video), matching the Jenkins Failed Tests report, plus a
-Failed Test Artifacts zip link when BUILD_URL is set.
+HTML body includes:
+  1) Run overview (Total / Passed / Failed / Git Branch / Generated on)
+  2) Detailed Results table (Suite / Flow / Device / Status / Exit Code / AI Analysis)
+     matching the Excel Flow Report sheet
+  3) Failed Tests section (with screenshot/video links when available)
 
 Default attachments:
-  1) final_execution_report.xlsx
+  1) final_execution_report.xlsx  (always — detailed workbook)
   2) execution_logs.zip (existing, or auto-built from reports/**/*.log)
-  3) failed_tests_artifacts.zip when present (failed logs/screenshots/videos)
+  3) failed_tests_artifacts.zip when present (failed logs/screenshots, videos)
 
 Optional AI files (intelligent_platform): set ORCH_EMAIL_ATTACH_AI=1, then
   + ai_intelligence_report.xlsx, intelligence_result.json when present.
@@ -316,9 +318,22 @@ def _apply_display_to_email_rows(rows: list[dict[str, str]]) -> list[dict[str, s
 
 def _git_branch_for_summary(sheet_kv: dict[str, str]) -> str:
     branch = (sheet_kv.get("Git Branch") or "").strip()
-    if branch and branch.lower() != "unknown":
+    if branch and branch.lower() not in ("unknown", "null", "none"):
+        if branch.startswith("origin/"):
+            branch = branch[len("origin/") :]
         return branch
-    return detect_git_branch(_REPO)
+    detected = detect_git_branch(_REPO)
+    if detected and detected.lower() not in ("unknown", "null", "none"):
+        if detected.startswith("origin/"):
+            detected = detected[len("origin/") :]
+        return detected
+    for env_name in ("GIT_BRANCH", "BRANCH_NAME", "GIT_LOCAL_BRANCH"):
+        env_b = (os.environ.get(env_name) or "").strip()
+        if env_b and env_b.lower() not in ("unknown", "null", "none"):
+            if env_b.startswith("origin/"):
+                env_b = env_b[len("origin/") :]
+            return env_b
+    return "unknown"
 
 
 def _parse_table_rows_for_sheet(
@@ -531,38 +546,39 @@ def build_summary_display_pairs(
 ) -> list[tuple[str, str]]:
     """
     Build ordered (label, value) lines for the email, matching the Excel Summary sheet
-    (Total / Passed / Failed) like the Gmail xlsx thumbnail.
+    (Failed / Git Branch / Generated on) like the Gmail xlsx thumbnail.
     """
     if sheet_kv:
         rows_out: list[tuple[str, str]] = []
-        if "Total rows" in sheet_kv:
-            rows_out.append(("Total tests", sheet_kv["Total rows"]))
-        elif "Total" in sheet_kv:
-            rows_out.append(("Total tests", sheet_kv["Total"]))
+        total = sheet_kv.get("Total") or sheet_kv.get("Total rows") or ""
+        if total:
+            rows_out.append(("Total", total))
 
         if "Passed" in sheet_kv:
             rows_out.append(("Passed", sheet_kv["Passed"]))
 
-        fk = "Failed (non-PASS, excl. flaky count below)"
-        if fk in sheet_kv:
-            rows_out.append(("Failed", sheet_kv[fk]))
-        elif "Failed" in sheet_kv and fk not in sheet_kv:
+        fk_legacy = "Failed (non-PASS, excl. flaky count below)"
+        if "Failed" in sheet_kv:
             rows_out.append(("Failed", sheet_kv["Failed"]))
+        elif fk_legacy in sheet_kv:
+            rows_out.append(("Failed", sheet_kv[fk_legacy]))
 
         if "Flaky" in sheet_kv and sheet_kv["Flaky"] not in ("0", ""):
             rows_out.append(("Flaky", sheet_kv["Flaky"]))
 
         rows_out.append(("Git Branch", _git_branch_for_summary(sheet_kv)))
 
-        if "Generated" in sheet_kv and str(sheet_kv["Generated"]).strip():
-            rows_out.append(("Generated on", sheet_kv["Generated"]))
-        else:
-            rows_out.append(("Generated on", generated_on))
+        gen = (
+            sheet_kv.get("Generated on")
+            or sheet_kv.get("Generated")
+            or generated_on
+        )
+        rows_out.append(("Generated on", str(gen).strip() or generated_on))
         return rows_out
 
     comp = compute_summary_from_rows(table_rows)
     rows_out = [
-        ("Total tests", comp.get("Total rows", "0")),
+        ("Total", comp.get("Total rows", "0")),
         ("Passed", comp.get("Passed", "0")),
         ("Failed", comp.get("Failed (non-PASS)", "0")),
     ]
@@ -625,6 +641,70 @@ def _status_html_class(status: str) -> str:
     return "st-other"
 
 
+def _detailed_results_html(rows: list[dict[str, str]]) -> str:
+    """Full detailed table matching project Flow Report (Suite/Flow/Device/Status/Exit/AI)."""
+    if not rows:
+        return (
+            '<p class="sub" style="margin:12px 0 16px;">No detailed results rows available.</p>'
+        )
+    trs = [
+        "<tr>"
+        "<th>Suite</th><th>Flow</th><th>Device</th><th>Status</th>"
+        "<th>Exit Code</th><th>AI Analysis</th>"
+        "</tr>"
+    ]
+    for row in rows:
+        suite = str(row.get("suite") or "—")
+        flow = str(row.get("flow") or "—")
+        device = str(row.get("device") or row.get("device_id") or "—")
+        status = str(row.get("status") or "UNKNOWN")
+        exit_code = str(row.get("exit_code") or "0")
+        ai = str(row.get("ai_analyses") or row.get("ai_analysis") or "—").strip() or "—"
+        st_u = status.upper()
+        if st_u == "PASS" and ai in ("", "N/A", "NOT_CHECKED"):
+            ai = "—"
+        elif st_u != "PASS" and ai in ("", "—", "N/A", "NOT_CHECKED"):
+            ai = "Failure recorded; inspect log for the exact Maestro line."
+        cls = _status_html_class(status)
+        ai_short = ai if len(ai) <= 220 else ai[:220] + "…"
+        trs.append(
+            "<tr>"
+            f"<td>{html.escape(suite)}</td>"
+            f"<td>{html.escape(flow)}</td>"
+            f"<td>{html.escape(device)}</td>"
+            f'<td class="{cls}"><strong>{html.escape(status)}</strong></td>'
+            f"<td>{html.escape(exit_code)}</td>"
+            f'<td class="c-ai" title="{html.escape(ai, quote=True)}">{html.escape(ai_short)}</td>'
+            "</tr>"
+        )
+    return (
+        '<p class="sub" style="margin:12px 0 6px; font-weight:600; color:#1f4e79;">'
+        "Detailed Results</p>"
+        '<table class="ex" role="presentation" style="margin-bottom:18px;">'
+        f'{"".join(trs)}</table>'
+    )
+
+
+def _detailed_results_plain(rows: list[dict[str, str]]) -> str:
+    lines = [
+        "Detailed Results",
+        "Suite | Flow | Device | Status | Exit Code | AI Analysis",
+        "-" * 100,
+    ]
+    if not rows:
+        lines.append("No detailed results rows available.")
+        return "\n".join(lines)
+    for row in rows:
+        suite = str(row.get("suite") or "—")
+        flow = str(row.get("flow") or "—")
+        device = str(row.get("device") or row.get("device_id") or "—")
+        status = str(row.get("status") or "UNKNOWN")
+        exit_code = str(row.get("exit_code") or "0")
+        ai = str(row.get("ai_analyses") or row.get("ai_analysis") or "—")[:80]
+        lines.append(f"{suite} | {flow} | {device} | {status} | {exit_code} | {ai}")
+    return "\n".join(lines)
+
+
 def build_email_html(
     rows: list[dict[str, str]],
     generated_on: str,
@@ -633,10 +713,21 @@ def build_email_html(
     summary_pairs: list[tuple[str, str]] | None = None,
     *,
     artifact_url: str | None = None,
+    failed_rows: list[dict[str, str]] | None = None,
 ) -> str:
-    # Email body shows FAILED tests only (Suite/Flow/Device/Status/Reason/AI/Screenshot/Video).
-    failed_rows = _filter_failed_email_rows(rows)
-    table_body = _failed_tests_summary_html(failed_rows, artifact_url=artifact_url)
+    # Full detailed table (like Excel Flow Report) + failed-tests section with artifacts.
+    detail_rows = sorted(
+        rows,
+        key=lambda r: (
+            str(r.get("suite") or "").casefold(),
+            str(r.get("flow") or "").casefold(),
+            str(r.get("device") or "").casefold(),
+        ),
+    )
+    failed = failed_rows if failed_rows is not None else _filter_failed_email_rows(rows)
+    table_body = _detailed_results_html(detail_rows) + _failed_tests_summary_html(
+        failed, artifact_url=artifact_url
+    )
     if error_note:
         table_body = f'<p class="warn">{html.escape(error_note)}</p>{table_body}'
 
@@ -652,11 +743,11 @@ def build_email_html(
   .warn {{ color: #a94442; background: #fbe8e6; padding: 8px; border-radius: 4px; }}
   table.ex {{ border-collapse: collapse; width: 100%; max-width: 1200px; border: 1px solid #000; }}
   table.ex th, table.ex td {{ border: 1px solid #000; padding: 8px 10px; text-align: left; vertical-align: top; word-break: break-word; }}
-  .c-ai {{ max-width: 280px; font-size: 13px; line-height: 1.35; color: #222; }}
+  .c-ai {{ max-width: 320px; font-size: 13px; line-height: 1.35; color: #222; }}
   table.ex th {{ background: #2e5c8a; color: #fff; font-weight: 600; }}
-  .st-pass {{ color: #1b5e20; background: #e8f5e9; font-weight: bold; }}
-  .st-fail {{ color: #b71c1c; background: #ffebee; font-weight: bold; }}
-  .st-flaky {{ color: #e65100; background: #fff3e0; font-weight: bold; }}
+  .st-pass {{ color: #006100; background: #c6efce; font-weight: bold; }}
+  .st-fail {{ color: #9c0006; background: #ffc7ce; font-weight: bold; }}
+  .st-flaky {{ color: #9c5700; background: #fff2cc; font-weight: bold; }}
   .st-other {{ color: #333; background: #f5f5f5; font-weight: bold; }}
   a {{ color: #1565c0; }}
 </style>
@@ -666,7 +757,7 @@ def build_email_html(
   {_summary_stats_html(summary_pairs if summary_pairs else [("Generated on", generated_on)])}
   {table_body}
   {_attachments_block_html(attachment_labels or [])}
-  <p class="sub" style="margin-top:20px;">This message was sent by Jenkins automation. See the attachment list above.</p>
+  <p class="sub" style="margin-top:20px;">This message was sent by Jenkins automation. Open <b>final_execution_report.xlsx</b> for the full color-coded Flow Report.</p>
 </body>
 </html>"""
 
@@ -688,6 +779,7 @@ def build_email_plain(
     summary_pairs: list[tuple[str, str]] | None = None,
     *,
     artifact_url: str | None = None,
+    failed_rows: list[dict[str, str]] | None = None,
 ) -> str:
     lines = [
         "Kodak Smile Execution Summary",
@@ -699,21 +791,27 @@ def build_email_plain(
     if error_note:
         lines.append(error_note)
         lines.append("")
-    failed_rows = _filter_failed_email_rows(rows)
-    lines.append(_failed_tests_summary_plain(failed_rows, artifact_url=artifact_url))
+    detail_rows = sorted(
+        rows,
+        key=lambda r: (
+            str(r.get("suite") or "").casefold(),
+            str(r.get("flow") or "").casefold(),
+            str(r.get("device") or "").casefold(),
+        ),
+    )
+    lines.append(_detailed_results_plain(detail_rows))
+    lines.append("")
+    failed = failed_rows if failed_rows is not None else _filter_failed_email_rows(rows)
+    lines.append(_failed_tests_summary_plain(failed, artifact_url=artifact_url))
     lines.append("")
     lines.append("Attachments:")
     for name in attachment_labels or []:
         lines.append(f"  - {name}")
     lines.append("")
-    if _orch_email_attach_ai():
-        lines.append(
-            "The execution workbook, optional AI analysis files, and the log zip (when present) are attached."
-        )
-    else:
-        lines.append(
-            "The execution workbook and execution_logs.zip (when log files are present) are attached."
-        )
+    lines.append(
+        "Open final_execution_report.xlsx for the full color-coded Flow Report "
+        "(Suite / Flow / Device / Status / Exit Code / AI Analysis)."
+    )
     return "\n".join(lines)
 
 
@@ -1046,7 +1144,7 @@ def send_execution_report_email(
     else:
         table_rows, table_err = read_execution_table_rows(excel_path)
         table_rows = _apply_display_to_email_rows(table_rows)
-        # Email body: FAILED tests only (Suite/Flow/Device/Status/Reason/AI/Screenshot/Video)
+        # Failed section: enrich with screenshot/video from collect_failed_artifacts
         failed_email_rows = _filter_failed_email_rows(table_rows)
         failed_email_rows = _enrich_rows_from_failed_summary(
             failed_email_rows, failed_summary_rows
@@ -1076,29 +1174,37 @@ def send_execution_report_email(
                     "device": render_device_display("", str(item.get("device_id") or "")),
                     "device_id": str(item.get("device_id") or ""),
                     "status": str(item.get("status") or "FAIL"),
+                    "exit_code": "1",
                     "failure_reason": str(item.get("failure_reason") or "MAESTRO_FAILED"),
-                    "ai_analyses": "—",
+                    "ai_analyses": "Failure recorded; inspect log for the exact Maestro line.",
                     "video_artifact": str(item.get("video_artifact") or ""),
                     "screenshot_artifact": str(item.get("screenshot_artifact") or ""),
                 }
             )
         sheet_kv = read_summary_sheet_key_values(excel_path)
         summary_pairs = build_summary_display_pairs(sheet_kv, table_rows, gen_ts)
+        # Prefer listing the Excel workbook first in attachment labels
+        if attachment_labels and attachment_labels[0] != excel_path.name:
+            attachment_labels = [excel_path.name] + [
+                a for a in attachment_labels if a != excel_path.name
+            ]
         text_body = build_email_plain(
-            failed_email_rows,
+            table_rows,
             gen_ts,
             table_err,
             attachment_labels,
             summary_pairs,
             artifact_url=artifact_url,
+            failed_rows=failed_email_rows,
         )
         html_body = build_email_html(
-            failed_email_rows,
+            table_rows,
             gen_ts,
             table_err,
             attachment_labels,
             summary_pairs,
             artifact_url=artifact_url,
+            failed_rows=failed_email_rows,
         )
 
     if not smtp_server or not smtp_user or not smtp_pass or not receiver:
