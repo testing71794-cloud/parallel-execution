@@ -28,4 +28,7 @@ fi
 echo "[gcp-post] materialize execution_logs.zip"
 "$PY" -c "import sys; from pathlib import Path; r=Path('.').resolve(); sys.path.insert(0, str(r)); from mailout.send_email import build_execution_logs_zip; z=build_execution_logs_zip(r); print('execution_logs.zip =>', z)"
 
+echo "[gcp-post] collect failed logs/screenshots/videos for email + archive"
+"$PY" scripts/collect_failed_artifacts.py "$ROOT" || echo "[WARN] collect_failed_artifacts failed — email may lack videos"
+
 echo "[gcp-post] done"

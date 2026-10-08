@@ -494,6 +494,10 @@ exit /b 0
                         } else {
                             echo "[email] Excel ready: ${pwd()}/build-summary/final_execution_report.xlsx"
                         }
+                        // Archive videos before send so BUILD_URL links in the email body work immediately.
+                        if (fileExists('build-summary/failed-artifacts') || fileExists('build-summary/failed_tests_artifacts.zip')) {
+                            archiveArtifacts artifacts: 'build-summary/failed_tests_artifacts.zip, build-summary/failed-artifacts/**', allowEmptyArchive: true
+                        }
                         def mailTo = (params.EMAIL_TO ?: '').trim()
                         withCredentials([usernamePassword(credentialsId: 'gmail-smtp-kodak', usernameVariable: 'B_SMTP_USER', passwordVariable: 'B_SMTP_PASS')]) {
                             def receiver = mailTo ? mailTo : env.B_SMTP_USER
@@ -512,6 +516,8 @@ exit /b 0
                                 "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}/build-summary/final_execution_report.xlsx",
                                 "BRANCH_NAME=${env.BRANCH_NAME}",
                                 "GIT_BRANCH=${env.BRANCH_NAME}",
+                                "BUILD_URL=${env.BUILD_URL ?: ''}",
+                                'ORCH_EMAIL_ATTACH_VIDEOS=1',
                             ]) {
                                 sh """
                                     chmod +x scripts/gcp/*.sh 2>/dev/null || true
@@ -536,7 +542,7 @@ exit /b 0
                             }
                         }
                     }
-                    archiveArtifacts artifacts: 'build-summary/final_execution_report.xlsx, build-summary/execution_logs.zip, .maestro/screenshots/**, detected_devices.txt', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'build-summary/final_execution_report.xlsx, build-summary/execution_logs.zip, build-summary/failed_tests_artifacts.zip, build-summary/failed-artifacts/**, .maestro/screenshots/**, detected_devices.txt', allowEmptyArchive: true
                 }
             }
         }

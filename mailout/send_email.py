@@ -936,7 +936,7 @@ def _failed_tests_summary_html(rows: list[dict], *, artifact_url: str | None = N
         shot = str(row.get("screenshot_artifact") or "").strip()
         video = str(row.get("video_artifact") or "").strip()
         shot_cell = html.escape(shot) if shot else "—"
-        video_cell = html.escape(video) if video else "—"
+        video_cell = "—"
         if shot:
             shot_url = _jenkins_artifact_url(f"build-summary/failed-artifacts/{shot}")
             if shot_url:
@@ -944,7 +944,15 @@ def _failed_tests_summary_html(rows: list[dict], *, artifact_url: str | None = N
         if video:
             video_url = _jenkins_artifact_url(f"build-summary/failed-artifacts/{video}")
             if video_url:
-                video_cell = f'<a href="{html.escape(video_url)}">{html.escape(video)}</a>'
+                video_cell = (
+                    f'<a href="{html.escape(video_url)}"><strong>Watch video</strong></a>'
+                    f' <span style="color:#666;">({html.escape(video)})</span>'
+                )
+            else:
+                video_cell = (
+                    f"{html.escape(video)} "
+                    "<span style=\"color:#666;\">(see email attachment / failed_tests_artifacts.zip)</span>"
+                )
         cls = _status_html_class(status)
         ai_short = ai if len(ai) <= 200 else ai[:200] + "…"
         trs.append(
@@ -1028,9 +1036,70 @@ def _add_file_attachment(msg: EmailMessage, path: Path) -> None:
         )
     elif ext == ".zip":
         msg.add_attachment(data, maintype="application", subtype="zip", filename=name)
+    elif ext == ".mp4":
+        msg.add_attachment(data, maintype="video", subtype="mp4", filename=name)
+    elif ext == ".webm":
+        msg.add_attachment(data, maintype="video", subtype="webm", filename=name)
+    elif ext in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
+        sub = "jpeg" if ext in (".jpg", ".jpeg") else ext.lstrip(".")
+        msg.add_attachment(data, maintype="image", subtype=sub, filename=name)
     else:
         msg.add_attachment(data, maintype="application", subtype="octet-stream", filename=name)
     logger.info("Attached: %s (%d bytes)", name, len(data))
+
+
+def _orch_email_attach_videos() -> bool:
+    """Default on: attach failed mp4s (size-capped). Set ORCH_EMAIL_ATTACH_VIDEOS=0 to disable."""
+    raw = getenv_any("ORCH_EMAIL_ATTACH_VIDEOS", default="1").lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def resolve_failed_video_attachments(
+    root: Path,
+    *,
+    max_each_bytes: int = 12 * 1024 * 1024,
+    max_total_bytes: int = 20 * 1024 * 1024,
+    max_files: int = 8,
+) -> list[Path]:
+    """
+    Individual failed-test videos for direct email attach (Gmail ~25MB limit).
+    Prefer smaller compressed copies under build-summary/failed-artifacts/.
+    """
+    d = root.resolve() / "build-summary" / "failed-artifacts"
+    if not d.is_dir():
+        return []
+    videos = sorted(
+        [
+            p
+            for p in d.iterdir()
+            if p.is_file() and p.suffix.lower() in (".mp4", ".webm", ".mkv", ".mov")
+        ],
+        key=lambda p: p.stat().st_size,
+    )
+    out: list[Path] = []
+    total = 0
+    for p in videos:
+        size = p.stat().st_size
+        if size <= 0 or size > max_each_bytes:
+            logger.info(
+                "Skip video attach %s (%d bytes) — over per-file cap %d",
+                p.name,
+                size,
+                max_each_bytes,
+            )
+            continue
+        if total + size > max_total_bytes:
+            logger.info(
+                "Skip further video attaches after %d bytes (cap %d); remaining in zip",
+                total,
+                max_total_bytes,
+            )
+            break
+        out.append(p)
+        total += size
+        if len(out) >= max_files:
+            break
+    return out
 
 
 def _message_attachment_names(msg: EmailMessage) -> list[str]:
@@ -1127,6 +1196,7 @@ def send_execution_report_email(
     failed_summary_rows: list[dict] = []
     failed_zip: Path | None = None
     artifact_url: str | None = None
+    video_files: list[Path] = []
     if rroot is not None:
         failed_summary_rows, _ = load_failed_tests_summary(rroot)
         failed_zip = resolve_failed_tests_artifacts_zip(rroot)
@@ -1155,6 +1225,11 @@ def send_execution_report_email(
         attachment_labels.append(
             f"{failed_zip.name} (failed test logs, screenshots, videos)"
         )
+    video_files: list[Path] = []
+    if rroot is not None and _orch_email_attach_videos():
+        video_files = resolve_failed_video_attachments(rroot)
+        for vp in video_files:
+            attachment_labels.append(f"{vp.name} (failure video)")
 
     if body is not None:
         text_body = body
@@ -1258,6 +1333,8 @@ def send_execution_report_email(
         _add_file_attachment(msg, logs_zip)
     if failed_zip is not None:
         _add_file_attachment(msg, failed_zip)
+    for vp in video_files:
+        _add_file_attachment(msg, vp)
 
     attached = _message_attachment_names(msg)
     logger.info("MIME attachments before send: %s", attached)

@@ -27,5 +27,7 @@ if exist "%~dp0generate_final_report.py" (
 ) else (
   echo No generate_final_report.py; Excel merge should exist from per-suite report.
 )
+echo [build-summary] Collect failed logs/screenshots/videos for email + archive
+"%PYTHON_EXE%" "%~dp0collect_failed_artifacts.py" "%WS_ROOT%" || echo [WARN] collect_failed_artifacts failed — email may lack videos
 popd
 exit /b 0

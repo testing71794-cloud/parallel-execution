@@ -480,6 +480,10 @@ exit /b 0
                         } else {
                             echo "[email] Excel ready: ${pwd()}\\build-summary\\final_execution_report.xlsx"
                         }
+                        // Archive videos before send so BUILD_URL links in the email body work immediately.
+                        if (fileExists('build-summary/failed-artifacts') || fileExists('build-summary/failed_tests_artifacts.zip')) {
+                            archiveArtifacts artifacts: 'build-summary/failed_tests_artifacts.zip, build-summary/failed-artifacts/**', allowEmptyArchive: true
+                        }
                         def mailTo = (params.EMAIL_TO ?: '').trim()
                         if (!mailTo) {
                             mailTo = '' // filled from credential username below
@@ -501,6 +505,8 @@ exit /b 0
                                 "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\build-summary\\final_execution_report.xlsx",
                                 "BRANCH_NAME=${env.BRANCH_NAME}",
                                 "GIT_BRANCH=${env.BRANCH_NAME}",
+                                "BUILD_URL=${env.BUILD_URL ?: ''}",
+                                'ORCH_EMAIL_ATTACH_VIDEOS=1',
                             ]) {
                                 bat """call scripts\\jenkins_ci_send_email.bat "${env.WORKSPACE}" """
                             }
@@ -522,7 +528,7 @@ exit /b 0
                             }
                         }
                     }
-                    archiveArtifacts artifacts: 'build-summary/final_execution_report.xlsx, build-summary/execution_logs.zip, .maestro/screenshots/**, detected_devices.txt', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'build-summary/final_execution_report.xlsx, build-summary/execution_logs.zip, build-summary/failed_tests_artifacts.zip, build-summary/failed-artifacts/**, .maestro/screenshots/**, detected_devices.txt', allowEmptyArchive: true
                 }
             }
         }
