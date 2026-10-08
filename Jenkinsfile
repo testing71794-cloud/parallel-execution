@@ -122,6 +122,11 @@ pipeline {
         booleanParam(name: 'RUN_ATP_SIGNUP_LOGIN', defaultValue: true, description: 'ATP TestCase Flows: SignUp_Login')
         booleanParam(name: 'RUN_AI_ANALYSIS', defaultValue: true, description: 'Test OpenRouter + run intelligent_platform failure analysis')
         booleanParam(name: 'SEND_FINAL_EMAIL', defaultValue: true, description: 'Send final summary email with detailed Excel (Flow Report) attached')
+        string(
+            name: 'EMAIL_TO',
+            defaultValue: '',
+            description: 'Optional recipient override for final email. Leave empty to use the gmail-smtp-kodak username. Comma-separated allowed.'
+        )
         booleanParam(name: 'CLEAR_STATE', defaultValue: true, description: 'Clear app state in suite runners')
         booleanParam(name: 'RETRY_FAILED', defaultValue: false, description: 'Reserved for future retry logic')
         string(
@@ -449,6 +454,8 @@ exit /b 0
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     bat """call scripts\\jenkins_ci_zip_logs.bat "${env.WORKSPACE}" """
+                    // Persist Excel/logs across stage workspace boundaries so email cannot miss the xlsx.
+                    stash name: 'email-artifacts', includes: 'build-summary/**,detected_devices.txt', allowEmpty: true
                 }
             }
         }
@@ -460,7 +467,26 @@ exit /b 0
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
                     script {
+                        // New stage workspace can be empty — restore sources + Excel before send.
+                        if (!fileExists('mailout/send_email.py')) {
+                            unstash 'repo'
+                        }
+                        if (!fileExists('build-summary/final_execution_report.xlsx')) {
+                            echo '[email] Excel missing in workspace — unstash email-artifacts'
+                            unstash 'email-artifacts'
+                        }
+                        if (!fileExists('build-summary/final_execution_report.xlsx')) {
+                            error('final_execution_report.xlsx missing after unstash — cannot attach Excel to email')
+                        } else {
+                            echo "[email] Excel ready: ${pwd()}\\build-summary\\final_execution_report.xlsx"
+                        }
+                        def mailTo = (params.EMAIL_TO ?: '').trim()
+                        if (!mailTo) {
+                            mailTo = '' // filled from credential username below
+                        }
                         withCredentials([usernamePassword(credentialsId: 'gmail-smtp-kodak', usernameVariable: 'B_SMTP_USER', passwordVariable: 'B_SMTP_PASS')]) {
+                            def receiver = mailTo ? mailTo : env.B_SMTP_USER
+                            echo "[email] Sending final report to: ${receiver}"
                             withEnv([
                                 'SMTP_SERVER=smtp.gmail.com',
                                 'SMTP_HOST=smtp.gmail.com',
@@ -468,8 +494,8 @@ exit /b 0
                                 "SMTP_USER=${env.B_SMTP_USER}",
                                 "SMTP_PASS=${env.B_SMTP_PASS}",
                                 "SENDER_EMAIL=${env.B_SMTP_USER}",
-                                "RECEIVER_EMAIL=${env.B_SMTP_USER}",
-                                "MAIL_TO=${env.B_SMTP_USER}",
+                                "RECEIVER_EMAIL=${receiver}",
+                                "MAIL_TO=${receiver}",
                                 'PYTHONIOENCODING=utf-8',
                                 'ORCH_EMAIL_STRICT=1',
                                 "FINAL_EXECUTION_REPORT_XLSX=${env.WORKSPACE}\\build-summary\\final_execution_report.xlsx",
@@ -488,6 +514,14 @@ exit /b 0
             agent { label params.DEVICES_AGENT }
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE', catchInterruptions: false) {
+                    script {
+                        if (!fileExists('build-summary/final_execution_report.xlsx')) {
+                            echo '[archive] Excel missing — unstash email-artifacts'
+                            try { unstash 'email-artifacts' } catch (Exception e) {
+                                echo "[archive] unstash email-artifacts failed: ${e}"
+                            }
+                        }
+                    }
                     archiveArtifacts artifacts: 'build-summary/final_execution_report.xlsx, build-summary/execution_logs.zip, .maestro/screenshots/**, detected_devices.txt', allowEmptyArchive: true
                 }
             }

@@ -1030,7 +1030,25 @@ def _add_file_attachment(msg: EmailMessage, path: Path) -> None:
         msg.add_attachment(data, maintype="application", subtype="zip", filename=name)
     else:
         msg.add_attachment(data, maintype="application", subtype="octet-stream", filename=name)
-    logger.info("Attached: %s", name)
+    logger.info("Attached: %s (%d bytes)", name, len(data))
+
+
+def _message_attachment_names(msg: EmailMessage) -> list[str]:
+    names: list[str] = []
+    for part in msg.walk():
+        fn = part.get_filename()
+        if fn:
+            names.append(fn)
+    return names
+
+
+def _split_recipients(raw: str) -> list[str]:
+    parts = []
+    for chunk in (raw or "").replace(";", ",").split(","):
+        addr = chunk.strip()
+        if addr:
+            parts.append(addr)
+    return parts
 
 
 def _orch_email_attach_ai() -> bool:
@@ -1221,10 +1239,15 @@ def send_execution_report_email(
     except ValueError:
         port = 587
 
+    recipients = _split_recipients(receiver)
+    if not recipients:
+        logger.error("No valid RECEIVER_EMAIL / MAIL_TO addresses")
+        return False
+
     msg = EmailMessage()
     msg["Subject"] = subj
     msg["From"] = sender or smtp_user
-    msg["To"] = receiver
+    msg["To"] = ", ".join(recipients)
     msg.set_content(text_body)
     msg.add_alternative(html_body, subtype="html")
 
@@ -1236,13 +1259,27 @@ def send_execution_report_email(
     if failed_zip is not None:
         _add_file_attachment(msg, failed_zip)
 
+    attached = _message_attachment_names(msg)
+    logger.info("MIME attachments before send: %s", attached)
+    if excel_path.name not in attached:
+        logger.error(
+            "Excel was not present in MIME payload (expected %s, got %s) — aborting send",
+            excel_path.name,
+            attached,
+        )
+        return False
+
     context = ssl.create_default_context()
     try:
         with smtplib.SMTP(smtp_server, port, timeout=60) as server:
             server.starttls(context=context)
             server.login(smtp_user, smtp_pass)
             server.send_message(msg)
-        logger.info("Email sent to %s (HTML + attachments)", receiver)
+        logger.info(
+            "Email sent to %s (HTML + attachments including %s)",
+            ", ".join(recipients),
+            excel_path.name,
+        )
         return True
     except Exception as e:
         logger.error("Email failed: %s", e)
