@@ -115,15 +115,30 @@ def _adb_devices_quick_ok(repo: Path, expected: list[str]) -> bool:
         text = tmp.read_text(encoding="utf-8", errors="replace")
     except OSError:
         text = ""
-    present = set()
+    # Preserve adb order (not set order) so refresh/rewrite stays deterministic.
+    present_ordered: list[str] = []
+    present: set[str] = set()
     for ln in text.splitlines():
         parts = ln.split()
         if len(parts) >= 2 and parts[1].lower() == "device":
-            present.add(parts[0].strip())
+            serial = parts[0].strip()
+            if serial and serial not in present:
+                present.add(serial)
+                present_ordered.append(serial)
     missing = [d for d in expected if d not in present]
     if missing:
         print(
             f"[jenkins_atp_stage] detected_devices stale/missing on ADB: {missing}",
+            flush=True,
+        )
+        return False
+    # Incomplete Detect file: expected serials are still up, but live ADB has more.
+    # Force full list_devices so orchestration does not keep a one-device file.
+    extras = [s for s in present_ordered if s not in set(expected)]
+    if extras:
+        print(
+            f"[jenkins_atp_stage] detected_devices incomplete: file={len(expected)} "
+            f"adb={len(present_ordered)} extra=[{', '.join(extras)}] — forcing re-scan",
             flush=True,
         )
         return False

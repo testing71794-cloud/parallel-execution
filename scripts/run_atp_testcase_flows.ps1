@@ -137,6 +137,11 @@ function Merge-AndPickDevices {
         $missing = $fileSerials | Where-Object { $picked -notcontains $_ }
         Write-Host "[ATP] WARN: dropping stale serial(s) from detected_devices.txt: $($missing -join ', ')"
     }
+    # Hybrid: Detect may leave a one-device file while this agent has N USB devices.
+    if ($authorized.Count -gt $picked.Count) {
+        Write-Host "[ATP] WARN: live adb has $($authorized.Count) device(s) but detected_devices.txt matched $($picked.Count); using all authorized adb devices for this run"
+        return $authorized
+    }
     return $picked
 }
 

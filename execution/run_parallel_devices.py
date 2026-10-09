@@ -1029,6 +1029,24 @@ def resolve_device_ids(
             from_file = _read_device_serials_from_file(p)
             from_file = _dedupe_preserve_order(from_file)
             if from_file:
+                adb = _dedupe_preserve_order(list_adb_devices(cli_adb=adb_cli))
+                if adb:
+                    picked = [s for s in from_file if s in set(adb)]
+                    if not picked:
+                        logger.warning(
+                            "Devices file serials not in adb devices (%s); using adb",
+                            p.name,
+                        )
+                        _orch_print(
+                            f"[DEBUG] device list from adb devices ({len(adb)}): {', '.join(adb)}"
+                        )
+                        return adb
+                    if len(adb) > len(picked):
+                        _orch_print(
+                            f"[DEBUG] device list: file {p.name} matched {len(picked)} but "
+                            f"adb has {len(adb)}; using all authorized adb devices"
+                        )
+                        return adb
                 _orch_print(
                     f"[DEBUG] device list from file {p.name} ({len(from_file)}): {', '.join(from_file)}"
                 )
