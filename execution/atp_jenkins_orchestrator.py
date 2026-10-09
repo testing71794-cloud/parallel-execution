@@ -1027,6 +1027,40 @@ def run_atp_folder_blocking(
         print(f"ERROR: {e}", flush=True)
         return 1
     print(f"Maestro: {maestro_launch}", flush=True)
+
+    # Maestro driver APKs must install (UID exhaustion looks like "insufficient storage").
+    try:
+        from .device_maestro_preflight import filter_devices_maestro_ready
+
+        devices, maestro_bad = filter_devices_maestro_ready(
+            devices,
+            maestro_launcher=Path(maestro_launch),
+            repo=repo,
+        )
+        if not devices:
+            print(
+                "[ATP] SKIP: no devices available after Maestro driver preflight "
+                "(reboot Pixel/device if UID exhaustion; free storage if truly full)",
+                flush=True,
+            )
+            if maestro_bad:
+                for bad in maestro_bad:
+                    print(
+                        f"[ATP]   unusable device={_dev_log(bad.device_id)} "
+                        f"detail={bad.detail!r}",
+                        flush=True,
+                    )
+            return 0
+        os.environ["ATP_ORCH_DEVICE_COUNT"] = str(len(devices))
+        os.environ["ATP_ORCH_DEVICES"] = ",".join(devices)
+        exec_mode = _device_execution_mode(len(devices))
+        print(
+            f"Devices (after Maestro preflight): {', '.join(_dev_log(d) for d in devices)}",
+            flush=True,
+        )
+    except Exception as e:
+        print(f"[ATP] WARN: device_maestro_preflight failed (continuing): {e}", flush=True)
+
     print(
         f"[ATP] device execution mode: {exec_mode} "
         f"(override: ATP_DEVICE_EXECUTION=sequential|parallel)",
