@@ -880,7 +880,7 @@ def _report_device_outcome(
         if "7001" in tail and "Connection refused" in tail:
             print(
                 "  [hint] localhost:7001 refused = Android driver IPC. "
-                "run_one_flow_on_device retries once with --reinstall-driver. "
+                "run_one_flow_on_device uses --no-reinstall-driver by default; retries once with --reinstall-driver. "
                 "If it still fails: close Maestro Studio on the agent, stop other maestro.exe runs, then re-run.",
                 flush=True,
             )

@@ -129,19 +129,10 @@ def analyze_failure_for_row(
             "key_present": meta.get("key_present", "no"),
             "screenshot_path": "",
         }
+    # Legacy FLAKY status: analyze the log like FAIL (never return the generic
+    # "Flaky run…" stub — reports must show the real Maestro failure reason).
     if st == "FLAKY":
-        return {
-            "failure_step": "—",
-            "error_message": "—",
-            "ai_failure_summary": "Flaky run — see log for first failure and retry context.",
-            "root_cause_category": "Timing/Flaky Issue",
-            "suggested_fix": "Stabilize waits; check device load and animation timing.",
-            "ai_confidence": 0.55,
-            "analysis_source": "Heuristic (FLAKY)",
-            "ai_status": meta.get("ai_status", "NOT_CHECKED"),
-            "model_used": "—",
-            "key_present": meta.get("key_present", "no"),
-        }
+        st = "FAIL"
 
     fd = _build_failure_dict(log_text)
     err = (fd.get("error_message") or "")[:2000]

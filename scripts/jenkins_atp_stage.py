@@ -655,6 +655,15 @@ def cmd_validate(suite_id: str) -> int:
 
 def cmd_excel(folder: str) -> int:
     """Per-folder Excel merge; flag on failure; exit 0 like Jenkins bat echo chain."""
+    skip_env = os.environ.get("ATP_SKIP_MODULE_EXCEL", "").strip().lower() in ("1", "true", "yes", "on")
+    skip_flag = (REPO / "build-summary" / ".skip_module_excel").is_file()
+    if skip_env or skip_flag:
+        print(
+            f"[jenkins_atp_stage] skip module excel folder={folder!r} "
+            f"(env={skip_env} flag={skip_flag})",
+            flush=True,
+        )
+        return 0
     sid = folder_to_suite_id(folder)
     label = folder
     (REPO / "build-summary").mkdir(parents=True, exist_ok=True)

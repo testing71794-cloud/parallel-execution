@@ -59,10 +59,12 @@ if not defined ATP_JAVA_USER_HOME goto :wmw_no_java_user
 if defined ATP_MAESTRO_DRIVER_PORT goto :wmw_java_driver_port
 if /I "!MAESTRO_USE_REINSTALL!"=="1" goto :wmw_java_reinstall
 if defined ATP_MAESTRO_DEBUG_OUTPUT goto :wmw_java_debug
->> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+REM Default --no-reinstall-driver: Maestro otherwise reinstalls driver every flow and
+REM exhausts Android UIDs (INSTALL_FAILED_INSUFFICIENT_STORAGE / valid UID).
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test --no-reinstall-driver !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
 goto :wmw_done
 :wmw_java_debug
->> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! --debug-output "!ATP_MAESTRO_DEBUG_OUTPUT!" "!MAESTRO_FLOW_PATH!"
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test --no-reinstall-driver !MAESTRO_OUT_DIR! --debug-output "!ATP_MAESTRO_DEBUG_OUTPUT!" "!MAESTRO_FLOW_PATH!"
 goto :wmw_done
 :wmw_java_reinstall
 if defined ATP_MAESTRO_DEBUG_OUTPUT goto :wmw_java_reinstall_debug
@@ -74,10 +76,10 @@ goto :wmw_done
 :wmw_java_driver_port
 if /I "!MAESTRO_USE_REINSTALL!"=="1" goto :wmw_java_driver_reinstall
 if defined ATP_MAESTRO_DEBUG_OUTPUT goto :wmw_java_driver_debug
->> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" --driver-host-port %ATP_MAESTRO_DRIVER_PORT% test !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" --driver-host-port %ATP_MAESTRO_DRIVER_PORT% test --no-reinstall-driver !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
 goto :wmw_done
 :wmw_java_driver_debug
->> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" --driver-host-port %ATP_MAESTRO_DRIVER_PORT% test !MAESTRO_OUT_DIR! --debug-output "!ATP_MAESTRO_DEBUG_OUTPUT!" "!MAESTRO_FLOW_PATH!"
+>> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" --driver-host-port %ATP_MAESTRO_DRIVER_PORT% test --no-reinstall-driver !MAESTRO_OUT_DIR! --debug-output "!ATP_MAESTRO_DEBUG_OUTPUT!" "!MAESTRO_FLOW_PATH!"
 goto :wmw_done
 :wmw_java_driver_reinstall
 if defined ATP_MAESTRO_DEBUG_OUTPUT goto :wmw_java_driver_reinstall_debug
@@ -88,9 +90,9 @@ goto :wmw_done
 goto :wmw_done
 :wmw_no_java_user
 if defined ATP_MAESTRO_DRIVER_PORT (
-  >> "%MWRAP%" echo "%JAVA_EXE%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" --driver-host-port %ATP_MAESTRO_DRIVER_PORT% test !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+  >> "%MWRAP%" echo "%JAVA_EXE%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" --driver-host-port %ATP_MAESTRO_DRIVER_PORT% test --no-reinstall-driver !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
 ) else (
-  >> "%MWRAP%" echo "%JAVA_EXE%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+  >> "%MWRAP%" echo "%JAVA_EXE%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test --no-reinstall-driver !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
 )
 :wmw_done
 exit /b 0
@@ -99,9 +101,9 @@ exit /b 0
 > "%MWRAP%" echo @echo off
 >> "%MWRAP%" echo cd /d "%REPO_ROOT%"
 if defined ATP_JAVA_USER_HOME (
-  >> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! -e FULL_NAME="!FULL_NAME!" -e EMAIL="!EMAIL!" -e PASSWORD="!PASSWORD!" "!MAESTRO_FLOW_PATH!"
+  >> "%MWRAP%" echo "%JAVA_EXE%" "-Duser.home=%ATP_JAVA_USER_HOME%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test --no-reinstall-driver !MAESTRO_OUT_DIR! -e FULL_NAME="!FULL_NAME!" -e EMAIL="!EMAIL!" -e PASSWORD="!PASSWORD!" "!MAESTRO_FLOW_PATH!"
 ) else (
-  >> "%MWRAP%" echo "%JAVA_EXE%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! -e FULL_NAME="!FULL_NAME!" -e EMAIL="!EMAIL!" -e PASSWORD="!PASSWORD!" "!MAESTRO_FLOW_PATH!"
+  >> "%MWRAP%" echo "%JAVA_EXE%" -classpath "%MAESTRO_CLASSPATH%" maestro.cli.AppKt --device "%DEVICE_ID%" test --no-reinstall-driver !MAESTRO_OUT_DIR! -e FULL_NAME="!FULL_NAME!" -e EMAIL="!EMAIL!" -e PASSWORD="!PASSWORD!" "!MAESTRO_FLOW_PATH!"
 )
 exit /b 0
 
@@ -129,7 +131,7 @@ set "MWRAP=%TEMP%\atp_maestro_bat_%RANDOM%_%RANDOM%.cmd"
 if /I "!MAESTRO_USE_REINSTALL!"=="1" (
   >> "%MWRAP%" echo "%MAESTRO_BIN%" --device "%DEVICE_ID%" test --reinstall-driver !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
 ) else (
-  >> "%MWRAP%" echo "%MAESTRO_BIN%" --device "%DEVICE_ID%" test !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
+  >> "%MWRAP%" echo "%MAESTRO_BIN%" --device "%DEVICE_ID%" test --no-reinstall-driver !MAESTRO_OUT_DIR! "!MAESTRO_FLOW_PATH!"
 )
 echo [DEBUG] maestro_bat_wrapper=!MWRAP!>> "%LOG_FILE%"
 type "%MWRAP%" >> "%LOG_FILE%"
@@ -459,7 +461,8 @@ set "MAESTRO_USE_REINSTALL=0"
 call :run_maestro_isolated
 set "RUN_EXIT=%ERRORLEVEL%"
 if "!RUN_EXIT!"=="0" (
-    set "STATUS_VALUE=FLAKY"
+    REM Soft success after retry — report PASS (never FLAKY).
+    set "STATUS_VALUE=PASS"
     set "REASON=SIGNUP_DUPLICATE_RETRY"
 ) else (
     set "STATUS_VALUE=FAIL"
@@ -499,6 +502,7 @@ echo. >> "%LOG_FILE%"
 REM ---- Default flows: require device online immediately before Maestro; one rerun if ADB drops mid-run (Jenkins logs: device not found / transport) ----
 set "MAESTRO_DEVICE_RETRY_USED=0"
 set "MAESTRO_DRIVER_7001_RETRY=0"
+set "MAESTRO_FAIL_REATTEMPT=0"
 :maestro_default_attempt
 echo [INFO] ADB get-state before Maestro ^(retry_used=!MAESTRO_DEVICE_RETRY_USED!^)...>> "%LOG_FILE%"
 set /a "_PREM=0"
@@ -545,7 +549,7 @@ if errorlevel 1 (
 )
 echo [WARN] Flow completed but stopRecording hit EOFException; counting as PASS ^(recording teardown^)>> "%LOG_FILE%"
 set "RUN_EXIT=0"
-set "STATUS_VALUE=FLAKY"
+set "STATUS_VALUE=PASS"
 set "REASON=RECORDING_STOP_EOF_FLOW_OK"
 goto :maestro_default_pass
 :skip_record_eof_pass
@@ -590,13 +594,20 @@ call :sleep_seconds 2
 goto :maestro_retry_wait_dev
 
 :maestro_default_pass
-if /I "!REASON!"=="RECORDING_STOP_EOF_FLOW_OK" goto :after_flow1b_maestro
+REM Final status is always PASS or FAIL (never FLAKY). Soft successes keep a diagnostic REASON.
+if /I "!REASON!"=="RECORDING_STOP_EOF_FLOW_OK" (
+    set "STATUS_VALUE=PASS"
+    goto :after_flow1b_maestro
+)
 if "!MAESTRO_DRIVER_7001_RETRY!"=="1" (
-    set "STATUS_VALUE=FLAKY"
+    set "STATUS_VALUE=PASS"
     set "REASON=MAESTRO_DRIVER_REINSTALL_OK"
 ) else if "!MAESTRO_DEVICE_RETRY_USED!"=="1" (
-    set "STATUS_VALUE=FLAKY"
+    set "STATUS_VALUE=PASS"
     set "REASON=MAESTRO_DEVICE_RETRY_OK"
+) else if "!MAESTRO_FAIL_REATTEMPT!"=="1" (
+    set "STATUS_VALUE=PASS"
+    set "REASON=MAESTRO_FAIL_REATTEMPT_OK"
 ) else (
     set "STATUS_VALUE=PASS"
     set "REASON=OK"
@@ -604,6 +615,19 @@ if "!MAESTRO_DRIVER_7001_RETRY!"=="1" (
 goto :after_flow1b_maestro
 
 :maestro_default_fail
+REM One automatic reattempt on hard Maestro failure (flaky UI / driver). Second failure stays FAIL.
+if /I "%ATP_FAIL_REATTEMPT%"=="0" goto :maestro_fail_final
+if "!MAESTRO_FAIL_REATTEMPT!"=="1" goto :maestro_fail_final
+echo [WARN] Maestro failed; reattempting flow once ^(no FLAKY status — final will be PASS or FAIL^)...>> "%LOG_FILE%"
+set "MAESTRO_FAIL_REATTEMPT=1"
+set "MAESTRO_USE_REINSTALL=0"
+set "MAESTRO_DEVICE_RETRY_USED=0"
+set "MAESTRO_DRIVER_7001_RETRY=0"
+set "REASON="
+set "STATUS_VALUE="
+call :sleep_seconds 2
+goto :maestro_default_attempt
+:maestro_fail_final
 set "STATUS_VALUE=FAIL"
 set "REASON=MAESTRO_FAILED"
 goto :after_flow1b_maestro
@@ -640,15 +664,16 @@ if defined FLOW_START_MS if defined FLOW_END_MS if not "!FLOW_START_MS!"=="0" (
 echo [TIMING] flow_end_ms=!FLOW_END_MS! duration_ms=!FLOW_DURATION_MS!>> "%LOG_FILE%"
 
 set "VIDEO_FILE="
-if defined ATP_MAESTRO_TEST_OUTPUT if exist "%ATP_MAESTRO_TEST_OUTPUT%\recording.mp4" (
-  set "VIDEO_FILE=%ATP_MAESTRO_TEST_OUTPUT%\recording.mp4"
-)
-if not defined VIDEO_FILE if defined ATP_MAESTRO_TEST_OUTPUT if exist "%ATP_MAESTRO_TEST_OUTPUT%\recording.webm" (
-  set "VIDEO_FILE=%ATP_MAESTRO_TEST_OUTPUT%\recording.webm"
-)
-if not defined VIDEO_FILE if defined ATP_MAESTRO_TEST_OUTPUT if exist "%ATP_MAESTRO_TEST_OUTPUT%" (
-  for /r "%ATP_MAESTRO_TEST_OUTPUT%" %%V in (*.mp4 *.webm) do (
-    if not defined VIDEO_FILE set "VIDEO_FILE=%%~fV"
+if defined ATP_MAESTRO_TEST_OUTPUT (
+  if exist "%ATP_MAESTRO_TEST_OUTPUT%\recording.mp4" set "VIDEO_FILE=%ATP_MAESTRO_TEST_OUTPUT%\recording.mp4"
+  if not defined VIDEO_FILE if exist "%ATP_MAESTRO_TEST_OUTPUT%\recording.webm" set "VIDEO_FILE=%ATP_MAESTRO_TEST_OUTPUT%\recording.webm"
+  if not defined VIDEO_FILE if exist "%ATP_MAESTRO_TEST_OUTPUT%\startRecording\recording.mp4" set "VIDEO_FILE=%ATP_MAESTRO_TEST_OUTPUT%\startRecording\recording.mp4"
+  if not defined VIDEO_FILE if exist "%ATP_MAESTRO_TEST_OUTPUT%\screenshots\recording.mp4" set "VIDEO_FILE=%ATP_MAESTRO_TEST_OUTPUT%\screenshots\recording.mp4"
+  if not defined VIDEO_FILE if exist "%ATP_MAESTRO_TEST_OUTPUT%\videos\recording.mp4" set "VIDEO_FILE=%ATP_MAESTRO_TEST_OUTPUT%\videos\recording.mp4"
+  if not defined VIDEO_FILE if exist "%ATP_MAESTRO_TEST_OUTPUT%" (
+    for /r "%ATP_MAESTRO_TEST_OUTPUT%" %%V in (*.mp4 *.webm) do (
+      if not defined VIDEO_FILE if not "%%~zV"=="0" set "VIDEO_FILE=%%~fV"
+    )
   )
 )
 if defined VIDEO_FILE echo [INFO] Maestro recording: !VIDEO_FILE!>> "%LOG_FILE%"

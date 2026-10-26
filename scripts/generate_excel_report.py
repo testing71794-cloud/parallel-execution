@@ -25,6 +25,7 @@ if str(REPO / "scripts") not in sys.path:
     sys.path.insert(0, str(REPO / "scripts"))
 
 from failure_row_analysis import analyze_failure_for_row
+from status_normalize import normalize_status, resolve_display_failure_reason
 from utils.device_utils import get_device_display_name, render_device_display
 from utils.git_branch import detect_git_branch
 from utils.project_identity import PROJECT_DISPLAY_NAME
@@ -197,7 +198,10 @@ def parse_status_file(file_path: Path) -> dict:
             data["suite"] = data.get("suite") or parts[0]
             data["flow"] = data.get("flow") or parts[1]
             data["device"] = data.get("device") or parts[2]
-    data["status"] = (data.get("status") or "UNKNOWN").upper()
+    raw_status = (data.get("status") or "UNKNOWN").upper()
+    reason = (data.get("reason") or "").strip()
+    data["status"] = normalize_status(raw_status, reason)
+    data["reason"] = reason
     return data
 
 
@@ -367,16 +371,20 @@ def _rows_to_raw_dicts(
     for row in results:
         did = _device_id(row)
         dname = _display_device_name_for_report(row)
-        st = (row.get("status") or "UNKNOWN").upper()
+        st = normalize_status(
+            (row.get("status") or "UNKNOWN").upper(),
+            (row.get("reason") or "").strip(),
+        )
         logp = _log_path(row)
         ec = (row.get("exit_code") or "").strip() or "0"
         flow = (row.get("flow") or "").strip()
         row_suite = (row.get("suite") or suite_label or "").strip()
-        if st in ("FAIL", "FLAKY") or (st != "PASS" and st not in ("UNKNOWN", "RUNNING")):
-            st_for_ai = st if st in ("FAIL", "FLAKY") else "FAIL"
+        reason_code = (row.get("reason") or "").strip()
+        if st != "PASS" and st not in ("UNKNOWN", "RUNNING"):
+            # Always analyze as FAIL — never use the FLAKY short-circuit heuristic.
             an = analyze_failure_for_row(
                 logp if logp else None,
-                status=st_for_ai,
+                status="FAIL",
                 use_openrouter=use_or,
                 flow_name=flow,
                 suite=row_suite,
@@ -392,7 +400,20 @@ def _rows_to_raw_dicts(
                 device_id=did,
             )
         ai_raw = (an.get("ai_failure_summary") or "").strip()
+        if "flaky run" in ai_raw.lower():
+            ai_raw = (an.get("error_message") or "").strip() or ai_raw
         ai_one = (ai_raw[:2000] if ai_raw else "—")
+        fail_reason = resolve_display_failure_reason(
+            status=st,
+            reason=reason_code,
+            log_path=logp,
+            ai_analysis=ai_one,
+        )
+        if st != "PASS" and (not ai_one or ai_one in ("—", "N/A", "NOT_CHECKED")):
+            ai_one = fail_reason or "Failure recorded; inspect log for the exact Maestro line."
+        err_msg = (an.get("error_message") or "").strip()
+        if st != "PASS" and (not err_msg or err_msg in ("—",)):
+            err_msg = fail_reason
         shot_path = str(an.get("screenshot_path") or "").strip() or _SCREEN_DEFAULT
         out.append(
             {
@@ -410,9 +431,9 @@ def _rows_to_raw_dicts(
                 "Exit Code": str(ec),
                 "Retry Count": (row.get("retry_count") or "0")[:8],
                 "Failure Step": (an.get("failure_step") or "")[:2000],
-                "Error Message": (an.get("error_message") or "")[:2000],
-                "AI Failure Summary": (an.get("ai_failure_summary") or "—")[:2000],
-                "AI Analyses": (an.get("ai_failure_summary") or "—")[:2000],
+                "Error Message": (err_msg or "")[:2000],
+                "AI Failure Summary": (ai_one or "—")[:2000],
+                "AI Analyses": (ai_one or "—")[:2000],
                 "Root Cause Category": (an.get("root_cause_category") or "—")[:120],
                 "Suggested Fix": (an.get("suggested_fix") or "—")[:2000],
                 "AI Confidence": float(an.get("ai_confidence", 0.65) or 0.65),
@@ -426,6 +447,7 @@ def _rows_to_raw_dicts(
                     :32
                 ],
                 "AI Analysis": ai_one,
+                "Failure Reason": fail_reason,
             }
         )
     return out
@@ -506,14 +528,14 @@ def _merge_build_summary(
         # drop default sheet
         wb.remove(wb.active)
         ws0 = wb.create_sheet("Summary", 0)
-        t, p, nf, fl = len(all_rows), 0, 0, 0
+        t, p, nf = len(all_rows), 0, 0
         for r in all_rows:
-            s = (str(r.get("Status") or "")).upper()
+            s = normalize_status(str(r.get("Status") or ""), str(r.get("Failure Reason") or ""))
+            r["Status"] = s
             if s == "PASS":
                 p += 1
-            elif s == "FLAKY":
-                fl += 1
             else:
+                # Legacy FLAKY is counted as Failed (never report Flaky).
                 nf += 1
         branch = detect_git_branch(REPO)
         if branch.lower() in ("unknown", "null", "none", ""):
@@ -526,7 +548,7 @@ def _merge_build_summary(
         ws0["A2"], ws0["B2"] = "Total", str(t)
         ws0["A3"], ws0["B3"] = "Passed", str(p)
         ws0["A4"], ws0["B4"] = "Failed", str(nf)
-        ws0["A5"], ws0["B5"] = "Flaky", str(fl)
+        ws0["A5"], ws0["B5"] = "Flaky", "0"
         ws0["A6"], ws0["B6"] = "Git Branch", branch or "unknown"
         ws0["A7"], ws0["B7"] = "Generated on", gen_ts
         # Keep legacy keys for email Summary parsers

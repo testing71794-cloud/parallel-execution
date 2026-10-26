@@ -15,6 +15,26 @@ from typing import Any
 
 FAILURE_STATUSES = frozenset({"FAIL", "FLAKY", "PARSE_ERROR", "ERROR"})
 
+# Soft-pass / legacy FLAKY handling (scripts/status_normalize.py)
+try:
+    from status_normalize import (  # type: ignore
+        is_reportable_failure,
+        normalize_status,
+        reason_looks_generic,
+    )
+except ImportError:  # pragma: no cover - path bootstrap
+    import sys
+    from pathlib import Path as _Path
+
+    _scripts = _Path(__file__).resolve().parents[2] / "scripts"
+    if str(_scripts) not in sys.path:
+        sys.path.insert(0, str(_scripts))
+    from status_normalize import (  # type: ignore
+        is_reportable_failure,
+        normalize_status,
+        reason_looks_generic,
+    )
+
 
 def _env(*names: str, default: str = "") -> str:
     for n in names:
@@ -49,9 +69,31 @@ def load_failed_summary(repo: Path) -> list[dict[str, Any]]:
 def rows_from_excel_failures(excel_rows: list[dict[str, str]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for r in excel_rows:
-        st = (r.get("status") or "").upper()
-        if st not in FAILURE_STATUSES:
+        reason = (
+            r.get("failure_reason") or r.get("reason") or r.get("error_message") or ""
+        ).strip()
+        st = normalize_status(r.get("status") or "", reason)
+        if not is_reportable_failure(st, reason):
             continue
+        if st not in FAILURE_STATUSES and st != "FAIL":
+            continue
+        ai = str(r.get("ai_analyses") or r.get("ai_analysis") or "—").strip() or "—"
+        if "flaky run" in ai.lower():
+            ai = "—"
+        fail_reason = reason
+        if reason_looks_generic(fail_reason):
+            # Prefer AI / error text over MAESTRO_FAILED / FLAKY codes
+            for cand in (
+                r.get("error_message"),
+                ai if ai not in ("—", "-", "N/A") else "",
+                "MAESTRO_FAILED",
+            ):
+                c = str(cand or "").strip()
+                if c and not reason_looks_generic(c) and "flaky run" not in c.lower():
+                    fail_reason = c
+                    break
+            else:
+                fail_reason = fail_reason or "MAESTRO_FAILED"
         out.append(
             {
                 "suite": r.get("suite") or "",
@@ -59,11 +101,9 @@ def rows_from_excel_failures(excel_rows: list[dict[str, str]]) -> list[dict[str,
                 "flow": r.get("flow") or "",
                 "device": r.get("device") or "",
                 "device_id": r.get("device_id") or "",
-                "status": st or "FAIL",
-                "failure_reason": r.get("failure_reason")
-                or r.get("reason")
-                or ("MAESTRO_FAILED" if st == "FAIL" else st),
-                "ai_analysis": r.get("ai_analyses") or r.get("ai_analysis") or "—",
+                "status": "FAIL" if st == "FLAKY" else st,
+                "failure_reason": fail_reason,
+                "ai_analysis": ai if ai != "—" else fail_reason,
                 "screenshot_artifact": r.get("screenshot_artifact") or "",
                 "video_artifact": r.get("video_artifact") or "",
             }
@@ -96,16 +136,37 @@ def merge_failed_rows(
         merged.update({kk: vv for kk, vv in r.items() if vv not in ("", None)})
         # Preserve AI from Excel when summary has none
         ai = str(merged.get("ai_analysis") or merged.get("ai_analyses") or "").strip()
-        if not ai or ai == "—":
-            ai = str(base.get("ai_analysis") or base.get("ai_analyses") or "—").strip() or "—"
-        merged["ai_analysis"] = ai
-        if not merged.get("failure_reason"):
-            merged["failure_reason"] = "MAESTRO_FAILED"
-        if not merged.get("status"):
-            merged["status"] = "FAIL"
+        if not ai or ai == "—" or "flaky run" in ai.lower():
+            ai = str(base.get("ai_analysis") or base.get("ai_analyses") or "").strip()
+            if not ai or ai == "—" or "flaky run" in ai.lower():
+                ai = "—"
+        reason = str(merged.get("failure_reason") or merged.get("reason") or "").strip()
+        st = normalize_status(str(merged.get("status") or "FAIL"), reason)
+        if not is_reportable_failure(st, reason):
+            by_key.pop(k, None)
+            continue
+        if reason_looks_generic(reason) and ai not in ("—", "", "-") and "flaky run" not in ai.lower():
+            reason = ai
+        merged["status"] = "FAIL" if st == "FLAKY" else st
+        merged["failure_reason"] = reason or "MAESTRO_FAILED"
+        merged["ai_analysis"] = ai if ai != "—" else merged["failure_reason"]
         by_key[k] = merged
 
-    rows = list(by_key.values())
+    rows: list[dict[str, Any]] = []
+    for r in by_key.values():
+        reason = str(r.get("failure_reason") or r.get("reason") or "").strip()
+        st = normalize_status(str(r.get("status") or "FAIL"), reason)
+        if not is_reportable_failure(st, reason):
+            continue
+        r = dict(r)
+        r["status"] = "FAIL" if st == "FLAKY" else st
+        if reason_looks_generic(str(r.get("failure_reason") or "")):
+            ai = str(r.get("ai_analysis") or "").strip()
+            if ai and ai not in ("—", "-") and "flaky run" not in ai.lower():
+                r["failure_reason"] = ai[:500]
+            else:
+                r["failure_reason"] = r.get("failure_reason") or "MAESTRO_FAILED"
+        rows.append(r)
     rows.sort(
         key=lambda r: (
             str(r.get("suite") or ""),
@@ -145,29 +206,45 @@ body{{font-family:Calibri,"Segoe UI",Arial,sans-serif;font-size:14px;color:#1a1a
         suite = str(row.get("suite") or "—")
         name = str(row.get("test_name") or row.get("flow") or "—")
         device = str(row.get("device") or row.get("device_id") or "—")
-        status = str(row.get("status") or "FAIL")
         reason = str(
             row.get("failure_reason") or row.get("reason") or row.get("error_message") or "—"
         )
+        status = normalize_status(str(row.get("status") or "FAIL"), reason)
+        if status == "FLAKY":
+            status = "FAIL"
         ai = str(row.get("ai_analysis") or row.get("ai_analyses") or "—").strip() or "—"
+        if "flaky run" in ai.lower():
+            ai = reason if reason not in ("—", "-", "MAESTRO_FAILED", "FLAKY") else "—"
+        if reason_looks_generic(reason) and ai not in ("—", "-", "N/A"):
+            reason = ai
         shot = str(row.get("screenshot_artifact") or "").strip()
         video = str(row.get("video_artifact") or "").strip()
 
-        shot_cell = html.escape(shot) if shot else "—"
-        video_cell = html.escape(video) if video else "—"
-        if artifact_url and shot:
+        shot_cell = "—"
+        video_cell = "—"
+        if shot:
             shot_url = jenkins_artifact_url(f"build-summary/failed-artifacts/{shot}")
             if shot_url:
                 shot_cell = f'<a href="{html.escape(shot_url)}">{html.escape(shot)}</a>'
-        if artifact_url and video:
+            else:
+                shot_cell = (
+                    f'<a href="../build-summary/failed-artifacts/{html.escape(shot)}">'
+                    f"{html.escape(shot)}</a>"
+                )
+        if video:
             video_url = jenkins_artifact_url(f"build-summary/failed-artifacts/{video}")
             if video_url:
-                video_cell = f'<a href="{html.escape(video_url)}">{html.escape(video)}</a>'
-            elif not video_url and video:
-                # Local relative link when not on Jenkins
+                video_cell = (
+                    f'<a href="{html.escape(video_url)}"><strong>Watch video</strong></a>'
+                    f' <span style="color:#666;">({html.escape(video)})</span>'
+                )
+            else:
+                # Always link locally so the Video column is never a bare dash when
+                # collect_failed_artifacts copied an mp4.
                 video_cell = (
                     f'<a href="../build-summary/failed-artifacts/{html.escape(video)}">'
-                    f"{html.escape(video)}</a>"
+                    f"<strong>Watch video</strong></a>"
+                    f' <span style="color:#666;">({html.escape(video)})</span>'
                 )
 
         ai_disp = ai if len(ai) <= 200 else ai[:200] + "…"

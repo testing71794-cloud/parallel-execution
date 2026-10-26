@@ -36,8 +36,15 @@ from openpyxl import load_workbook
 _REPO = Path(__file__).resolve().parents[1]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
+if str(_REPO / "scripts") not in sys.path:
+    sys.path.insert(0, str(_REPO / "scripts"))
 from utils.device_utils import render_device_display  # noqa: E402
 from utils.git_branch import detect_git_branch  # noqa: E402
+from status_normalize import (  # noqa: E402
+    is_reportable_failure,
+    normalize_status,
+    reason_looks_generic,
+)
 
 logger = logging.getLogger("orch.mail")
 
@@ -365,6 +372,13 @@ def _parse_table_rows_for_sheet(
     )
     i_status = _col_index(headers, "Status", "Test status")
     i_exit = _col_index(headers, "Exit Code", "Exit code", "ExitCode", "exit_code")
+    i_reason = _col_index(
+        headers,
+        "Failure Reason",
+        "Error Message",
+        "Reason",
+        "failure_reason",
+    )
     ai_idx_list = _ai_indices_in_order(headers)
 
     if i_status is None or i_flow is None:
@@ -389,7 +403,11 @@ def _parse_table_rows_for_sheet(
         if _flow_cell_invalid(flow):
             continue
 
-        st = (_cell(i_status) or "").upper() or "UNKNOWN"
+        reason_cell = _cell(i_reason) if i_reason is not None else ""
+        st_raw = (_cell(i_status) or "").upper() or "UNKNOWN"
+        st = normalize_status(st_raw, reason_cell)
+        if st == "FLAKY":
+            st = "FAIL"
         ex = _cell(i_exit)
         if ex == "":
             ex = "0"
@@ -405,6 +423,12 @@ def _parse_table_rows_for_sheet(
                 raw_ai_parts.append(t)
         raw_ai = " | ".join(raw_ai_parts) if raw_ai_parts else ""
         ai = _ai_cell_to_email(raw_ai)
+        if "flaky run" in (ai or "").lower():
+            ai = reason_cell or ""
+
+        fail_reason = reason_cell
+        if reason_looks_generic(fail_reason) and ai and not reason_looks_generic(ai):
+            fail_reason = ai
 
         out.append(
             {
@@ -415,6 +439,8 @@ def _parse_table_rows_for_sheet(
                 "status": st,
                 "exit_code": ex,
                 "ai_analyses": ai,
+                "failure_reason": fail_reason,
+                "error_message": reason_cell,
             }
         )
     return out
@@ -815,12 +841,40 @@ def build_email_plain(
     return "\n".join(lines)
 
 
-def _is_failure_status(status: str) -> bool:
-    return (status or "").upper() in {"FAIL", "FLAKY", "PARSE_ERROR", "ERROR"}
+def _is_failure_status(status: str, reason: str = "") -> bool:
+    st = normalize_status(status, reason)
+    return is_reportable_failure(st, reason)
 
 
 def _filter_failed_email_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
-    return [r for r in rows if _is_failure_status(r.get("status", ""))]
+    out: list[dict[str, str]] = []
+    for r in rows:
+        reason = str(r.get("failure_reason") or r.get("reason") or "").strip()
+        if not _is_failure_status(r.get("status", ""), reason):
+            continue
+        nr = dict(r)
+        nr["status"] = normalize_status(nr.get("status", ""), reason)
+        if nr["status"] == "FLAKY":
+            nr["status"] = "FAIL"
+        ai = str(nr.get("ai_analyses") or nr.get("ai_analysis") or "").strip()
+        if "flaky run" in ai.lower():
+            ai = ""
+            nr["ai_analyses"] = ""
+            nr["ai_analysis"] = ""
+        fr = str(nr.get("failure_reason") or reason or "").strip()
+        if reason_looks_generic(fr):
+            for cand in (nr.get("error_message"), ai, "MAESTRO_FAILED"):
+                c = str(cand or "").strip()
+                if c and not reason_looks_generic(c) and "flaky run" not in c.lower():
+                    fr = c
+                    break
+            else:
+                fr = fr or "MAESTRO_FAILED"
+        nr["failure_reason"] = fr
+        if not str(nr.get("ai_analyses") or "").strip():
+            nr["ai_analyses"] = fr
+        out.append(nr)
+    return out
 
 
 def load_failed_tests_summary(root: Path) -> tuple[list[dict], bool]:
@@ -867,8 +921,15 @@ def _enrich_rows_from_failed_summary(
 ) -> list[dict[str, str]]:
     if not failed_summary:
         for row in rows:
-            if not row.get("failure_reason"):
-                row["failure_reason"] = "MAESTRO_FAILED"
+            fr = str(row.get("failure_reason") or "").strip()
+            ai = str(row.get("ai_analyses") or row.get("ai_analysis") or "").strip()
+            if reason_looks_generic(fr):
+                if ai and not reason_looks_generic(ai) and "flaky run" not in ai.lower():
+                    row["failure_reason"] = ai[:500]
+                else:
+                    row["failure_reason"] = fr or "MAESTRO_FAILED"
+            st = normalize_status(row.get("status") or "", row.get("failure_reason") or "")
+            row["status"] = "FAIL" if st == "FLAKY" else st
         return rows
     by_key: dict[tuple[str, str, str], dict] = {}
     for item in failed_summary:
@@ -900,12 +961,29 @@ def _enrich_rows_from_failed_summary(
                 nr["video_artifact"] = str(hit.get("video_artifact") or "")
             if hit.get("screenshot_artifact"):
                 nr["screenshot_artifact"] = str(hit.get("screenshot_artifact") or "")
-            if hit.get("failure_reason") and not nr.get("failure_reason"):
-                nr["failure_reason"] = str(hit.get("failure_reason") or "")
+            # Prefer collector's log-derived reason over generic MAESTRO_FAILED / FLAKY
+            hit_reason = str(hit.get("failure_reason") or "").strip()
+            cur_reason = str(nr.get("failure_reason") or "").strip()
+            if hit_reason and (
+                not cur_reason
+                or reason_looks_generic(cur_reason)
+                or (not reason_looks_generic(hit_reason) and reason_looks_generic(cur_reason))
+            ):
+                nr["failure_reason"] = hit_reason
             if hit.get("device_id") and not nr.get("device_id"):
                 nr["device_id"] = str(hit.get("device_id") or "")
-        if not nr.get("failure_reason"):
-            nr["failure_reason"] = "MAESTRO_FAILED"
+            hit_st = normalize_status(str(hit.get("status") or ""), hit_reason)
+            if hit_st and hit_st != "PASS":
+                nr["status"] = "FAIL" if hit_st == "FLAKY" else hit_st
+        fr = str(nr.get("failure_reason") or "").strip()
+        ai = str(nr.get("ai_analyses") or nr.get("ai_analysis") or "").strip()
+        if reason_looks_generic(fr):
+            if ai and not reason_looks_generic(ai) and "flaky run" not in ai.lower():
+                nr["failure_reason"] = ai[:500]
+            else:
+                nr["failure_reason"] = fr or "MAESTRO_FAILED"
+        st = normalize_status(nr.get("status") or "", nr.get("failure_reason") or "")
+        nr["status"] = "FAIL" if st == "FLAKY" else st
         out.append(nr)
     return out
 
@@ -928,11 +1006,17 @@ def _failed_tests_summary_html(rows: list[dict], *, artifact_url: str | None = N
         suite = str(row.get("suite") or "—")
         name = str(row.get("test_name") or row.get("flow") or "—")
         device = str(row.get("device") or row.get("device_id") or "—")
-        status = str(row.get("status") or "FAIL")
         reason = str(
             row.get("failure_reason") or row.get("reason") or row.get("error_message") or "MAESTRO_FAILED"
         )
+        status = normalize_status(str(row.get("status") or "FAIL"), reason)
+        if status == "FLAKY":
+            status = "FAIL"
         ai = str(row.get("ai_analyses") or row.get("ai_analysis") or "—").strip() or "—"
+        if "flaky run" in ai.lower():
+            ai = reason if not reason_looks_generic(reason) else "—"
+        if reason_looks_generic(reason) and ai not in ("—", "-", "N/A"):
+            reason = ai
         shot = str(row.get("screenshot_artifact") or "").strip()
         video = str(row.get("video_artifact") or "").strip()
         shot_cell = html.escape(shot) if shot else "—"
@@ -950,8 +1034,10 @@ def _failed_tests_summary_html(rows: list[dict], *, artifact_url: str | None = N
                 )
             else:
                 video_cell = (
-                    f"{html.escape(video)} "
-                    "<span style=\"color:#666;\">(see email attachment / failed_tests_artifacts.zip)</span>"
+                    f'<a href="build-summary/failed-artifacts/{html.escape(video)}">'
+                    f"<strong>Watch video</strong></a>"
+                    f' <span style="color:#666;">({html.escape(video)} — also in '
+                    f"failed_tests_artifacts.zip)</span>"
                 )
         cls = _status_html_class(status)
         ai_short = ai if len(ai) <= 200 else ai[:200] + "…"
@@ -1260,16 +1346,22 @@ def send_execution_report_email(
             if key in seen:
                 continue
             seen.add(key)
+            item_reason = str(item.get("failure_reason") or "MAESTRO_FAILED")
+            item_st = normalize_status(str(item.get("status") or "FAIL"), item_reason)
+            if not is_reportable_failure(item_st, item_reason):
+                continue
             failed_email_rows.append(
                 {
                     "suite": str(item.get("suite") or ""),
                     "flow": str(item.get("test_name") or item.get("flow") or ""),
                     "device": render_device_display("", str(item.get("device_id") or "")),
                     "device_id": str(item.get("device_id") or ""),
-                    "status": str(item.get("status") or "FAIL"),
+                    "status": "FAIL" if item_st == "FLAKY" else item_st,
                     "exit_code": "1",
-                    "failure_reason": str(item.get("failure_reason") or "MAESTRO_FAILED"),
-                    "ai_analyses": "Failure recorded; inspect log for the exact Maestro line.",
+                    "failure_reason": item_reason,
+                    "ai_analyses": item_reason
+                    if not reason_looks_generic(item_reason)
+                    else "Failure recorded; inspect log for the exact Maestro line.",
                     "video_artifact": str(item.get("video_artifact") or ""),
                     "screenshot_artifact": str(item.get("screenshot_artifact") or ""),
                 }

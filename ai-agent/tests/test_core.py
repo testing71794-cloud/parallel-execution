@@ -91,8 +91,8 @@ def test_failed_tests_html_only_failures(tmp_path: Path):
             "test_name": "ED_01 - Filter dedicated with AI",
             "device_id": "ZA222RFQ75",
             "status": "FAIL",
-            "failure_reason": "MAESTRO_FAILED",
-            "ai_analysis": "—",
+            "failure_reason": "Assertion is false: id: camera_shutter is visible",
+            "ai_analysis": "Camera shutter was not visible on the capture screen.",
             "video_artifact": "ED_01_-_Filter_dedicated_with_AI.mp4",
             "screenshot_artifact": "",
         }
@@ -102,10 +102,68 @@ def test_failed_tests_html_only_failures(tmp_path: Path):
         artifact_url="http://jenkins/job/1/artifact/build-summary/failed_tests_artifacts.zip",
     )
     assert "ED_01" in html
-    assert "MAESTRO_FAILED" in html
+    assert "Assertion is false" in html
+    assert "Watch video" in html
     assert "Failed Test Artifacts" in html
     assert "st-fail" in html
+    assert "FLAKY" not in html
     assert "PASS" not in html.replace("Failed Test Artifacts", "")
     out = tmp_path / "failed_tests.html"
     out.write_text(html, encoding="utf-8")
     assert out.is_file()
+
+
+def test_flaky_normalized_to_fail_with_real_reason():
+    from reporting.failed_tests_report import merge_failed_rows, render_failed_tests_html
+
+    excel = [
+        {
+            "suite": "Camera",
+            "test_name": "TC_CA_01_Enter camera mode",
+            "flow": "TC_CA_01_Enter camera mode",
+            "device": "16091FDD4004N6",
+            "device_id": "16091FDD4004N6",
+            "status": "FLAKY",
+            "failure_reason": "MAESTRO_FAILED",
+            "ai_analysis": "Flaky run — see log for first failure and retry context.",
+            "video_artifact": "",
+        }
+    ]
+    summary = [
+        {
+            "suite": "Camera",
+            "test_name": "TC_CA_01_Enter camera mode",
+            "device_id": "16091FDD4004N6",
+            "status": "FAIL",
+            "failure_reason": "Assertion is false: \"Camera\" is visible",
+            "video_artifact": "TC_CA_01_Enter_camera_mode.mp4",
+            "screenshot_artifact": "",
+            "ai_analysis": "",
+        }
+    ]
+    rows = merge_failed_rows(summary_rows=summary, excel_fail_rows=excel)
+    assert len(rows) == 1
+    assert rows[0]["status"] == "FAIL"
+    assert "Assertion is false" in rows[0]["failure_reason"]
+    assert rows[0]["video_artifact"].endswith(".mp4")
+    html = render_failed_tests_html(rows, artifact_url=None)
+    assert "FLAKY" not in html
+    assert "Watch video" in html
+    assert "Assertion is false" in html
+
+
+def test_recording_eof_soft_pass_excluded_from_failed():
+    from reporting.failed_tests_report import merge_failed_rows
+
+    summary = [
+        {
+            "suite": "atp_camera",
+            "test_name": "TC_CA_02_Capture",
+            "device_id": "16091FDD4004N6",
+            "status": "FLAKY",
+            "failure_reason": "RECORDING_STOP_EOF_FLOW_OK",
+            "video_artifact": "TC_CA_02_Capture.mp4",
+        }
+    ]
+    rows = merge_failed_rows(summary_rows=summary, excel_fail_rows=[])
+    assert rows == []

@@ -29,8 +29,15 @@ if str(REPO / "scripts") not in sys.path:
     sys.path.insert(0, str(REPO / "scripts"))
 
 from generate_excel_report import parse_status_file  # noqa: E402
+from status_normalize import (  # noqa: E402
+    is_reportable_failure,
+    normalize_status,
+    reason_looks_generic,
+    resolve_display_failure_reason,
+)
 
 # Non-pass outcomes collected for failure reporting (excludes PASS / RUNNING / UNKNOWN).
+# FLAKY is normalized to FAIL via parse_status_file / normalize_status.
 FAILED_STATUSES = frozenset({"FAIL", "FLAKY", "PARSE_ERROR", "ERROR"})
 SKIP_STATUSES = frozenset({"PASS", "RUNNING", "UNKNOWN"})
 
@@ -134,72 +141,144 @@ def _newest_matching_file(directory: Path, extensions: tuple[str, ...]) -> Path 
     return max(found, key=lambda p: p.stat().st_mtime)
 
 
+def _preferred_recording_names(safe_flow: str) -> tuple[str, ...]:
+    return (
+        "recording.mp4",
+        "recording.webm",
+        f"{safe_flow}.mp4",
+        f"{safe_flow}.webm",
+    )
+
+
+def _video_from_dir(directory: Path, safe_flow: str = "") -> Path | None:
+    if not directory.is_dir():
+        return None
+    for name in _preferred_recording_names(safe_flow):
+        for rel in (
+            Path(name),
+            Path("startRecording") / name,
+            Path("screenshots") / name,
+            Path("videos") / name,
+        ):
+            p = directory / rel
+            if p.is_file() and p.stat().st_size > 0:
+                return p
+    hit = _newest_matching_file(directory, VIDEO_EXTENSIONS)
+    if hit is not None and hit.stat().st_size > 0:
+        return hit
+    return None
+
+
+def _suite_recording_roots(repo: Path, suite: str) -> list[Path]:
+    """Include atp_ / bare suite aliases so Camera ↔ atp_camera videos resolve."""
+    roots: list[Path] = []
+    seen: set[Path] = set()
+
+    def _add(p: Path) -> None:
+        try:
+            rp = p.resolve()
+        except OSError:
+            return
+        if rp in seen or not rp.is_dir():
+            return
+        seen.add(rp)
+        roots.append(rp)
+
+    s = (suite or "").strip()
+    if s:
+        _add(repo / "reports" / s / "recordings")
+        low = s.lower()
+        if low.startswith("atp_"):
+            _add(repo / "reports" / s[4:] / "recordings")
+            _add(repo / "reports" / low[4:] / "recordings")
+            _add(repo / "reports" / f"atp_{s[4:]}" / "recordings")
+        else:
+            _add(repo / "reports" / f"atp_{s}" / "recordings")
+            _add(repo / "reports" / f"atp_{low}" / "recordings")
+            # Title-case folder variants (Camera vs camera)
+            _add(repo / "reports" / s.title() / "recordings")
+    else:
+        for p in (repo / "reports").glob("*/recordings"):
+            _add(p)
+    return roots
+
+
 def _resolve_video_path(repo: Path, row: dict) -> Path | None:
     for key in ("video_file", "video_path", "recording_file"):
         raw = (row.get(key) or "").strip()
         if raw:
             resolved = _resolve_path_under_repo(repo, raw)
-            if resolved is not None:
+            if resolved is not None and resolved.stat().st_size > 0:
                 return resolved
+            # Path may point at a missing leaf; try parent dir for recording.*
+            parent = _resolve_path_or_dir_under_repo(repo, str(Path(raw).parent))
+            if parent is not None:
+                hit = _video_from_dir(parent, Path(raw).stem)
+                if hit is not None:
+                    return hit
 
     suite = (row.get("suite") or "").strip()
     flow = (row.get("flow") or "").strip()
     dev = (row.get("device_id") or row.get("device") or "").strip()
+    safe_flow = flow.replace(" ", "_")
+    safe_dev = dev.replace(" ", "_")
 
     test_out_raw = (row.get("test_output_dir") or "").strip()
     if test_out_raw:
         test_out = _resolve_path_or_dir_under_repo(repo, test_out_raw)
         if test_out is not None:
-            if test_out.is_file():
+            if test_out.is_file() and test_out.stat().st_size > 0:
                 return test_out
-            preferred = test_out / "recording.mp4"
-            if preferred.is_file():
-                return preferred
-            hit = _newest_matching_file(test_out, VIDEO_EXTENSIONS)
+            hit = _video_from_dir(test_out, safe_flow)
             if hit is not None:
                 return hit
 
     if not flow:
         return None
 
-    safe_flow = flow.replace(" ", "_")
-    safe_dev = dev.replace(" ", "_")
-    if suite:
-        recordings_roots = [repo / "reports" / suite / "recordings"]
-    else:
-        recordings_roots = [
-            p for p in (repo / "reports").glob("*/recordings") if p.is_dir()
-        ]
-    for recordings_root in recordings_roots:
-        if not recordings_root.is_dir():
-            continue
-
+    for recordings_root in _suite_recording_roots(repo, suite):
         slug = f"{flow}__{safe_dev}"
         candidates = [
             recordings_root / slug,
             recordings_root / f"{safe_flow}__{safe_dev}",
             recordings_root / safe_flow,
+            recordings_root / f"{safe_flow}__{dev}",
         ]
         for base in candidates:
             if base.is_dir():
-                for name in ("recording.mp4", "recording.webm", f"{safe_flow}.mp4"):
-                    p = base / name
-                    if p.is_file():
-                        return p
-                hit = _newest_matching_file(base, VIDEO_EXTENSIONS)
+                hit = _video_from_dir(base, safe_flow)
                 if hit is not None:
                     return hit
-            elif base.with_suffix(".mp4").is_file():
+            elif base.with_suffix(".mp4").is_file() and base.with_suffix(".mp4").stat().st_size > 0:
                 return base.with_suffix(".mp4")
 
-        flow_key = flow.casefold()
+        flow_key = flow.casefold().replace(" ", "_")
         all_videos: list[Path] = []
         for ext in VIDEO_EXTENSIONS:
             all_videos.extend(recordings_root.rglob(f"*{ext}"))
         matched = [
             p
             for p in all_videos
-            if flow_key in p.as_posix().casefold() and not _is_excluded_artifact(p)
+            if flow_key in p.as_posix().casefold().replace(" ", "_")
+            and not _is_excluded_artifact(p)
+            and p.stat().st_size > 0
+        ]
+        if matched:
+            return max(matched, key=lambda p: p.stat().st_mtime)
+
+    # Maestro default artifact tree (when --test-output-dir was not used / drifted)
+    maestro_tests = Path.home() / ".maestro" / "tests"
+    if maestro_tests.is_dir() and flow:
+        flow_key = flow.casefold().replace(" ", "_")
+        found: list[Path] = []
+        for ext in VIDEO_EXTENSIONS:
+            found.extend(maestro_tests.rglob(f"*{ext}"))
+        matched = [
+            p
+            for p in found
+            if flow_key in p.as_posix().casefold().replace(" ", "_")
+            and not _is_excluded_artifact(p)
+            and p.stat().st_size > 0
         ]
         if matched:
             return max(matched, key=lambda p: p.stat().st_mtime)
@@ -351,8 +430,13 @@ def load_failed_rows(repo: Path) -> list[dict]:
     by_key: dict[tuple[str, str, str], tuple[float, dict]] = {}
     for file_path in status_dir.glob("*.txt"):
         row = parse_status_file(file_path)
-        st = (row.get("status") or "").upper()
-        if st in SKIP_STATUSES or st == "PASS":
+        reason = (row.get("reason") or "").strip()
+        st = normalize_status(row.get("status") or "", reason)
+        row["status"] = st
+        # Soft successes (RECORDING_STOP_EOF_FLOW_OK, retry-OK, …) are PASS — skip.
+        if not is_reportable_failure(st, reason):
+            continue
+        if st in SKIP_STATUSES:
             continue
         if st not in FAILED_STATUSES and st:
             continue
@@ -369,9 +453,10 @@ def load_failed_rows(repo: Path) -> list[dict]:
 
     out: list[dict] = []
     for _, row in sorted(by_key.values(), key=lambda x: (x[1].get("suite", ""), x[1].get("flow", ""))):
-        st = (row.get("status") or "FAIL").upper()
-        if st == "PASS":
+        st = normalize_status(row.get("status") or "FAIL", row.get("reason") or "")
+        if not is_reportable_failure(st, row.get("reason") or ""):
             continue
+        row["status"] = st
         out.append(row)
     return out
 
@@ -408,14 +493,24 @@ def collect_failed_artifacts(repo: Path) -> dict:
         flow = (row.get("flow") or "").strip()
         suite = (row.get("suite") or "").strip()
         dev = (row.get("device_id") or row.get("device") or "").strip()
-        st = (row.get("status") or "FAIL").upper()
-        reason = (row.get("reason") or row.get("log") or "—").strip() or "—"
+        reason_code = (row.get("reason") or "").strip()
+        st = normalize_status(row.get("status") or "FAIL", reason_code)
         multi = len(device_sets.get(flow, set())) > 1
         stem = _artifact_stem(flow, dev, multi_device=multi)
 
         log_src = _resolve_log_path(repo, row)
         vid_src = _resolve_video_path(repo, row)
         shot_src = _resolve_screenshot_path(repo, row)
+
+        reason = resolve_display_failure_reason(
+            status=st,
+            reason=reason_code,
+            log_path=log_src,
+        )
+        if reason_looks_generic(reason):
+            reason = reason_code if reason_code and not reason_looks_generic(reason_code) else (
+                reason or "MAESTRO_FAILED"
+            )
 
         log_art = ""
         vid_art = ""

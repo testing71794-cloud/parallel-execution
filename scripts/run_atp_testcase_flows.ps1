@@ -313,7 +313,7 @@ foreach ($flow in $flowFiles) {
                 $tailLines = Get-Content -LiteralPath $logPath -Tail 80 -ErrorAction SilentlyContinue
                 $tail = if ($null -eq $tailLines) { "" } else { ($tailLines | ForEach-Object { "$_" }) -join "`n" }
                 if ($tail -and $tail -match '7001' -and $tail -match 'Connection refused') {
-                    Write-Host "  [hint] localhost:7001 refused = Android driver IPC. run_one_flow_on_device retries once with --reinstall-driver. If it still fails: close Maestro Studio on the agent, stop other maestro.exe runs, then re-run."
+                    Write-Host "  [hint] localhost:7001 refused = Android driver IPC. Default is --no-reinstall-driver; run_one_flow_on_device retries once with --reinstall-driver. If it still fails: close Maestro Studio on the agent, stop other maestro.exe runs, then re-run."
                 }
             } catch { }
         } else {
